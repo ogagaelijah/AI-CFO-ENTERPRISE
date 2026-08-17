@@ -1,0 +1,111 @@
+# =============================================
+# AI CFO ENTERPRISE - .gitignore
+# =============================================
+
+# =============================================
+# DEPENDENCIES
+# =============================================
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# =============================================
+# ENVIRONMENT VARIABLES (Sensitive Data)
+# =============================================
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+.env.test
+
+# =============================================
+# DATABASE FILES
+# =============================================
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+
+# =============================================
+# LOGS
+# =============================================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# =============================================
+# OS FILES
+# =============================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# =============================================
+# IDE / EDITOR FILES
+# =============================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.workspace
+.code-workspace
+*.sublime-project
+*.sublime-workspace
+
+# =============================================
+# BUILD / DIST / COVERAGE
+# =============================================
+dist/
+build/
+coverage/
+.nyc_output/
+*.min.js
+*.min.css
+
+# =============================================
+# TEMPORARY FILES
+# =============================================
+*.tmp
+*.temp
+*.bak
+*.cache
+
+# =============================================
+# TEST FILES
+# =============================================
+coverage/
+.nyc_output/
+*.test.js
+*.spec.js
+
+# =============================================
+# MISC
+# =============================================
+*.pid
+*.seed
+*.pid.lock
+*.gz
+*.zip
+*.rar
+*.7z
+
+# =============================================
+# GIT
+# =============================================
+*.orig
+*.rej
+*.patch
