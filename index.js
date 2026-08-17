@@ -14,10 +14,14 @@ const { inventoryHandler, listInventory, lowStockAlert } = require('./src/interf
 const { debtorHandler, listDebtors, overdueDebtors } = require('./src/interfaces/telegram/handlers/debtorHandler');
 const { creditorHandler, listCreditors, overdueCreditors } = require('./src/interfaces/telegram/handlers/creditorHandler');
 const reportHandler = require('./src/interfaces/telegram/handlers/reportHandler');
+const { getMainMenuKeyboard, getInventoryKeyboard, getDebtorKeyboard, getCreditorKeyboard, getReportKeyboard, getIncomeKeyboard, getExpenseKeyboard, getAiKeyboard, getSettingsKeyboard } = require('./src/interfaces/telegram/keyboards/dashboardKeyboard');
 const { INDUSTRIES } = require('./src/config/industries');
 const SetupBusinessUseCase = require('./src/application/useCases/onboarding/SetupBusinessUseCase');
 const UserRepository = require('./src/infrastructure/database/sqlite/repositories/UserRepository');
 const BusinessRepository = require('./src/infrastructure/database/sqlite/repositories/BusinessRepository');
+const IncomeRepository = require('./src/infrastructure/database/sqlite/repositories/IncomeRepository');
+const ExpenseRepository = require('./src/infrastructure/database/sqlite/repositories/ExpenseRepository');
+const InventoryRepository = require('./src/infrastructure/database/sqlite/repositories/InventoryRepository');
 
 console.log('=====================================');
 console.log('🏢 AI CFO ENTERPRISE');
@@ -25,11 +29,14 @@ console.log('🚀 Phase 2 - Complete Business Modules');
 console.log('=====================================');
 
 // =============================================
-// INITIALIZE REPOSITORIES FOR CALLBACK HANDLER
+// INITIALIZE REPOSITORIES
 // =============================================
 const userRepo = new UserRepository();
 const businessRepo = new BusinessRepository();
 const setupUseCase = new SetupBusinessUseCase(userRepo, businessRepo);
+const incomeRepo = new IncomeRepository();
+const expenseRepo = new ExpenseRepository();
+const inventoryRepo = new InventoryRepository();
 
 // =============================================
 // GET BOT INSTANCE
@@ -49,18 +56,12 @@ botInstance.command('sale', saleHandler);
 botInstance.command('income', incomeHandler);
 botInstance.command('expense', expenseHandler);
 botInstance.command('inventory', inventoryHandler);
-botInstance.command('inventory_list', listInventory);
-botInstance.command('inventory_low', lowStockAlert);
 botInstance.command('debtors', debtorHandler);
-botInstance.command('debtors_list', listDebtors);
-botInstance.command('debtors_overdue', overdueDebtors);
 botInstance.command('creditors', creditorHandler);
-botInstance.command('creditors_list', listCreditors);
-botInstance.command('creditors_overdue', overdueCreditors);
 botInstance.command('reports', reportHandler);
 
 // =============================================
-// TEXT HANDLER - Routes to appropriate handler
+// TEXT HANDLER
 // =============================================
 botInstance.on('text', async (ctx) => {
     const telegramId = ctx.from.id;
@@ -68,65 +69,53 @@ botInstance.on('text', async (ctx) => {
     const session = sessionManager.getSession(telegramId);
     const text = ctx.message ? ctx.message.text : '';
 
-    // Ignore commands (they start with /)
-    if (text.startsWith('/')) {
-        return;
-    }
+    if (text.startsWith('/')) return;
 
-    // If user is in login flow, route to loginHandler
     if (session && (session.state === 'LOGIN_WAITING_IDENTIFIER' || session.state === 'LOGIN_WAITING_PASSWORD')) {
         await loginHandler(ctx);
         return;
     }
 
-    // If user is in onboarding flow, route to onboardingHandler
     if (session && session.state && session.state.startsWith('WAITING_FOR_')) {
         await onboardingHandler(ctx);
         return;
     }
 
-    // If user is in sale flow, route to saleHandler
     if (session && session.state && session.state.startsWith('SALE_WAITING_')) {
         await saleHandler(ctx);
         return;
     }
 
-    // If user is in inventory flow, route to inventoryHandler
     if (session && session.state && session.state.startsWith('INVENTORY_WAITING_')) {
         await inventoryHandler(ctx);
         return;
     }
 
-    // If user is in debtor flow, route to debtorHandler
     if (session && session.state && session.state.startsWith('DEBTOR_WAITING_')) {
         await debtorHandler(ctx);
         return;
     }
 
-    // If user is in creditor flow, route to creditorHandler
     if (session && session.state && session.state.startsWith('CREDITOR_WAITING_')) {
         await creditorHandler(ctx);
         return;
     }
 
-    // If user is in income flow, route to incomeHandler
     if (session && session.state && session.state.startsWith('INCOME_WAITING_')) {
         await incomeHandler(ctx);
         return;
     }
 
-    // If user is in expense flow, route to expenseHandler
     if (session && session.state && session.state.startsWith('EXPENSE_WAITING_')) {
         await expenseHandler(ctx);
         return;
     }
 
-    // Default: show help
     await ctx.reply('Type /help for available commands.');
 });
 
 // =============================================
-// CALLBACK QUERY HANDLER - ALL MENU BUTTONS
+// CALLBACK QUERY HANDLER
 // =============================================
 botInstance.on('callback_query', async (ctx) => {
     try {
@@ -134,142 +123,296 @@ botInstance.on('callback_query', async (ctx) => {
         const telegramId = ctx.from.id;
         const sessionManager = getSessionManager();
         const session = sessionManager.getSession(telegramId);
+        const user = await userRepo.findByTelegramId(telegramId);
+        const businesses = user ? await businessRepo.findByUserId(user.id) : [];
+        const business = businesses.length > 0 ? businesses[0] : null;
+        const industry = business ? business.industry : 'RETAIL';
 
         await ctx.answerCbQuery();
 
         // =============================================
-        // DASHBOARD MENU CALLBACKS (HANDLED FIRST)
+        // BACK TO MAIN MENU
         // =============================================
-
-        // Record Sale
-        if (data === 'menu_sale') {
-            await saleHandler(ctx);
+        if (data === 'menu_back') {
+            await ctx.editMessageText(
+                `📊 **Main Menu**\n\nSelect an option below:`,
+                { parse_mode: 'Markdown', ...getMainMenuKeyboard(industry) }
+            );
             return;
         }
 
-        // Income
-        if (data === 'menu_income') {
-            await incomeHandler(ctx);
-            return;
-        }
-
-        // Expense
-        if (data === 'menu_expense') {
-            await expenseHandler(ctx);
-            return;
-        }
-
-        // Inventory
-        if (data === 'menu_inventory') {
-            await inventoryHandler(ctx);
-            return;
-        }
-
-        // Dashboard
+        // =============================================
+        // MAIN MENU NAVIGATION
+        // =============================================
         if (data === 'menu_dashboard') {
             await dashboardHandler(ctx);
             return;
         }
 
-        // Debtors
+        if (data === 'menu_reports') {
+            await ctx.editMessageText(
+                `📋 **Reports**\n\nSelect a report type:`,
+                { parse_mode: 'Markdown', ...getReportKeyboard() }
+            );
+            return;
+        }
+
+        if (data === 'menu_ai') {
+            await ctx.editMessageText(
+                `🤖 **Ask AI**\n\nGet financial insights and advice:`,
+                { parse_mode: 'Markdown', ...getAiKeyboard() }
+            );
+            return;
+        }
+
+        if (data === 'menu_settings') {
+            await ctx.editMessageText(
+                `⚙️ **Settings**\n\nManage your account and preferences:`,
+                { parse_mode: 'Markdown', ...getSettingsKeyboard() }
+            );
+            return;
+        }
+
+        if (data === 'menu_sale') {
+            await saleHandler(ctx);
+            return;
+        }
+
+        if (data === 'menu_income') {
+            await ctx.editMessageText(
+                `💰 **Income Management**\n\nSelect an option:`,
+                { parse_mode: 'Markdown', ...getIncomeKeyboard() }
+            );
+            return;
+        }
+
+        if (data === 'menu_expense') {
+            await ctx.editMessageText(
+                `📉 **Expense Management**\n\nSelect an option:`,
+                { parse_mode: 'Markdown', ...getExpenseKeyboard() }
+            );
+            return;
+        }
+
+        if (data === 'menu_inventory') {
+            await ctx.editMessageText(
+                `📦 **Inventory Management**\n\nSelect an option:`,
+                { parse_mode: 'Markdown', ...getInventoryKeyboard() }
+            );
+            return;
+        }
+
         if (data === 'menu_debtors') {
+            await ctx.editMessageText(
+                `👥 **Debtors Management**\n\nSelect an option:`,
+                { parse_mode: 'Markdown', ...getDebtorKeyboard() }
+            );
+            return;
+        }
+
+        if (data === 'menu_creditors') {
+            await ctx.editMessageText(
+                `🏦 **Creditors Management**\n\nSelect an option:`,
+                { parse_mode: 'Markdown', ...getCreditorKeyboard() }
+            );
+            return;
+        }
+
+        // =============================================
+        // INVENTORY ACTIONS
+        // =============================================
+        if (data === 'inventory_add') {
+            await inventoryHandler(ctx);
+            return;
+        }
+        if (data === 'inventory_list') {
+            await listInventory(ctx);
+            return;
+        }
+        if (data === 'inventory_low') {
+            await lowStockAlert(ctx);
+            return;
+        }
+        if (data === 'inventory_value') {
+            const items = await inventoryRepo.findByUserId(user.id);
+            const totalValue = items.reduce((sum, item) => sum + (item.quantity * (item.selling_price || 0)), 0);
+            await ctx.reply(`💰 **Total Inventory Value**\n\n₦${totalValue.toLocaleString()}`);
+            return;
+        }
+
+        // =============================================
+        // DEBTOR ACTIONS
+        // =============================================
+        if (data === 'debtor_add') {
+            sessionManager.createSession(telegramId, 'DEBTOR_WAITING_NAME', {});
+            await ctx.editMessageText(
+                `👤 **Add New Debtor**\n\nEnter the customer name:`,
+                { parse_mode: 'Markdown' }
+            );
+            return;
+        }
+        if (data === 'debtor_pay') {
             await debtorHandler(ctx);
             return;
         }
+        if (data === 'debtor_list') {
+            await listDebtors(ctx);
+            return;
+        }
+        if (data === 'debtor_overdue') {
+            await overdueDebtors(ctx);
+            return;
+        }
 
-        // Creditors
-        if (data === 'menu_creditors') {
+        // =============================================
+        // CREDITOR ACTIONS
+        // =============================================
+        if (data === 'creditor_add') {
+            sessionManager.createSession(telegramId, 'CREDITOR_WAITING_NAME', {});
+            await ctx.editMessageText(
+                `🏢 **Add New Creditor**\n\nEnter the supplier name:`,
+                { parse_mode: 'Markdown' }
+            );
+            return;
+        }
+        if (data === 'creditor_pay') {
             await creditorHandler(ctx);
             return;
         }
+        if (data === 'creditor_list') {
+            await listCreditors(ctx);
+            return;
+        }
+        if (data === 'creditor_overdue') {
+            await overdueCreditors(ctx);
+            return;
+        }
 
-        // Reports
-        if (data === 'menu_reports') {
+        // =============================================
+        // INCOME ACTIONS
+        // =============================================
+        if (data === 'income_add') {
+            await incomeHandler(ctx);
+            return;
+        }
+        if (data === 'income_list') {
+            const incomes = await incomeRepo.findByUserId(user.id);
+            if (incomes.length === 0) {
+                await ctx.reply('📋 **No income records found.**');
+                return;
+            }
+            let message = `💰 **All Income Records**\n\n`;
+            for (const inc of incomes.slice(0, 15)) {
+                message += `📌 ${inc.source}\n`;
+                message += `   💰 ₦${inc.amount.toLocaleString()}\n`;
+                message += `   📂 ${inc.category || 'Other'}\n`;
+                message += `   📅 ${new Date(inc.created_at).toLocaleDateString()}\n\n`;
+            }
+            if (incomes.length > 15) {
+                message += `... and ${incomes.length - 15} more.`;
+            }
+            await ctx.reply(message);
+            return;
+        }
+        if (data === 'income_summary') {
+            const summary = await incomeRepo.getIncomeSummary(user.id);
+            await ctx.reply(
+                `📊 **Income Summary**\n\n` +
+                `📝 Total Entries: ${summary.total_entries || 0}\n` +
+                `💰 Total Amount: ₦${(summary.total_amount || 0).toLocaleString()}\n` +
+                `📊 Average: ₦${(summary.average_amount || 0).toLocaleString()}\n` +
+                `📂 Categories: ${summary.categories_used || 0}`
+            );
+            return;
+        }
+        if (data === 'income_today') {
+            const todayIncome = await incomeRepo.getTodayIncome(user.id);
+            if (todayIncome.length === 0) {
+                await ctx.reply('📅 **No income recorded today.**');
+                return;
+            }
+            let message = `📅 **Today's Income**\n\n`;
+            for (const inc of todayIncome) {
+                message += `📌 ${inc.source}\n`;
+                message += `   💰 ₦${inc.amount.toLocaleString()}\n`;
+            }
+            await ctx.reply(message);
+            return;
+        }
+
+        // =============================================
+        // EXPENSE ACTIONS
+        // =============================================
+        if (data === 'expense_add') {
+            await expenseHandler(ctx);
+            return;
+        }
+        if (data === 'expense_list') {
+            const expenses = await expenseRepo.findByUserId(user.id);
+            if (expenses.length === 0) {
+                await ctx.reply('📋 **No expense records found.**');
+                return;
+            }
+            let message = `📉 **All Expense Records**\n\n`;
+            for (const exp of expenses.slice(0, 15)) {
+                message += `📌 ${exp.category}\n`;
+                message += `   💰 ₦${exp.amount.toLocaleString()}\n`;
+                message += `   📝 ${exp.description || 'No description'}\n`;
+                message += `   📅 ${new Date(exp.created_at).toLocaleDateString()}\n\n`;
+            }
+            if (expenses.length > 15) {
+                message += `... and ${expenses.length - 15} more.`;
+            }
+            await ctx.reply(message);
+            return;
+        }
+        if (data === 'expense_summary') {
+            const summary = await expenseRepo.getExpenseSummary(user.id);
+            await ctx.reply(
+                `📊 **Expense Summary**\n\n` +
+                `📝 Total Entries: ${summary.total_entries || 0}\n` +
+                `💰 Total Amount: ₦${(summary.total_amount || 0).toLocaleString()}\n` +
+                `📊 Average: ₦${(summary.average_amount || 0).toLocaleString()}\n` +
+                `📂 Categories: ${summary.categories_used || 0}`
+            );
+            return;
+        }
+        if (data === 'expense_today') {
+            const todayExpenses = await expenseRepo.getTodayExpenses(user.id);
+            if (todayExpenses.length === 0) {
+                await ctx.reply('📅 **No expenses recorded today.**');
+                return;
+            }
+            let message = `📅 **Today's Expenses**\n\n`;
+            for (const exp of todayExpenses) {
+                message += `📌 ${exp.category}\n`;
+                message += `   💰 ₦${exp.amount.toLocaleString()}\n`;
+            }
+            await ctx.reply(message);
+            return;
+        }
+
+        // =============================================
+        // REPORT ACTIONS
+        // =============================================
+        if (data === 'report_daily' || data === 'report_weekly' || data === 'report_monthly') {
             await reportHandler(ctx);
             return;
         }
-
-        // Ask AI
-        if (data === 'menu_ai') {
-            await ctx.reply('🤖 **Ask AI**\n\nFeature coming soon in Phase 3!');
+        if (data === 'report_executive') {
+            await ctx.reply('📋 **Executive Summary**\n\nComing soon in Phase 3!');
             return;
         }
 
-        // Settings
-        if (data === 'menu_settings') {
-            await ctx.reply('⚙️ **Settings**\n\nFeature coming soon in Phase 3!');
+        // =============================================
+        // ASK AI ACTIONS
+        // =============================================
+        if (data === 'ai_ask') {
+            await ctx.reply('🤖 **Ask AI**\n\nType your financial question below:');
             return;
         }
-
-        // Production (Manufacturing)
-        if (data === 'menu_production') {
-            await ctx.reply('🏭 **Production Module**\n\nFeature coming soon in Phase 3!');
-            return;
-        }
-
-        // Projects (Construction/Consultancy)
-        if (data === 'menu_projects') {
-            await ctx.reply('🏗️ **Projects Module**\n\nFeature coming soon in Phase 3!');
-            return;
-        }
-
-        // Register Visit (Healthcare)
-        if (data === 'menu_visit') {
-            await ctx.reply('🩺 **Register Visit**\n\nFeature coming soon in Phase 3!');
-            return;
-        }
-
-        // Properties (Real Estate)
-        if (data === 'menu_properties') {
-            await ctx.reply('🏠 **Properties Module**\n\nFeature coming soon in Phase 3!');
-            return;
-        }
-
-        // Tenants (Real Estate)
-        if (data === 'menu_tenants') {
-            await ctx.reply('👥 **Tenants Module**\n\nFeature coming soon in Phase 3!');
-            return;
-        }
-
-        // Students (Education)
-        if (data === 'menu_students') {
-            await ctx.reply('📚 **Students Module**\n\nFeature coming soon in Phase 3!');
-            return;
-        }
-
-        // Vehicles (Logistics)
-        if (data === 'menu_vehicles') {
-            await ctx.reply('🚗 **Vehicles Module**\n\nFeature coming soon in Phase 3!');
-            return;
-        }
-
-        // Log Hours (Consultancy)
-        if (data === 'menu_loghours') {
-            await ctx.reply('⏰ **Log Hours**\n\nFeature coming soon in Phase 3!');
-            return;
-        }
-
-        // Clients (Consultancy)
-        if (data === 'menu_clients') {
-            await ctx.reply('👥 **Clients Module**\n\nFeature coming soon in Phase 3!');
-            return;
-        }
-
-        // Record Rent (Real Estate)
-        if (data === 'menu_rent') {
-            await ctx.reply('💰 **Record Rent**\n\nFeature coming soon in Phase 3!');
-            return;
-        }
-
-        // Record Fees (Education)
-        if (data === 'menu_fees') {
-            await ctx.reply('💰 **Record Fees**\n\nFeature coming soon in Phase 3!');
-            return;
-        }
-
-        // Record Trip (Logistics)
-        if (data === 'menu_trip') {
-            await ctx.reply('🚛 **Record Trip**\n\nFeature coming soon in Phase 3!');
+        if (data === 'ai_summary') {
+            await ctx.reply('📊 **AI Summary**\n\nComing soon in Phase 3!');
             return;
         }
 
@@ -277,7 +420,6 @@ botInstance.on('callback_query', async (ctx) => {
         // INDUSTRY SELECTION (Onboarding)
         // =============================================
         if (data && data.startsWith('industry_')) {
-            // Only process if user is in onboarding
             if (!session || session.state !== 'WAITING_FOR_INDUSTRY') {
                 await ctx.reply('Please complete the previous steps first.');
                 return;
@@ -306,7 +448,6 @@ botInstance.on('callback_query', async (ctx) => {
 
                 sessionManager.clearSession(telegramId);
 
-                // Calculate trial end date
                 const trialEndDate = new Date();
                 trialEndDate.setDate(trialEndDate.getDate() + 30);
                 const formattedEndDate = trialEndDate.toLocaleDateString('en-NG', { 
@@ -314,15 +455,6 @@ botInstance.on('callback_query', async (ctx) => {
                     month: 'long', 
                     day: 'numeric' 
                 });
-
-                // Build industry-specific quick actions
-                let quickActions = '';
-                if (industry.features.inventory) {
-                    quickActions += `/sale - Record a sale\n`;
-                    quickActions += `/inventory - Manage inventory\n`;
-                }
-                quickActions += `/dashboard - View dashboard\n`;
-                quickActions += `/help - See all commands`;
 
                 const message =
                     `🎉 **Registration Complete!**\n\n` +
@@ -337,11 +469,12 @@ botInstance.on('callback_query', async (ctx) => {
                     `• 👥 Manage debtors and creditors\n\n` +
                     `⏳ **Trial ends:** ${formattedEndDate}\n\n` +
                     `📊 **Your Dashboard is ready!**\n` +
-                    `Type /dashboard to view your business overview.\n\n` +
-                    `📋 **Quick Actions for ${industry.icon} ${industry.name}:**\n` +
-                    quickActions;
+                    `Select an option below to get started:`;
 
-                await ctx.editMessageText(message, { parse_mode: 'Markdown' });
+                await ctx.editMessageText(message, { 
+                    parse_mode: 'Markdown',
+                    ...getMainMenuKeyboard(industryId)
+                });
 
             } catch (error) {
                 console.error('Registration error:', error);
@@ -350,7 +483,7 @@ botInstance.on('callback_query', async (ctx) => {
             return;
         }
 
-        // If no callback matched, show help
+        // If no callback matched
         await ctx.reply('Type /help for available commands.');
 
     } catch (error) {
@@ -372,15 +505,7 @@ botInstance.catch((err, ctx) => {
 bot.launch().then(() => {
     console.log('✅ Bot is running!');
     console.log('📱 Send /start to register');
-    console.log('🔐 Send /login to login');
-    console.log('📊 Send /dashboard to view dashboard');
-    console.log('📝 Send /sale to record a sale');
-    console.log('💰 Send /income to record income');
-    console.log('📉 Send /expense to record expense');
-    console.log('📦 Send /inventory to manage inventory');
-    console.log('👥 Send /debtors to manage debtors');
-    console.log('🏦 Send /creditors to manage creditors');
-    console.log('📋 Send /reports to generate reports');
+    console.log('📊 Professional dashboard with sub-menus loaded');
     console.log('=====================================');
 }).catch((error) => {
     console.error('❌ Failed to launch bot:', error);

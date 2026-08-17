@@ -3,7 +3,7 @@
 const { getSessionManager } = require('../sessionManager');
 const UserRepository = require('../../../infrastructure/database/sqlite/repositories/UserRepository');
 const BusinessRepository = require('../../../infrastructure/database/sqlite/repositories/BusinessRepository');
-const { getDashboardKeyboard } = require('../keyboards/dashboardKeyboard');
+const { getMainMenuKeyboard } = require('../keyboards/dashboardKeyboard');
 const { INDUSTRIES } = require('../../../config/industries');
 const logger = require('../../../shared/utils/logger');
 
@@ -54,8 +54,7 @@ async function startHandler(ctx) {
 
             message += `\n\n📊 **Select an option below to get started:**`;
 
-            // Get industry-specific keyboard
-            const keyboard = getDashboardKeyboard(business ? business.industry : 'RETAIL');
+            const keyboard = getMainMenuKeyboard(business ? business.industry : 'RETAIL');
 
             await ctx.reply(message, {
                 parse_mode: 'Markdown',
@@ -64,7 +63,6 @@ async function startHandler(ctx) {
             return;
         }
 
-        // Check for ongoing session
         const session = sessionManager.getSession(telegramId);
         if (session && session.state !== 'IDLE') {
             await ctx.reply(
@@ -74,7 +72,6 @@ async function startHandler(ctx) {
             return;
         }
 
-        // Start registration
         sessionManager.createSession(telegramId, 'WAITING_FOR_NAME', { username });
         await ctx.reply(
             `🏢 Welcome to **AI CFO ENTERPRISE**!\n\n` +
@@ -106,9 +103,12 @@ async function helpHandler(ctx) {
         helpMessage += `/login - Login to your account\n`;
         helpMessage += `/dashboard - View your dashboard\n`;
         helpMessage += `/sale - Record a sale\n`;
+        helpMessage += `/income - Record income\n`;
+        helpMessage += `/expense - Record expense\n`;
         helpMessage += `/inventory - Manage inventory\n`;
-        helpMessage += `/inventory list - List all items\n`;
-        helpMessage += `/inventory low - View low stock\n`;
+        helpMessage += `/debtors - Manage debtors\n`;
+        helpMessage += `/creditors - Manage creditors\n`;
+        helpMessage += `/reports - Generate reports\n`;
         helpMessage += `/help - Show this message\n`;
     } else {
         helpMessage += `\nType /start to register your business.`;

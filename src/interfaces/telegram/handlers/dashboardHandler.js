@@ -9,7 +9,7 @@ const ExpenseRepository = require('../../../infrastructure/database/sqlite/repos
 const InventoryRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryRepository');
 const DebtorRepository = require('../../../infrastructure/database/sqlite/repositories/DebtorRepository');
 const CreditorRepository = require('../../../infrastructure/database/sqlite/repositories/CreditorRepository');
-const { getDashboardKeyboard } = require('../keyboards/dashboardKeyboard');
+const { getMainMenuKeyboard } = require('../keyboards/dashboardKeyboard');
 const { INDUSTRIES } = require('../../../config/industries');
 const logger = require('../../../shared/utils/logger');
 
@@ -122,7 +122,7 @@ async function dashboardHandler(ctx) {
 
         message += `\n📊 **Select an option below to get started:**`;
 
-        const keyboard = getDashboardKeyboard(business.industry);
+        const keyboard = getMainMenuKeyboard(business.industry);
 
         await ctx.reply(message, {
             parse_mode: 'Markdown',
