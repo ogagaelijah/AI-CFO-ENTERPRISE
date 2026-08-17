@@ -5,6 +5,7 @@ const UserRepository = require('../../../infrastructure/database/sqlite/reposito
 const CreditorRepository = require('../../../infrastructure/database/sqlite/repositories/CreditorRepository');
 const GetCreditorsUseCase = require('../../../application/useCases/creditors/GetCreditorsUseCase');
 const RecordCreditorPaymentUseCase = require('../../../application/useCases/creditors/RecordCreditorPaymentUseCase');
+const { getCreditorKeyboard } = require('../keyboards/dashboardKeyboard');
 const logger = require('../../../shared/utils/logger');
 
 const sessionManager = getSessionManager();
@@ -38,11 +39,11 @@ async function creditorHandler(ctx) {
             case 'CREDITOR_WAITING_AMOUNT':
                 await handleCreditorAmount(ctx, telegramId, user);
                 break;
-            case 'CREDITOR_WAITING_PAYMENT_ID':
-                await handleCreditorPaymentId(ctx, telegramId, user);
-                break;
             case 'CREDITOR_WAITING_PAYMENT_AMOUNT':
                 await handleCreditorPaymentAmount(ctx, telegramId, user);
+                break;
+            case 'CREDITOR_WAITING_CONFIRMATION':
+                await handleCreditorConfirmation(ctx, telegramId, user);
                 break;
             default:
                 await showCreditorMenu(ctx, telegramId, user);
@@ -81,15 +82,19 @@ async function showCreditorMenu(ctx, telegramId, user) {
         message += `✅ No active creditors.\n\n`;
     }
 
-    message += `**Commands:**\n` +
-        `/creditors add - Add new creditor\n` +
-        `/creditors pay - Record payment\n` +
-        `/creditors list - View all creditors\n` +
-        `/creditors overdue - View overdue creditors`;
+    message += `Select an option below:`;
 
-    await ctx.reply(message);
+    const keyboard = getCreditorKeyboard();
+
+    await ctx.reply(message, {
+        parse_mode: 'Markdown',
+        ...keyboard,
+    });
 }
 
+// =============================================
+// ADD CREDITOR FLOW
+// =============================================
 async function handleCreditorName(ctx, telegramId, user) {
     const text = ctx.message.text.trim();
 
@@ -119,107 +124,169 @@ async function handleCreditorAmount(ctx, telegramId, user) {
     const session = sessionManager.getSession(telegramId);
     const supplierName = session.data.supplierName;
 
-    await creditorRepo.create({
-        user_id: user.id,
-        supplier_name: supplierName,
-        total_owed: amount,
-        balance_remaining: amount,
-        status: 'ACTIVE',
+    // ✅ Show confirmation before saving
+    sessionManager.setData(telegramId, {
+        ...session.data,
+        supplierName,
+        amount,
+        pendingAction: 'add_creditor'
     });
-
-    sessionManager.clearSession(telegramId);
+    sessionManager.setState(telegramId, 'CREDITOR_WAITING_CONFIRMATION');
 
     await ctx.reply(
-        `✅ **Creditor Added Successfully!**\n\n` +
+        `📋 **Confirm Creditor Details**\n\n` +
         `🏢 Supplier: ${supplierName}\n` +
-        `💰 Amount: ₦${amount.toLocaleString()}\n` +
-        `🔴 Balance: ₦${amount.toLocaleString()}\n\n` +
-        `📋 Use /creditors to view all creditors.`
+        `💰 Amount: ₦${amount.toLocaleString()}\n\n` +
+        `Reply with **YES** to confirm or **NO** to cancel.`
     );
 }
 
-async function handleCreditorPaymentId(ctx, telegramId, user) {
-    const creditors = await getCreditorsUseCase.execute(user.id, 'active');
+// =============================================
+// CREDITOR CONFIRMATION HANDLER
+// =============================================
+async function handleCreditorConfirmation(ctx, telegramId, user) {
+    const text = ctx.message.text.trim().toUpperCase();
+    const session = sessionManager.getSession(telegramId);
 
-    if (creditors.length === 0) {
-        await ctx.reply('✅ No active creditors to make payments to.');
+    if (text === 'YES') {
+        // ✅ Save the creditor
+        if (session.data.pendingAction === 'add_creditor') {
+            await creditorRepo.create({
+                user_id: user.id,
+                supplier_name: session.data.supplierName,
+                total_owed: session.data.amount,
+                balance_remaining: session.data.amount,
+                status: 'ACTIVE',
+            });
+
+            sessionManager.clearSession(telegramId);
+
+            await ctx.reply(
+                `✅ **Creditor Added Successfully!**\n\n` +
+                `🏢 Supplier: ${session.data.supplierName}\n` +
+                `💰 Amount: ₦${session.data.amount.toLocaleString()}\n` +
+                `🔴 Balance: ₦${session.data.amount.toLocaleString()}\n\n` +
+                `Select an option below:`,
+                { ...getCreditorKeyboard() }
+            );
+        } else if (session.data.pendingAction === 'record_payment') {
+            // ✅ Record the payment
+            try {
+                const result = await recordPaymentUseCase.execute({
+                    creditorId: session.data.creditorId,
+                    amount: session.data.amountPaid,
+                });
+
+                sessionManager.clearSession(telegramId);
+
+                await ctx.reply(
+                    `✅ **Payment Recorded Successfully!**\n\n` +
+                    `🏢 Supplier: ${result.supplier_name}\n` +
+                    `💰 Paid: ₦${session.data.amountPaid.toLocaleString()}\n` +
+                    `🔴 Remaining: ₦${result.balance_remaining.toLocaleString()}\n\n` +
+                    `Select an option below:`,
+                    { ...getCreditorKeyboard() }
+                );
+
+            } catch (error) {
+                logger.error('Creditor payment error:', error);
+                await ctx.reply(`❌ Failed to record payment: ${error.message}`);
+            }
+        }
+    } else if (text === 'NO') {
         sessionManager.clearSession(telegramId);
-        return;
+        await ctx.reply(
+            `❌ **Operation Cancelled.**\n\nSelect an option below:`,
+            { ...getCreditorKeyboard() }
+        );
+    } else {
+        await ctx.reply('⚠️ Please reply with **YES** or **NO**.');
     }
-
-    let message = `💰 **Record Payment to Creditor**\n\nSelect a creditor by ID:\n\n`;
-    for (const creditor of creditors) {
-        message += `🆔 ${creditor.id}: ${creditor.supplier_name} - ₦${creditor.balance_remaining.toLocaleString()}\n`;
-    }
-
-    message += `\nReply with the creditor ID to proceed.`;
-
-    sessionManager.setData(telegramId, { creditors: creditors });
-    sessionManager.setState(telegramId, 'CREDITOR_WAITING_PAYMENT_AMOUNT');
-
-    await ctx.reply(message);
 }
 
+// =============================================
+// RECORD PAYMENT FLOW
+// =============================================
 async function handleCreditorPaymentAmount(ctx, telegramId, user) {
+    const session = sessionManager.getSession(telegramId);
     const text = ctx.message.text.trim();
-    const creditorId = parseInt(text);
 
-    if (isNaN(creditorId) || creditorId <= 0) {
-        await ctx.reply('⚠️ Please enter a valid creditor ID.');
+    // If we haven't selected a creditor yet, the text is the creditor ID
+    if (!session.data.creditorId) {
+        const creditorId = parseInt(text);
+        if (isNaN(creditorId) || creditorId <= 0) {
+            await ctx.reply('⚠️ Please enter a valid creditor ID.');
+            return;
+        }
+
+        const creditor = await creditorRepo.findById(creditorId);
+        if (!creditor || creditor.user_id !== user.id) {
+            await ctx.reply('❌ Creditor not found.');
+            return;
+        }
+
+        if (creditor.balance_remaining <= 0) {
+            await ctx.reply(`✅ ${creditor.supplier_name} has already been fully paid.`);
+            await ctx.reply(`Select an option below:`, { ...getCreditorKeyboard() });
+            sessionManager.clearSession(telegramId);
+            return;
+        }
+
+        // Store the creditor ID and ask for payment amount
+        sessionManager.setData(telegramId, { creditorId: creditorId, creditor: creditor });
+        await ctx.reply(
+            `💰 **Payment to ${creditor.supplier_name}**\n` +
+            `Outstanding: ₦${creditor.balance_remaining.toLocaleString()}\n\n` +
+            `Enter the **amount paid**:`
+        );
         return;
     }
 
-    const creditor = await creditorRepo.findById(creditorId);
-    if (!creditor || creditor.user_id !== user.id) {
-        await ctx.reply('❌ Creditor not found.');
-        sessionManager.setState(telegramId, 'CREDITOR_WAITING_PAYMENT_ID');
-        return;
-    }
-
-    await ctx.reply(
-        `💰 **Payment to ${creditor.supplier_name}**\n` +
-        `Outstanding: ₦${creditor.balance_remaining.toLocaleString()}\n\n` +
-        `Enter the **amount paid**:`
-    );
-
-    sessionManager.setData(telegramId, { creditorId: creditorId });
-    sessionManager.setState(telegramId, 'CREDITOR_WAITING_PAYMENT_AMOUNT');
-}
-
-async function handleCreditorPaymentAmount2(ctx, telegramId, user) {
-    const text = ctx.message.text.trim().replace(/,/g, '');
-    const amount = parseFloat(text);
-
-    if (isNaN(amount) || amount <= 0) {
+    // We have a creditor ID, so this is the payment amount
+    const amountPaid = parseFloat(text.replace(/,/g, ''));
+    if (isNaN(amountPaid) || amountPaid <= 0) {
         await ctx.reply('⚠️ Please enter a valid positive amount.');
         return;
     }
 
-    const session = sessionManager.getSession(telegramId);
     const creditorId = session.data.creditorId;
+    const creditor = await creditorRepo.findById(creditorId);
 
-    try {
-        const result = await recordPaymentUseCase.execute({
-            creditorId: creditorId,
-            amount: amount,
-        });
-
+    if (!creditor || creditor.user_id !== user.id) {
+        await ctx.reply('❌ Creditor not found.');
         sessionManager.clearSession(telegramId);
-
-        await ctx.reply(
-            `✅ **Payment Recorded Successfully!**\n\n` +
-            `🏢 Supplier: ${result.supplier_name}\n` +
-            `💰 Paid: ₦${amount.toLocaleString()}\n` +
-            `🔴 Remaining: ₦${result.balance_remaining.toLocaleString()}\n\n` +
-            `📋 Use /creditors to view all creditors.`
-        );
-
-    } catch (error) {
-        logger.error('Creditor payment error:', error);
-        await ctx.reply(`❌ Failed to record payment: ${error.message}`);
+        return;
     }
+
+    if (amountPaid > creditor.balance_remaining) {
+        await ctx.reply(
+            `⚠️ Payment amount (₦${amountPaid.toLocaleString()}) exceeds outstanding balance (₦${creditor.balance_remaining.toLocaleString()}).`
+        );
+        return;
+    }
+
+    // ✅ Show confirmation before saving
+    sessionManager.setData(telegramId, {
+        ...session.data,
+        creditorId,
+        creditor,
+        amountPaid,
+        pendingAction: 'record_payment'
+    });
+    sessionManager.setState(telegramId, 'CREDITOR_WAITING_CONFIRMATION');
+
+    await ctx.reply(
+        `📋 **Confirm Payment**\n\n` +
+        `🏢 Supplier: ${creditor.supplier_name}\n` +
+        `💰 Amount: ₦${amountPaid.toLocaleString()}\n` +
+        `🔴 Remaining After Payment: ₦${(creditor.balance_remaining - amountPaid).toLocaleString()}\n\n` +
+        `Reply with **YES** to confirm or **NO** to cancel.`
+    );
 }
 
+// =============================================
+// LIST CREDITORS
+// =============================================
 async function listCreditors(ctx) {
     const telegramId = ctx.from.id;
     const user = await userRepo.findByTelegramId(telegramId);
@@ -232,6 +299,7 @@ async function listCreditors(ctx) {
 
     if (creditors.length === 0) {
         await ctx.reply('📋 **No creditors found.**');
+        await ctx.reply(`Select an option below:`, { ...getCreditorKeyboard() });
         return;
     }
 
@@ -246,8 +314,12 @@ async function listCreditors(ctx) {
     }
 
     await ctx.reply(message);
+    await ctx.reply(`Select an option below:`, { ...getCreditorKeyboard() });
 }
 
+// =============================================
+// OVERDUE CREDITORS
+// =============================================
 async function overdueCreditors(ctx) {
     const telegramId = ctx.from.id;
     const user = await userRepo.findByTelegramId(telegramId);
@@ -256,20 +328,29 @@ async function overdueCreditors(ctx) {
         return;
     }
 
-    const creditors = await getCreditorsUseCase.execute(user.id, 'overdue');
+    try {
+        const creditors = await creditorRepo.findOverdue(user.id);
 
-    if (creditors.length === 0) {
-        await ctx.reply('✅ **No overdue creditors!**');
-        return;
+        if (creditors.length === 0) {
+            await ctx.reply('✅ **No overdue creditors!**');
+            await ctx.reply(`Select an option below:`, { ...getCreditorKeyboard() });
+            return;
+        }
+
+        let message = `🔴 **Overdue Creditors**\n\n`;
+        for (const creditor of creditors) {
+            message += `🏢 ${creditor.supplier_name}\n`;
+            message += `   💰 ₦${creditor.balance_remaining.toLocaleString()}\n\n`;
+        }
+
+        await ctx.reply(message);
+        await ctx.reply(`Select an option below:`, { ...getCreditorKeyboard() });
+
+    } catch (error) {
+        logger.error('Overdue creditors error:', error);
+        await ctx.reply('❌ Failed to load overdue creditors. Please try again.');
+        await ctx.reply(`Select an option below:`, { ...getCreditorKeyboard() });
     }
-
-    let message = `🔴 **Overdue Creditors**\n\n`;
-    for (const creditor of creditors) {
-        message += `🏢 ${creditor.supplier_name}\n`;
-        message += `   💰 ₦${creditor.balance_remaining.toLocaleString()}\n\n`;
-    }
-
-    await ctx.reply(message);
 }
 
 module.exports = {

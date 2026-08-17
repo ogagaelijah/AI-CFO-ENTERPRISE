@@ -167,6 +167,10 @@ function getReportKeyboard() {
             Markup.button.callback('📋 Executive', 'report_executive'),
         ],
         [
+            Markup.button.callback('📄 Export PDF', 'report_pdf'),
+            Markup.button.callback('📊 Export Excel', 'report_excel'),
+        ],
+        [
             Markup.button.callback('🔙 Back to Main', 'menu_back'),
         ],
     ]);

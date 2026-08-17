@@ -6,6 +6,7 @@ const SaleRepository = require('../../../infrastructure/database/sqlite/reposito
 const InventoryRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryRepository');
 const DebtorRepository = require('../../../infrastructure/database/sqlite/repositories/DebtorRepository');
 const RecordSaleUseCase = require('../../../application/useCases/sales/RecordSaleUseCase');
+const { getMainMenuKeyboard } = require('../keyboards/dashboardKeyboard');
 const logger = require('../../../shared/utils/logger');
 
 const sessionManager = getSessionManager();
@@ -18,7 +19,9 @@ const recordSaleUseCase = new RecordSaleUseCase(saleRepo, inventoryRepo, debtorR
 async function saleHandler(ctx) {
     try {
         const telegramId = ctx.from.id;
-        const session = sessionManager.getSession(telegramId);
+        
+        console.log('🔍 saleHandler called for telegramId:', telegramId);
+        
         const user = await userRepo.findByTelegramId(telegramId);
 
         if (!user) {
@@ -26,7 +29,20 @@ async function saleHandler(ctx) {
             return;
         }
 
-        const state = session ? session.state : null;
+        let session = sessionManager.getSession(telegramId);
+        console.log('🔍 Current session:', session);
+
+        // ✅ If no session or not in sale flow, start the sale flow
+        if (!session || !session.state || !session.state.startsWith('SALE_WAITING_')) {
+            console.log('🔍 Starting new sale flow');
+            await startSaleFlow(ctx, telegramId);
+            return;
+        }
+
+        const state = session.state;
+        const data = session.data || {};
+
+        console.log('🔍 Handling sale state:', state);
 
         switch (state) {
             case 'SALE_WAITING_ITEM':
@@ -47,18 +63,24 @@ async function saleHandler(ctx) {
             case 'SALE_WAITING_PARTIAL_AMOUNT':
                 await handlePartialAmount(ctx, telegramId, user);
                 break;
+            case 'SALE_WAITING_CONFIRMATION':
+                await handleSaleConfirmation(ctx, telegramId, user);
+                break;
             default:
+                console.log('🔍 Unknown state, starting new sale flow');
                 await startSaleFlow(ctx, telegramId);
                 break;
         }
 
     } catch (error) {
+        console.error('❌ Sale handler error:', error);
         logger.error('Sale handler error:', error);
         await ctx.reply('❌ Something went wrong. Please try again.');
     }
 }
 
 async function startSaleFlow(ctx, telegramId) {
+    console.log('🔍 Creating new sale session');
     sessionManager.createSession(telegramId, 'SALE_WAITING_ITEM', {});
     await ctx.reply(
         `📝 **Record a Sale**\n\n` +
@@ -68,7 +90,20 @@ async function startSaleFlow(ctx, telegramId) {
 }
 
 async function handleSaleItem(ctx, telegramId, user) {
-    const itemName = ctx.message.text.trim();
+    // ✅ Check if this is a text message or callback
+    let itemName = '';
+    
+    if (ctx.message && ctx.message.text) {
+        itemName = ctx.message.text.trim();
+    } else if (ctx.callbackQuery && ctx.callbackQuery.data) {
+        // If it's a callback, we should start the flow
+        await startSaleFlow(ctx, telegramId);
+        return;
+    } else {
+        await ctx.reply('Please enter the item name:');
+        return;
+    }
+
     const session = sessionManager.getSession(telegramId);
 
     if (!itemName || itemName.length < 2) {
@@ -76,7 +111,33 @@ async function handleSaleItem(ctx, telegramId, user) {
         return;
     }
 
-    // Check if item exists in inventory
+    // ✅ Check if this is a pending "YES"/"NO" response
+    if (session.data.pendingCheck) {
+        if (itemName.toUpperCase() === 'YES') {
+            // User wants to continue without inventory
+            sessionManager.setData(telegramId, {
+                ...session.data,
+                pendingCheck: false,
+                skipInventory: true
+            });
+            sessionManager.setState(telegramId, 'SALE_WAITING_QUANTITY');
+            await ctx.reply(`Enter the **quantity** to sell:`);
+            return;
+        } else if (itemName.toUpperCase() === 'NO') {
+            // User wants to cancel - clear session and return to main menu
+            sessionManager.clearSession(telegramId);
+            const businesses = await new (require('../../../infrastructure/database/sqlite/repositories/BusinessRepository'))().findByUserId(user.id);
+            const business = businesses.length > 0 ? businesses[0] : null;
+            const industry = business ? business.industry : 'RETAIL';
+            await ctx.reply(`❌ Sale cancelled.\n\n📊 **Main Menu**\n\nSelect an option below:`, { ...getMainMenuKeyboard(industry) });
+            return;
+        } else {
+            await ctx.reply('⚠️ Please reply with **YES** or **NO**.');
+            return;
+        }
+    }
+
+    // ✅ Check if item exists in inventory
     const inventoryItem = await inventoryRepo.findByName(user.id, itemName);
 
     if (!inventoryItem) {
@@ -85,7 +146,15 @@ async function handleSaleItem(ctx, telegramId, user) {
             `You can still record this sale, but inventory will not be updated.\n` +
             `Continue? Type **YES** or **NO**.`
         );
-        sessionManager.setData(telegramId, { ...session.data, itemName, pendingCheck: true });
+        // Store the item name and set pendingCheck to true
+        sessionManager.setData(telegramId, { 
+            ...session.data, 
+            itemName, 
+            pendingCheck: true,
+            skipInventory: false
+        });
+        // Keep the state as SALE_WAITING_ITEM so the next response is handled correctly
+        sessionManager.setState(telegramId, 'SALE_WAITING_ITEM');
         return;
     }
 
@@ -95,6 +164,12 @@ async function handleSaleItem(ctx, telegramId, user) {
             `Available: 0\n\n` +
             `Please add stock first using /inventory.`
         );
+        // Clear session and return to main menu
+        sessionManager.clearSession(telegramId);
+        const businesses = await new (require('../../../infrastructure/database/sqlite/repositories/BusinessRepository'))().findByUserId(user.id);
+        const business = businesses.length > 0 ? businesses[0] : null;
+        const industry = business ? business.industry : 'RETAIL';
+        await ctx.reply(`📊 **Main Menu**\n\nSelect an option below:`, { ...getMainMenuKeyboard(industry) });
         return;
     }
 
@@ -102,7 +177,8 @@ async function handleSaleItem(ctx, telegramId, user) {
         ...session.data,
         itemName,
         inventoryId: inventoryItem.id,
-        currentStock: inventoryItem.quantity
+        currentStock: inventoryItem.quantity,
+        pendingCheck: false
     });
     sessionManager.setState(telegramId, 'SALE_WAITING_QUANTITY');
 
@@ -114,28 +190,17 @@ async function handleSaleItem(ctx, telegramId, user) {
 }
 
 async function handleSaleQuantity(ctx, telegramId, user) {
-    const text = ctx.message.text.trim();
-    const session = sessionManager.getSession(telegramId);
-
-    if (session.data.pendingCheck) {
-        if (text.toUpperCase() === 'YES') {
-            sessionManager.setData(telegramId, {
-                ...session.data,
-                pendingCheck: false,
-                skipInventory: true
-            });
-            sessionManager.setState(telegramId, 'SALE_WAITING_QUANTITY');
-            await ctx.reply(`Enter the **quantity** to sell:`);
-            return;
-        } else if (text.toUpperCase() === 'NO') {
-            sessionManager.clearSession(telegramId);
-            await ctx.reply('❌ Sale cancelled.');
-            return;
-        } else {
-            await ctx.reply('⚠️ Please reply with **YES** or **NO**.');
-            return;
-        }
+    // ✅ Check if this is a text message
+    let text = '';
+    
+    if (ctx.message && ctx.message.text) {
+        text = ctx.message.text.trim();
+    } else {
+        await ctx.reply('Please enter the quantity:');
+        return;
     }
+
+    const session = sessionManager.getSession(telegramId);
 
     const quantity = parseInt(text);
     if (isNaN(quantity) || quantity <= 0) {
@@ -143,6 +208,7 @@ async function handleSaleQuantity(ctx, telegramId, user) {
         return;
     }
 
+    // Check if quantity exceeds stock (if not skipping)
     if (!session.data.skipInventory && session.data.currentStock < quantity) {
         await ctx.reply(
             `⚠️ Insufficient stock!\n` +
@@ -164,7 +230,16 @@ async function handleSaleQuantity(ctx, telegramId, user) {
 }
 
 async function handleSalePrice(ctx, telegramId, user) {
-    const text = ctx.message.text.trim().replace(/,/g, '');
+    // ✅ Check if this is a text message
+    let text = '';
+    
+    if (ctx.message && ctx.message.text) {
+        text = ctx.message.text.trim().replace(/,/g, '');
+    } else {
+        await ctx.reply('Please enter the unit price:');
+        return;
+    }
+
     const session = sessionManager.getSession(telegramId);
     const price = parseFloat(text);
 
@@ -188,7 +263,16 @@ async function handleSalePrice(ctx, telegramId, user) {
 }
 
 async function handleSaleCustomer(ctx, telegramId, user) {
-    const text = ctx.message.text.trim();
+    // ✅ Check if this is a text message
+    let text = '';
+    
+    if (ctx.message && ctx.message.text) {
+        text = ctx.message.text.trim();
+    } else {
+        await ctx.reply('Please enter the customer name (or type "skip"):');
+        return;
+    }
+
     const session = sessionManager.getSession(telegramId);
     const customer = text.toLowerCase() === 'skip' ? null : text;
 
@@ -207,11 +291,28 @@ async function handleSaleCustomer(ctx, telegramId, user) {
 }
 
 async function handleSalePayment(ctx, telegramId, user) {
-    const text = ctx.message.text.trim();
+    let text = '';
+    
+    if (ctx.message && ctx.message.text) {
+        text = ctx.message.text.trim();
+    } else if (ctx.callbackQuery && ctx.callbackQuery.data) {
+        text = ctx.callbackQuery.data;
+    } else {
+        const session = sessionManager.getSession(telegramId);
+        await ctx.reply(
+            `💳 **Payment Status:**\n` +
+            `1️⃣ PAID - Paid in full\n` +
+            `2️⃣ PARTIAL - Paid partially\n` +
+            `3️⃣ UNPAID - Not paid yet\n\n` +
+            `Reply with **1**, **2**, or **3**:`
+        );
+        return;
+    }
+
     const session = sessionManager.getSession(telegramId);
 
     if (text === '1') {
-        await completeSale(ctx, telegramId, user, 'PAID', session.data.totalPrice, 0);
+        await showSaleConfirmation(ctx, telegramId, user, 'PAID', session.data.totalPrice, 0);
     } else if (text === '2') {
         sessionManager.setState(telegramId, 'SALE_WAITING_PARTIAL_AMOUNT');
         await ctx.reply(
@@ -219,14 +320,26 @@ async function handleSalePayment(ctx, telegramId, user) {
             `Total: ₦${session.data.totalPrice.toLocaleString()}`
         );
     } else if (text === '3') {
-        await completeSale(ctx, telegramId, user, 'UNPAID', 0, session.data.totalPrice);
+        await showSaleConfirmation(ctx, telegramId, user, 'UNPAID', 0, session.data.totalPrice);
     } else {
         await ctx.reply('⚠️ Please reply with **1**, **2**, or **3**.');
     }
 }
 
 async function handlePartialAmount(ctx, telegramId, user) {
-    const text = ctx.message.text.trim().replace(/,/g, '');
+    let text = '';
+    
+    if (ctx.message && ctx.message.text) {
+        text = ctx.message.text.trim().replace(/,/g, '');
+    } else {
+        const session = sessionManager.getSession(telegramId);
+        await ctx.reply(
+            `💰 Enter the **amount paid** by the customer:\n` +
+            `Total: ₦${session.data.totalPrice.toLocaleString()}`
+        );
+        return;
+    }
+
     const session = sessionManager.getSession(telegramId);
     const amountPaid = parseFloat(text);
 
@@ -238,53 +351,116 @@ async function handlePartialAmount(ctx, telegramId, user) {
     }
 
     const balanceRemaining = session.data.totalPrice - amountPaid;
-    await completeSale(ctx, telegramId, user, 'PARTIAL', amountPaid, balanceRemaining);
+    await showSaleConfirmation(ctx, telegramId, user, 'PARTIAL', amountPaid, balanceRemaining);
 }
 
-async function completeSale(ctx, telegramId, user, paymentStatus, amountPaid, balanceRemaining) {
+async function showSaleConfirmation(ctx, telegramId, user, paymentStatus, amountPaid, balanceRemaining) {
     const session = sessionManager.getSession(telegramId);
 
-    try {
-        const result = await recordSaleUseCase.execute({
-            userId: user.id,
-            itemName: session.data.itemName,
-            quantity: session.data.quantity,
-            unitPrice: session.data.unitPrice,
-            customerName: session.data.customer,
-            paymentStatus: paymentStatus,
-            amountPaid: amountPaid,
-            skipInventory: session.data.skipInventory || false,
-            inventoryId: session.data.inventoryId || null,
-        });
+    let message =
+        `📋 **Confirm Sale Details**\n\n` +
+        `📦 Item: ${session.data.itemName}\n` +
+        `🔢 Quantity: ${session.data.quantity}\n` +
+        `💰 Total: ₦${session.data.totalPrice.toLocaleString()}\n` +
+        `👤 Customer: ${session.data.customer || 'N/A'}\n` +
+        `💳 Payment: ${paymentStatus}\n`;
 
-        sessionManager.clearSession(telegramId);
+    if (paymentStatus === 'PAID') {
+        message += `✅ Paid in full: ₦${amountPaid.toLocaleString()}\n`;
+    } else if (paymentStatus === 'PARTIAL') {
+        message += `💵 Paid: ₦${amountPaid.toLocaleString()}\n`;
+        message += `🔴 Remaining: ₦${balanceRemaining.toLocaleString()}\n`;
+    } else {
+        message += `🔴 Outstanding: ₦${balanceRemaining.toLocaleString()}\n`;
+    }
 
-        let message =
-            `✅ **Sale Recorded Successfully!**\n\n` +
-            `📦 Item: ${session.data.itemName}\n` +
-            `🔢 Quantity: ${session.data.quantity}\n` +
-            `💰 Total: ₦${session.data.totalPrice.toLocaleString()}\n` +
-            `👤 Customer: ${session.data.customer || 'N/A'}\n` +
-            `💳 Payment: ${paymentStatus}\n`;
+    message += `\nReply with **YES** to confirm or **NO** to cancel.`;
 
-        if (paymentStatus === 'PAID') {
-            message += `✅ Paid in full: ₦${amountPaid.toLocaleString()}\n`;
-        } else if (paymentStatus === 'PARTIAL') {
-            message += `💵 Paid: ₦${amountPaid.toLocaleString()}\n`;
-            message += `🔴 Remaining: ₦${balanceRemaining.toLocaleString()}\n`;
-            message += `👥 Added to Debtors Register\n`;
-        } else {
-            message += `🔴 Outstanding: ₦${balanceRemaining.toLocaleString()}\n`;
-            message += `👥 Added to Debtors Register\n`;
+    sessionManager.setData(telegramId, {
+        ...session.data,
+        paymentStatus,
+        amountPaid,
+        balanceRemaining,
+        pendingAction: 'record_sale'
+    });
+    sessionManager.setState(telegramId, 'SALE_WAITING_CONFIRMATION');
+
+    await ctx.reply(message);
+}
+
+async function handleSaleConfirmation(ctx, telegramId, user) {
+    let text = '';
+    
+    if (ctx.message && ctx.message.text) {
+        text = ctx.message.text.trim().toUpperCase();
+    } else {
+        await ctx.reply('⚠️ Please reply with **YES** or **NO**.');
+        return;
+    }
+
+    const session = sessionManager.getSession(telegramId);
+
+    if (text === 'YES') {
+        try {
+            const result = await recordSaleUseCase.execute({
+                userId: user.id,
+                itemName: session.data.itemName,
+                quantity: session.data.quantity,
+                unitPrice: session.data.unitPrice,
+                customerName: session.data.customer,
+                paymentStatus: session.data.paymentStatus,
+                amountPaid: session.data.amountPaid,
+                skipInventory: session.data.skipInventory || false,
+                inventoryId: session.data.inventoryId || null,
+            });
+
+            sessionManager.clearSession(telegramId);
+
+            const businesses = await new (require('../../../infrastructure/database/sqlite/repositories/BusinessRepository'))().findByUserId(user.id);
+            const business = businesses.length > 0 ? businesses[0] : null;
+            const industry = business ? business.industry : 'RETAIL';
+
+            let message =
+                `✅ **Sale Recorded Successfully!**\n\n` +
+                `📦 Item: ${session.data.itemName}\n` +
+                `🔢 Quantity: ${session.data.quantity}\n` +
+                `💰 Total: ₦${session.data.totalPrice.toLocaleString()}\n` +
+                `👤 Customer: ${session.data.customer || 'N/A'}\n` +
+                `💳 Payment: ${session.data.paymentStatus}\n`;
+
+            if (session.data.paymentStatus === 'PAID') {
+                message += `✅ Paid in full: ₦${session.data.amountPaid.toLocaleString()}\n`;
+            } else if (session.data.paymentStatus === 'PARTIAL') {
+                message += `💵 Paid: ₦${session.data.amountPaid.toLocaleString()}\n`;
+                message += `🔴 Remaining: ₦${session.data.balanceRemaining.toLocaleString()}\n`;
+                message += `👥 Added to Debtors Register\n`;
+            } else {
+                message += `🔴 Outstanding: ₦${session.data.balanceRemaining.toLocaleString()}\n`;
+                message += `👥 Added to Debtors Register\n`;
+            }
+
+            message += `\n📊 **Select an option below to continue:**`;
+
+            await ctx.reply(message, {
+                parse_mode: 'Markdown',
+                ...getMainMenuKeyboard(industry)
+            });
+
+        } catch (error) {
+            console.error('❌ Sale complete error:', error);
+            await ctx.reply(`❌ Failed to record sale: ${error.message}`);
         }
-
-        message += `\n📊 Use /dashboard to view your business summary.`;
-
-        await ctx.reply(message);
-
-    } catch (error) {
-        logger.error('Sale complete error:', error);
-        await ctx.reply(`❌ Failed to record sale: ${error.message}`);
+    } else if (text === 'NO') {
+        sessionManager.clearSession(telegramId);
+        const businesses = await new (require('../../../infrastructure/database/sqlite/repositories/BusinessRepository'))().findByUserId(user.id);
+        const business = businesses.length > 0 ? businesses[0] : null;
+        const industry = business ? business.industry : 'RETAIL';
+        await ctx.reply(
+            `❌ **Sale Cancelled.**\n\n📊 **Main Menu**\n\nSelect an option below:`,
+            { ...getMainMenuKeyboard(industry) }
+        );
+    } else {
+        await ctx.reply('⚠️ Please reply with **YES** or **NO**.');
     }
 }
 

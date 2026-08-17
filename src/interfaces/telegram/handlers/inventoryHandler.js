@@ -4,12 +4,16 @@ const { getSessionManager } = require('../sessionManager');
 const UserRepository = require('../../../infrastructure/database/sqlite/repositories/UserRepository');
 const InventoryRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryRepository');
 const AddStockUseCase = require('../../../application/useCases/inventory/AddStockUseCase');
+const { getInventoryKeyboard, getBackKeyboard } = require('../keyboards/dashboardKeyboard');
 const logger = require('../../../shared/utils/logger');
 
 const sessionManager = getSessionManager();
 const userRepo = new UserRepository();
 const inventoryRepo = new InventoryRepository();
 const addStockUseCase = new AddStockUseCase(inventoryRepo);
+
+// ✅ Low stock threshold
+const LOW_STOCK_THRESHOLD = 5;
 
 async function inventoryHandler(ctx) {
     try {
@@ -42,6 +46,9 @@ async function inventoryHandler(ctx) {
             case 'INVENTORY_WAITING_SELLING_PRICE':
                 await handleSellingPrice(ctx, telegramId, user);
                 break;
+            case 'INVENTORY_WAITING_CONFIRMATION':
+                await handleInventoryConfirmation(ctx, telegramId, user);
+                break;
             default:
                 await showInventoryMenu(ctx, telegramId, user);
                 break;
@@ -69,7 +76,7 @@ async function showInventoryMenu(ctx, telegramId, user) {
     if (inventoryItems.length > 0) {
         message += `**Your Items:**\n`;
         for (const item of inventoryItems.slice(0, 10)) {
-            const status = item.quantity <= 0 ? '🚫' : item.quantity <= 5 ? '⚠️' : '✅';
+            const status = item.quantity <= 0 ? '🚫' : item.quantity <= LOW_STOCK_THRESHOLD ? '⚠️' : '✅';
             const profit = (item.selling_price || 0) - (item.cost_price || 0);
             const profitMargin = item.cost_price > 0 ? ((profit / item.cost_price) * 100).toFixed(1) : 0;
             message += `${status} **${item.item_name}**\n`;
@@ -85,15 +92,17 @@ async function showInventoryMenu(ctx, telegramId, user) {
             message += `... and ${inventoryItems.length - 10} more.\n\n`;
         }
     } else {
-        message += `✅ No items in inventory.\n`;
+        message += `✅ No items in inventory.\n\n`;
     }
 
-    message += `**Commands:**\n` +
-        `/inventory add - Add new item\n` +
-        `/inventory list - List all items\n` +
-        `/inventory low - View low stock`;
+    message += `Select an option below:`;
 
-    await ctx.reply(message);
+    const keyboard = getInventoryKeyboard();
+
+    await ctx.reply(message, {
+        parse_mode: 'Markdown',
+        ...keyboard,
+    });
 }
 
 async function handleAddItem(ctx, telegramId, user) {
@@ -104,7 +113,6 @@ async function handleAddItem(ctx, telegramId, user) {
         return;
     }
 
-    // Check if item already exists
     const existing = await inventoryRepo.findByName(user.id, text);
 
     if (existing) {
@@ -112,7 +120,8 @@ async function handleAddItem(ctx, telegramId, user) {
             `⚠️ "${text}" already exists in inventory.\n` +
             `Current stock: ${existing.quantity}\n` +
             `Cost Price: ₦${(existing.cost_price || 0).toLocaleString()}\n` +
-            `Selling Price: ₦${(existing.selling_price || 0).toLocaleString()}`
+            `Selling Price: ₦${(existing.selling_price || 0).toLocaleString()}\n\n` +
+            `To add more stock, use the "Add Stock" button again.`
         );
         return;
     }
@@ -177,36 +186,86 @@ async function handleSellingPrice(ctx, telegramId, user) {
         return;
     }
 
-    try {
-        const result = await addStockUseCase.execute({
-            userId: user.id,
-            itemName: session.data.itemName,
-            quantity: session.data.quantity,
-            costPrice: session.data.costPrice,
-            sellingPrice: sellingPrice,
-        });
+    // ✅ Calculate totals for this batch
+    const totalCost = session.data.quantity * session.data.costPrice;
+    const totalSell = session.data.quantity * sellingPrice;
+    const totalProfit = totalSell - totalCost;
+    const profitMargin = session.data.costPrice > 0 ? ((sellingPrice - session.data.costPrice) / session.data.costPrice * 100).toFixed(1) : 0;
 
+    sessionManager.setData(telegramId, { 
+        ...session.data, 
+        sellingPrice,
+        totalCost,
+        totalSell,
+        totalProfit,
+        profitMargin,
+        pendingAction: 'add_stock'
+    });
+    sessionManager.setState(telegramId, 'INVENTORY_WAITING_CONFIRMATION');
+
+    await ctx.reply(
+        `📋 **Confirm Stock Addition**\n\n` +
+        `📦 Item: ${session.data.itemName}\n` +
+        `🔢 Quantity: ${session.data.quantity} units\n` +
+        `💰 Cost Price: ₦${session.data.costPrice.toLocaleString()} / unit\n` +
+        `💲 Selling Price: ₦${sellingPrice.toLocaleString()} / unit\n\n` +
+        `📊 **Batch Summary**\n` +
+        `   💰 Total Cost: ₦${totalCost.toLocaleString()}\n` +
+        `   💲 Total Value: ₦${totalSell.toLocaleString()}\n` +
+        `   📈 Potential Profit: ₦${totalProfit.toLocaleString()} (${profitMargin}% margin)\n\n` +
+        `Reply with **YES** to confirm or **NO** to cancel.`
+    );
+}
+
+async function handleInventoryConfirmation(ctx, telegramId, user) {
+    const text = ctx.message.text.trim().toUpperCase();
+    const session = sessionManager.getSession(telegramId);
+
+    if (text === 'YES') {
+        try {
+            const result = await addStockUseCase.execute({
+                userId: user.id,
+                itemName: session.data.itemName,
+                quantity: session.data.quantity,
+                costPrice: session.data.costPrice,
+                sellingPrice: session.data.sellingPrice,
+            });
+
+            // ✅ Clear session after successful addition
+            sessionManager.clearSession(telegramId);
+
+            await ctx.reply(
+                `✅ **Stock Added Successfully!**\n\n` +
+                `📦 Item: ${session.data.itemName}\n` +
+                `🔢 Quantity: ${session.data.quantity} units\n\n` +
+                `💰 Cost Price: ₦${session.data.costPrice.toLocaleString()} / unit\n` +
+                `💲 Selling Price: ₦${session.data.sellingPrice.toLocaleString()} / unit\n\n` +
+                `📊 **Batch Summary**\n` +
+                `   💰 Total Cost: ₦${session.data.totalCost.toLocaleString()}\n` +
+                `   💲 Total Value: ₦${session.data.totalSell.toLocaleString()}\n` +
+                `   📈 Potential Profit: ₦${session.data.totalProfit.toLocaleString()} (${session.data.profitMargin}% margin)\n\n` +
+                `Select an option below:`,
+                { ...getInventoryKeyboard() }
+            );
+
+        } catch (error) {
+            logger.error('Add stock error:', error);
+            await ctx.reply(`❌ Failed to add stock: ${error.message}`);
+        }
+    } else if (text === 'NO') {
         sessionManager.clearSession(telegramId);
-
-        const profit = sellingPrice - session.data.costPrice;
-        const profitMargin = session.data.costPrice > 0 ? ((profit / session.data.costPrice) * 100).toFixed(1) : 0;
-
         await ctx.reply(
-            `✅ **Item Added to Inventory!**\n\n` +
-            `📦 Item: ${session.data.itemName}\n` +
-            `🔢 Quantity: ${session.data.quantity}\n` +
-            `💰 Cost Price: ₦${session.data.costPrice.toLocaleString()}\n` +
-            `💲 Selling Price: ₦${sellingPrice.toLocaleString()}\n` +
-            `📈 Profit per unit: ₦${profit.toLocaleString()} (${profitMargin}% margin)\n\n` +
-            `📦 Use /inventory to view your inventory.`
+            `❌ **Stock Addition Cancelled.**\n\nSelect an option below:`,
+            { ...getInventoryKeyboard() }
         );
-
-    } catch (error) {
-        logger.error('Add stock error:', error);
-        await ctx.reply(`❌ Failed to add stock: ${error.message}`);
+    } else {
+        await ctx.reply('⚠️ Please reply with **YES** or **NO**.');
     }
 }
 
+// =============================================
+// LIST INVENTORY - Returns to submenu
+// =============================================
 async function listInventory(ctx) {
     const telegramId = ctx.from.id;
     const user = await userRepo.findByTelegramId(telegramId);
@@ -215,10 +274,14 @@ async function listInventory(ctx) {
         return;
     }
 
+    // ✅ Clear any existing session
+    sessionManager.clearSession(telegramId);
+
     const items = await inventoryRepo.findByUserId(user.id);
 
     if (items.length === 0) {
-        await ctx.reply('📦 **Inventory is empty.**\n\nAdd items using /inventory add');
+        await ctx.reply('📦 **Inventory is empty.**\n\nAdd items using the Inventory menu.');
+        await ctx.reply(`Select an option below:`, { ...getInventoryKeyboard() });
         return;
     }
 
@@ -227,7 +290,7 @@ async function listInventory(ctx) {
     let totalSellingValue = 0;
 
     for (const item of items) {
-        const status = item.quantity <= 0 ? '🚫' : item.quantity <= 5 ? '⚠️' : '✅';
+        const status = item.quantity <= 0 ? '🚫' : item.quantity <= LOW_STOCK_THRESHOLD ? '⚠️' : '✅';
         const profit = (item.selling_price || 0) - (item.cost_price || 0);
         totalCostValue += (item.quantity || 0) * (item.cost_price || 0);
         totalSellingValue += (item.quantity || 0) * (item.selling_price || 0);
@@ -248,8 +311,12 @@ async function listInventory(ctx) {
     message += `   📈 Potential Profit: ₦${(totalSellingValue - totalCostValue).toLocaleString()}`;
 
     await ctx.reply(message);
+    await ctx.reply(`Select an option below:`, { ...getInventoryKeyboard() });
 }
 
+// =============================================
+// LOW STOCK ALERT - Returns to submenu
+// =============================================
 async function lowStockAlert(ctx) {
     const telegramId = ctx.from.id;
     const user = await userRepo.findByTelegramId(telegramId);
@@ -258,14 +325,20 @@ async function lowStockAlert(ctx) {
         return;
     }
 
+    // ✅ Clear any existing session
+    sessionManager.clearSession(telegramId);
+
     const items = await inventoryRepo.findLowStock(user.id);
 
     if (items.length === 0) {
         await ctx.reply('✅ **All items are well stocked!**');
+        await ctx.reply(`Select an option below:`, { ...getInventoryKeyboard() });
         return;
     }
 
     let message = `⚠️ **Low Stock Alerts**\n\n`;
+    message += `📋 Items with ${LOW_STOCK_THRESHOLD} or fewer units remaining:\n\n`;
+    
     for (const item of items) {
         const status = item.quantity <= 0 ? '🚫 OUT OF STOCK' : '⚠️ LOW STOCK';
         message += `${status}: **${item.item_name}**\n`;
@@ -275,6 +348,41 @@ async function lowStockAlert(ctx) {
     }
 
     await ctx.reply(message);
+    await ctx.reply(`Select an option below:`, { ...getInventoryKeyboard() });
 }
 
-module.exports = { inventoryHandler, listInventory, lowStockAlert };
+// =============================================
+// TOTAL INVENTORY VALUE - Returns to submenu
+// =============================================
+async function inventoryValue(ctx) {
+    const telegramId = ctx.from.id;
+    const user = await userRepo.findByTelegramId(telegramId);
+    if (!user) {
+        await ctx.reply('⚠️ Please register first. Type /start');
+        return;
+    }
+
+    // ✅ Clear any existing session
+    sessionManager.clearSession(telegramId);
+
+    const items = await inventoryRepo.findByUserId(user.id);
+    const totalCostValue = items.reduce((sum, item) => sum + (item.quantity * (item.cost_price || 0)), 0);
+    const totalSellingValue = items.reduce((sum, item) => sum + (item.quantity * (item.selling_price || 0)), 0);
+
+    let message = `💰 **Total Inventory Value**\n\n`;
+    message += `📦 Total Items: ${items.length}\n`;
+    message += `📦 Total Units: ${items.reduce((sum, item) => sum + item.quantity, 0)}\n\n`;
+    message += `💰 Total Cost Value: ₦${totalCostValue.toLocaleString()}\n`;
+    message += `💲 Total Selling Value: ₦${totalSellingValue.toLocaleString()}\n`;
+    message += `📈 Potential Profit: ₦${(totalSellingValue - totalCostValue).toLocaleString()}`;
+
+    await ctx.reply(message);
+    await ctx.reply(`Select an option below:`, { ...getInventoryKeyboard() });
+}
+
+module.exports = { 
+    inventoryHandler, 
+    listInventory, 
+    lowStockAlert,
+    inventoryValue,
+};
