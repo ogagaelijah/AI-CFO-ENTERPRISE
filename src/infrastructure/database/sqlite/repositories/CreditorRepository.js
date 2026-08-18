@@ -9,17 +9,23 @@ class CreditorRepository extends BaseRepository {
 
     create(creditorData) {
         const stmt = this.db.prepare(`
-            INSERT INTO creditors (user_id, supplier_name, total_owed, balance_remaining, status)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO creditors (user_id, supplier_name, total_owed, amount_paid, balance_remaining, status, due_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         `);
         const result = stmt.run(
             creditorData.user_id,
             creditorData.supplier_name,
             creditorData.total_owed,
+            creditorData.amount_paid || 0,
             creditorData.balance_remaining || creditorData.total_owed,
-            creditorData.status || 'ACTIVE'
+            creditorData.status || 'ACTIVE',
+            creditorData.due_date || null
         );
         return this.findById(result.lastInsertRowid);
+    }
+
+    findById(id) {
+        return this.db.prepare('SELECT * FROM creditors WHERE id = ?').get(id);
     }
 
     findByUserId(userId) {
@@ -30,14 +36,25 @@ class CreditorRepository extends BaseRepository {
 
     findActive(userId) {
         return this.db.prepare(
-            'SELECT * FROM creditors WHERE user_id = ? AND balance_remaining > 0 ORDER BY balance_remaining DESC'
+            `SELECT * FROM creditors 
+             WHERE user_id = ? 
+             AND balance_remaining > 0 
+             AND status != 'PAID'
+             ORDER BY balance_remaining DESC`
         ).all(userId);
     }
 
     findOverdue(userId) {
-        return this.db.prepare(
-            'SELECT * FROM creditors WHERE user_id = ? AND status = "OVERDUE" AND balance_remaining > 0 ORDER BY balance_remaining DESC'
-        ).all(userId);
+        const today = new Date().toISOString().split('T')[0];
+        return this.db.prepare(`
+            SELECT * FROM creditors 
+            WHERE user_id = ? 
+            AND balance_remaining > 0 
+            AND status != 'PAID'
+            AND due_date IS NOT NULL
+            AND DATE(due_date) < DATE(?)
+            ORDER BY due_date ASC
+        `).all(userId, today);
     }
 
     findBySupplierName(userId, supplierName) {
@@ -48,24 +65,67 @@ class CreditorRepository extends BaseRepository {
         `).all(userId, `%${supplierName}%`);
     }
 
+    // ✅ FIX: Properly update amount_paid and balance_remaining
     recordPayment(creditorId, amount) {
         const creditor = this.findById(creditorId);
         if (!creditor) throw new Error('Creditor not found');
 
-        const newBalance = creditor.balance_remaining - amount;
+        // ✅ Calculate new values
         const newPaid = (creditor.amount_paid || 0) + amount;
+        const newBalance = creditor.total_owed - newPaid;
+        
+        // ✅ Ensure balance doesn't go negative
+        const finalBalance = newBalance < 0 ? 0 : newBalance;
 
         let status = creditor.status;
-        if (newBalance <= 0) {
+        if (finalBalance <= 0) {
             status = 'PAID';
+        } else {
+            const today = new Date().toISOString().split('T')[0];
+            if (creditor.due_date && creditor.due_date.split('T')[0] < today) {
+                status = 'OVERDUE';
+            } else {
+                status = 'ACTIVE';
+            }
         }
 
-        return this.update(creditorId, {
-            amount_paid: newPaid,
-            balance_remaining: newBalance > 0 ? newBalance : 0,
-            status: status,
-            last_payment_date: new Date().toISOString(),
+        const stmt = this.db.prepare(`
+            UPDATE creditors 
+            SET amount_paid = ?,
+                balance_remaining = ?,
+                status = ?,
+                last_payment_date = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        `);
+
+        stmt.run(
+            newPaid,
+            finalBalance,
+            status,
+            new Date().toISOString(),
+            creditorId
+        );
+
+        return this.findById(creditorId);
+    }
+
+    // ✅ New method: Create creditor from purchase
+    createFromPurchase(purchaseData) {
+        return this.create({
+            user_id: purchaseData.user_id,
+            supplier_name: purchaseData.supplier_name,
+            total_owed: purchaseData.total_owed,
+            amount_paid: purchaseData.amount_paid || 0,
+            balance_remaining: purchaseData.balance_remaining || purchaseData.total_owed,
+            status: purchaseData.status || 'ACTIVE',
+            due_date: purchaseData.due_date || null,
         });
+    }
+
+    // ✅ New method: Update creditor from purchase payment
+    updateFromPayment(creditorId, amountPaid) {
+        return this.recordPayment(creditorId, amountPaid);
     }
 
     getSummary(userId) {
@@ -74,10 +134,10 @@ class CreditorRepository extends BaseRepository {
                 COUNT(*) as total_creditors,
                 SUM(total_owed) as total_owed,
                 SUM(amount_paid) as total_paid,
-                SUM(balance_remaining) as total_outstanding,
-                COUNT(CASE WHEN status = 'ACTIVE' THEN 1 END) as active_count,
-                COUNT(CASE WHEN status = 'PAID' THEN 1 END) as paid_count,
-                COUNT(CASE WHEN status = 'OVERDUE' THEN 1 END) as overdue_count
+                SUM(CASE WHEN balance_remaining > 0 AND status != 'PAID' THEN balance_remaining ELSE 0 END) as total_outstanding,
+                COUNT(CASE WHEN balance_remaining > 0 AND status != 'PAID' THEN 1 END) as active_count,
+                COUNT(CASE WHEN balance_remaining <= 0 OR status = 'PAID' THEN 1 END) as paid_count,
+                COUNT(CASE WHEN status = 'OVERDUE' AND balance_remaining > 0 THEN 1 END) as overdue_count
             FROM creditors 
             WHERE user_id = ?
         `).get(userId);

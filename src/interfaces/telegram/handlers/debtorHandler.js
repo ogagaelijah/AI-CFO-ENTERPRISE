@@ -3,16 +3,14 @@
 const { getSessionManager } = require('../sessionManager');
 const UserRepository = require('../../../infrastructure/database/sqlite/repositories/UserRepository');
 const DebtorRepository = require('../../../infrastructure/database/sqlite/repositories/DebtorRepository');
-const GetDebtorsUseCase = require('../../../application/useCases/debtors/GetDebtorsUseCase');
-const RecordDebtorPaymentUseCase = require('../../../application/useCases/debtors/RecordDebtorPaymentUseCase');
 const { getDebtorKeyboard } = require('../keyboards/dashboardKeyboard');
 const logger = require('../../../shared/utils/logger');
 
 const sessionManager = getSessionManager();
 const userRepo = new UserRepository();
 const debtorRepo = new DebtorRepository();
-const getDebtorsUseCase = new GetDebtorsUseCase(debtorRepo);
-const recordPaymentUseCase = new RecordDebtorPaymentUseCase(debtorRepo);
+
+const OVERDUE_DAYS = 5;
 
 async function debtorHandler(ctx) {
     try {
@@ -63,41 +61,62 @@ async function debtorHandler(ctx) {
 // SHOW DEBTOR MENU WITH ACTIVE DEBTORS LIST
 // =============================================
 async function showDebtorMenu(ctx, telegramId, user) {
-    // ✅ Get active debtors (balance > 0)
-    const debtors = await getDebtorsUseCase.execute(user.id, 'active');
-    const summary = await getDebtorsUseCase.getSummary(user.id);
+    try {
+        // ✅ Get all debtors from database
+        const allDebtors = await debtorRepo.findByUserId(user.id);
+        
+        // ✅ Filter: ONLY show debtors with balance > 0 AND status != 'PAID'
+        const activeDebtors = allDebtors.filter(d => 
+            d.balance_remaining > 0 && 
+            d.status !== 'PAID'
+        );
 
-    let message =
-        `👥 **Debtors Register**\n\n` +
-        `📊 **Summary**\n` +
-        `• Active Debtors: ${debtors.length}\n` +
-        `• Total Owed: ₦${(summary.total_outstanding || 0).toLocaleString()}\n` +
-        `• Overdue: ${summary.overdue_count || 0}\n\n`;
+        // ✅ Calculate summary from filtered list
+        const totalOutstanding = activeDebtors.reduce((sum, d) => sum + d.balance_remaining, 0);
+        const overdueCount = activeDebtors.filter(d => d.status === 'OVERDUE').length;
 
-    // ✅ Show active debtors list
-    if (debtors.length > 0) {
-        message += `**Active Debtors:**\n`;
-        for (const debtor of debtors.slice(0, 10)) {
-            const status = debtor.status === 'OVERDUE' ? '🔴' : '🟡';
-            message += `${status} **${debtor.customer_name}**\n`;
-            message += `   💰 ₦${debtor.balance_remaining.toLocaleString()}\n`;
-            message += `   🆔 ID: ${debtor.id}\n\n`;
+        let message =
+            `👥 **Debtors Register**\n\n` +
+            `📊 **Summary**\n` +
+            `• Active Debtors: ${activeDebtors.length}\n` +
+            `• Total Owed: ₦${totalOutstanding.toLocaleString()}\n` +
+            `• Overdue: ${overdueCount}\n\n`;
+
+        if (activeDebtors && activeDebtors.length > 0) {
+            message += `**Active Debtors:**\n`;
+            for (const debtor of activeDebtors) {
+                const status = debtor.status === 'OVERDUE' ? '🔴' : '🟡';
+                const daysOverdue = debtor.due_date ? Math.ceil((new Date() - new Date(debtor.due_date)) / (1000 * 60 * 60 * 24)) : 0;
+                message += `${status} **${debtor.customer_name}**\n`;
+                message += `   💰 ₦${debtor.balance_remaining.toLocaleString()}\n`;
+                if (debtor.due_date) {
+                    message += `   📅 Due: ${new Date(debtor.due_date).toLocaleDateString('en-NG')}\n`;
+                    if (daysOverdue > 0) {
+                        message += `   ⏰ ${daysOverdue} days overdue\n`;
+                    }
+                }
+                message += `   🆔 ID: ${debtor.id}\n\n`;
+            }
+        } else {
+            message += `✅ No active debtors.\n\n`;
         }
-        if (debtors.length > 10) {
-            message += `... and ${debtors.length - 10} more.\n\n`;
-        }
-    } else {
-        message += `✅ No active debtors.\n\n`;
+
+        message += `Select an option below:`;
+
+        const keyboard = getDebtorKeyboard();
+
+        await ctx.reply(message, {
+            parse_mode: 'Markdown',
+            ...keyboard,
+        });
+
+    } catch (error) {
+        logger.error('Show debtor menu error:', error);
+        await ctx.reply(`👥 **Debtors Register**\n\nSelect an option below:`, {
+            parse_mode: 'Markdown',
+            ...getDebtorKeyboard(),
+        });
     }
-
-    message += `Select an option below:`;
-
-    const keyboard = getDebtorKeyboard();
-
-    await ctx.reply(message, {
-        parse_mode: 'Markdown',
-        ...keyboard,
-    });
 }
 
 // =============================================
@@ -132,10 +151,14 @@ async function handleDebtorAmount(ctx, telegramId, user) {
     const session = sessionManager.getSession(telegramId);
     const customerName = session.data.customerName;
 
-    sessionManager.setData(telegramId, { 
-        ...session.data, 
-        customerName, 
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + OVERDUE_DAYS);
+
+    sessionManager.setData(telegramId, {
+        ...session.data,
+        customerName,
         amount,
+        dueDate: dueDate.toISOString(),
         pendingAction: 'add_debtor'
     });
     sessionManager.setState(telegramId, 'DEBTOR_WAITING_CONFIRMATION');
@@ -143,7 +166,8 @@ async function handleDebtorAmount(ctx, telegramId, user) {
     await ctx.reply(
         `📋 **Confirm Debtor Details**\n\n` +
         `👤 Customer: ${customerName}\n` +
-        `💰 Amount: ₦${amount.toLocaleString()}\n\n` +
+        `💰 Amount: ₦${amount.toLocaleString()}\n` +
+        `📅 Due Date: ${dueDate.toLocaleDateString('en-NG')} (${OVERDUE_DAYS} days)\n\n` +
         `Reply with **YES** to confirm or **NO** to cancel.`
     );
 }
@@ -152,22 +176,29 @@ async function handleDebtorAmount(ctx, telegramId, user) {
 // RECORD PAYMENT FLOW
 // =============================================
 async function handleDebtorPaymentId(ctx, telegramId, user) {
-    const debtors = await getDebtorsUseCase.execute(user.id, 'active');
+    const allDebtors = await debtorRepo.findByUserId(user.id);
+    const activeDebtors = allDebtors.filter(d => d.balance_remaining > 0 && d.status !== 'PAID');
 
-    if (debtors.length === 0) {
+    if (activeDebtors.length === 0) {
         await ctx.reply('✅ No active debtors to receive payments from.');
         await ctx.reply(`Select an option below:`, { ...getDebtorKeyboard() });
         return;
     }
 
     let message = `💰 **Record Payment**\n\nSelect a debtor by ID:\n\n`;
-    for (const debtor of debtors) {
+    for (const debtor of activeDebtors) {
         message += `🆔 ${debtor.id}: ${debtor.customer_name} - ₦${debtor.balance_remaining.toLocaleString()}\n`;
+        if (debtor.due_date) {
+            const daysOverdue = Math.ceil((new Date() - new Date(debtor.due_date)) / (1000 * 60 * 60 * 24));
+            if (daysOverdue > 0) {
+                message += `   ⏰ ${daysOverdue} days overdue\n`;
+            }
+        }
     }
 
     message += `\nEnter the debtor ID to proceed.`;
 
-    sessionManager.setData(telegramId, { debtors: debtors });
+    sessionManager.setData(telegramId, { debtors: activeDebtors });
     sessionManager.setState(telegramId, 'DEBTOR_WAITING_PAYMENT_AMOUNT');
 
     await ctx.reply(message);
@@ -229,10 +260,10 @@ async function handleDebtorPaymentAmount(ctx, telegramId, user) {
         return;
     }
 
-    sessionManager.setData(telegramId, { 
-        ...session.data, 
-        debtorId, 
-        debtor, 
+    sessionManager.setData(telegramId, {
+        ...session.data,
+        debtorId,
+        debtor,
         amountPaid,
         pendingAction: 'record_payment'
     });
@@ -252,7 +283,7 @@ async function handleDebtorPaymentAmount(ctx, telegramId, user) {
 // =============================================
 async function handleDebtorPaymentConfirmation(ctx, telegramId, user) {
     let text = '';
-    
+
     if (ctx.message && ctx.message.text) {
         text = ctx.message.text.trim().toUpperCase();
     } else if (ctx.callbackQuery && ctx.callbackQuery.data) {
@@ -277,6 +308,7 @@ async function handleDebtorPaymentConfirmation(ctx, telegramId, user) {
                 total_owed: session.data.amount,
                 balance_remaining: session.data.amount,
                 status: 'ACTIVE',
+                due_date: session.data.dueDate,
             });
 
             sessionManager.clearSession(telegramId);
@@ -284,16 +316,14 @@ async function handleDebtorPaymentConfirmation(ctx, telegramId, user) {
             await ctx.reply(
                 `✅ **Debtor Added Successfully!**\n\n` +
                 `👤 Customer: ${session.data.customerName}\n` +
-                `💰 Amount: ₦${session.data.amount.toLocaleString()}\n\n` +
+                `💰 Amount: ₦${session.data.amount.toLocaleString()}\n` +
+                `📅 Due: ${new Date(session.data.dueDate).toLocaleDateString('en-NG')}\n\n` +
                 `Select an option below:`,
                 { ...getDebtorKeyboard() }
             );
         } else if (session.data.pendingAction === 'record_payment') {
             try {
-                const result = await recordPaymentUseCase.execute({
-                    debtorId: session.data.debtorId,
-                    amount: session.data.amountPaid,
-                });
+                await debtorRepo.recordPayment(session.data.debtorId, session.data.amountPaid);
 
                 const debtor = session.data.debtor;
                 const remainingBalance = debtor.balance_remaining - session.data.amountPaid;
@@ -330,7 +360,7 @@ async function handleDebtorPaymentConfirmation(ctx, telegramId, user) {
         const amountPaid = session.data.amountPaid;
         const remainingAfter = debtor ? debtor.balance_remaining - amountPaid : 0;
 
-        let message = 
+        let message =
             `⚠️ Please reply with **YES** or **NO**.\n\n` +
             `📋 **Confirm Payment**\n\n` +
             `👤 Customer: ${debtor ? debtor.customer_name : 'N/A'}\n` +
@@ -353,7 +383,7 @@ async function listDebtors(ctx) {
         return;
     }
 
-    const debtors = await getDebtorsUseCase.execute(user.id, 'all');
+    const debtors = await debtorRepo.findByUserId(user.id);
 
     if (debtors.length === 0) {
         await ctx.reply('📋 **No debtors found.**');
@@ -368,6 +398,12 @@ async function listDebtors(ctx) {
         message += `   💰 Owed: ₦${debtor.total_owed.toLocaleString()}\n`;
         message += `   💵 Paid: ₦${(debtor.amount_paid || 0).toLocaleString()}\n`;
         message += `   🔴 Balance: ₦${debtor.balance_remaining.toLocaleString()}\n`;
+        if (debtor.due_date) {
+            const daysOverdue = Math.ceil((new Date() - new Date(debtor.due_date)) / (1000 * 60 * 60 * 24));
+            if (daysOverdue > 0) {
+                message += `   ⏰ ${daysOverdue} days overdue\n`;
+            }
+        }
         message += `   🆔 ID: ${debtor.id}\n\n`;
     }
 
@@ -387,18 +423,24 @@ async function overdueDebtors(ctx) {
     }
 
     try {
-        const debtors = await debtorRepo.findOverdue(user.id);
+        const allDebtors = await debtorRepo.findByUserId(user.id);
+        const overdue = allDebtors.filter(d => 
+            d.balance_remaining > 0 && 
+            d.status === 'OVERDUE'
+        );
 
-        if (debtors.length === 0) {
+        if (overdue.length === 0) {
             await ctx.reply('✅ **No overdue debtors!**');
             await ctx.reply(`Select an option below:`, { ...getDebtorKeyboard() });
             return;
         }
 
         let message = `🔴 **Overdue Debtors**\n\n`;
-        for (const debtor of debtors) {
+        for (const debtor of overdue) {
+            const daysOverdue = debtor.due_date ? Math.ceil((new Date() - new Date(debtor.due_date)) / (1000 * 60 * 60 * 24)) : 0;
             message += `👤 ${debtor.customer_name}\n`;
-            message += `   💰 ₦${debtor.balance_remaining.toLocaleString()}\n\n`;
+            message += `   💰 ₦${debtor.balance_remaining.toLocaleString()}\n`;
+            message += `   ⏰ ${daysOverdue} days overdue\n\n`;
         }
 
         await ctx.reply(message);

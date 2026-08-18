@@ -37,6 +37,7 @@ function getIndustryButtons(industry) {
     const baseButtons = [
         { text: '💰 Income', callback_data: 'menu_income' },
         { text: '📉 Expense', callback_data: 'menu_expense' },
+        { text: '🛒 Purchase', callback_data: 'menu_purchase' },
     ];
 
     const industrySpecific = {
@@ -97,13 +98,17 @@ function getIndustryButtons(industry) {
 }
 
 // =============================================
-// INVENTORY SUB-MENU
+// INVENTORY SUB-MENU (UPDATED)
 // =============================================
 function getInventoryKeyboard() {
     return Markup.inlineKeyboard([
         [
             Markup.button.callback('➕ Add Stock', 'inventory_add'),
             Markup.button.callback('📋 View All', 'inventory_list'),
+        ],
+        [
+            Markup.button.callback('✏️ Edit Item', 'inventory_edit'),
+            Markup.button.callback('📦 Adjust Stock', 'inventory_adjust'),
         ],
         [
             Markup.button.callback('⚠️ Low Stock', 'inventory_low'),
@@ -146,6 +151,25 @@ function getCreditorKeyboard() {
         [
             Markup.button.callback('📋 View All', 'creditor_list'),
             Markup.button.callback('🔴 Overdue', 'creditor_overdue'),
+        ],
+        [
+            Markup.button.callback('🔙 Back to Main', 'menu_back'),
+        ],
+    ]);
+}
+
+// =============================================
+// PURCHASE SUB-MENU
+// =============================================
+function getPurchaseKeyboard() {
+    return Markup.inlineKeyboard([
+        [
+            Markup.button.callback('➕ Record Purchase', 'purchase_add'),
+            Markup.button.callback('📋 View All', 'purchase_list'),
+        ],
+        [
+            Markup.button.callback('📊 Summary', 'purchase_summary'),
+            Markup.button.callback('📅 Today', 'purchase_today'),
         ],
         [
             Markup.button.callback('🔙 Back to Main', 'menu_back'),
@@ -265,6 +289,7 @@ module.exports = {
     getInventoryKeyboard,
     getDebtorKeyboard,
     getCreditorKeyboard,
+    getPurchaseKeyboard,
     getReportKeyboard,
     getIncomeKeyboard,
     getExpenseKeyboard,

@@ -13,8 +13,9 @@ const { expenseHandler, startExpenseFlow, listExpenses, expenseSummary, expenseT
 const { inventoryHandler, listInventory, lowStockAlert, inventoryValue } = require('./src/interfaces/telegram/handlers/inventoryHandler');
 const { debtorHandler, listDebtors, overdueDebtors } = require('./src/interfaces/telegram/handlers/debtorHandler');
 const { creditorHandler, listCreditors, overdueCreditors } = require('./src/interfaces/telegram/handlers/creditorHandler');
+const { purchaseHandler, startPurchaseFlow, listPurchases, purchaseSummary, purchaseToday } = require('./src/interfaces/telegram/handlers/purchaseHandler');
 const reportHandler = require('./src/interfaces/telegram/handlers/reportHandler');
-const { getMainMenuKeyboard, getInventoryKeyboard, getDebtorKeyboard, getCreditorKeyboard, getReportKeyboard, getIncomeKeyboard, getExpenseKeyboard, getAiKeyboard, getSettingsKeyboard } = require('./src/interfaces/telegram/keyboards/dashboardKeyboard');
+const { getMainMenuKeyboard, getInventoryKeyboard, getDebtorKeyboard, getCreditorKeyboard, getPurchaseKeyboard, getReportKeyboard, getIncomeKeyboard, getExpenseKeyboard, getAiKeyboard, getSettingsKeyboard } = require('./src/interfaces/telegram/keyboards/dashboardKeyboard');
 const { INDUSTRIES } = require('./src/config/industries');
 const SetupBusinessUseCase = require('./src/application/useCases/onboarding/SetupBusinessUseCase');
 const UserRepository = require('./src/infrastructure/database/sqlite/repositories/UserRepository');
@@ -23,6 +24,7 @@ const IncomeRepository = require('./src/infrastructure/database/sqlite/repositor
 const ExpenseRepository = require('./src/infrastructure/database/sqlite/repositories/ExpenseRepository');
 const InventoryRepository = require('./src/infrastructure/database/sqlite/repositories/InventoryRepository');
 const DebtorRepository = require('./src/infrastructure/database/sqlite/repositories/DebtorRepository');
+const CreditorRepository = require('./src/infrastructure/database/sqlite/repositories/CreditorRepository');
 
 console.log('=====================================');
 console.log('🏢 AI CFO ENTERPRISE');
@@ -39,6 +41,7 @@ const incomeRepo = new IncomeRepository();
 const expenseRepo = new ExpenseRepository();
 const inventoryRepo = new InventoryRepository();
 const debtorRepo = new DebtorRepository();
+const creditorRepo = new CreditorRepository();
 
 // =============================================
 // GET BOT INSTANCE
@@ -60,6 +63,7 @@ botInstance.command('expense', expenseHandler);
 botInstance.command('inventory', inventoryHandler);
 botInstance.command('debtors', debtorHandler);
 botInstance.command('creditors', creditorHandler);
+botInstance.command('purchase', purchaseHandler);
 botInstance.command('reports', reportHandler);
 
 // =============================================
@@ -110,6 +114,11 @@ botInstance.on('text', async (ctx) => {
 
     if (session && session.state && session.state.startsWith('EXPENSE_WAITING_')) {
         await expenseHandler(ctx);
+        return;
+    }
+
+    if (session && session.state && session.state.startsWith('PURCHASE_WAITING_')) {
+        await purchaseHandler(ctx);
         return;
     }
 
@@ -217,13 +226,37 @@ botInstance.on('callback_query', async (ctx) => {
             return;
         }
 
+        if (data === 'menu_purchase') {
+            await ctx.editMessageText(
+                `🛒 **Purchase Management**\n\nSelect an option:`,
+                { parse_mode: 'Markdown', ...getPurchaseKeyboard() }
+            );
+            return;
+        }
+
         // =============================================
-        // INVENTORY ACTIONS
+        // INVENTORY ACTIONS (UPDATED)
         // =============================================
         if (data === 'inventory_add') {
             sessionManager.createSession(telegramId, 'INVENTORY_WAITING_ITEM', {});
             await ctx.editMessageText(
                 `📦 **Add New Stock**\n\nEnter the **item name**:`,
+                { parse_mode: 'Markdown' }
+            );
+            return;
+        }
+        if (data === 'inventory_edit') {
+            sessionManager.createSession(telegramId, 'INVENTORY_WAITING_EDIT_ITEM', {});
+            await ctx.editMessageText(
+                `✏️ **Edit Inventory Item**\n\nEnter the **item name** or **ID** to edit:`,
+                { parse_mode: 'Markdown' }
+            );
+            return;
+        }
+        if (data === 'inventory_adjust') {
+            sessionManager.createSession(telegramId, 'INVENTORY_WAITING_ADJUST_QUANTITY', {});
+            await ctx.editMessageText(
+                `📦 **Adjust Stock**\n\nEnter the **item name** or **ID** to adjust:`,
                 { parse_mode: 'Markdown' }
             );
             return;
@@ -293,7 +326,24 @@ botInstance.on('callback_query', async (ctx) => {
             return;
         }
         if (data === 'creditor_pay') {
-            await creditorHandler(ctx);
+            if (!user) {
+                await ctx.reply('⚠️ Please register first.');
+                return;
+            }
+            const allCreditors = await creditorRepo.findByUserId(user.id);
+            const activeCreditors = allCreditors.filter(c => c.balance_remaining > 0 && c.status !== 'PAID');
+            if (activeCreditors.length === 0) {
+                await ctx.reply('✅ No active creditors to make payments to.');
+                await ctx.reply(`Select an option below:`, { ...getCreditorKeyboard() });
+                return;
+            }
+            let message = `💰 **Record Payment to Creditor**\n\nSelect a creditor by ID:\n\n`;
+            for (const creditor of activeCreditors) {
+                message += `🆔 ${creditor.id}: ${creditor.supplier_name} - ₦${creditor.balance_remaining.toLocaleString()}\n`;
+            }
+            message += `\nEnter the creditor ID to proceed.`;
+            sessionManager.createSession(telegramId, 'CREDITOR_WAITING_PAYMENT_AMOUNT', { creditors: activeCreditors });
+            await ctx.editMessageText(message, { parse_mode: 'Markdown' });
             return;
         }
         if (data === 'creditor_list') {
@@ -302,6 +352,26 @@ botInstance.on('callback_query', async (ctx) => {
         }
         if (data === 'creditor_overdue') {
             await overdueCreditors(ctx);
+            return;
+        }
+
+        // =============================================
+        // PURCHASE ACTIONS
+        // =============================================
+        if (data === 'purchase_add') {
+            await startPurchaseFlow(ctx, telegramId);
+            return;
+        }
+        if (data === 'purchase_list') {
+            await listPurchases(ctx);
+            return;
+        }
+        if (data === 'purchase_summary') {
+            await purchaseSummary(ctx);
+            return;
+        }
+        if (data === 'purchase_today') {
+            await purchaseToday(ctx);
             return;
         }
 
@@ -467,6 +537,8 @@ bot.launch().then(() => {
     console.log('✅ Bot is running!');
     console.log('📱 Send /start to register');
     console.log('📊 Professional dashboard with sub-menus loaded');
+    console.log('🛒 Purchase module integrated with Inventory & Creditors');
+    console.log('✏️ Inventory Edit & Adjust Stock features added');
     console.log('=====================================');
 }).catch((error) => {
     console.error('❌ Failed to launch bot:', error);
