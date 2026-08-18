@@ -9,17 +9,22 @@ class InventoryRepository extends BaseRepository {
 
     create(inventoryData) {
         const stmt = this.db.prepare(`
-            INSERT INTO inventory (user_id, item_name, quantity, cost_price, selling_price)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO inventory (user_id, item_name, quantity, cost_price, selling_price, reorder_level)
+            VALUES (?, ?, ?, ?, ?, ?)
         `);
         const result = stmt.run(
             inventoryData.user_id,
             inventoryData.item_name,
             inventoryData.quantity || 0,
             inventoryData.cost_price || 0,
-            inventoryData.selling_price || 0
+            inventoryData.selling_price || 0,
+            inventoryData.reorder_level || 5
         );
         return this.findById(result.lastInsertRowid);
+    }
+
+    findById(id) {
+        return this.db.prepare('SELECT * FROM inventory WHERE id = ?').get(id);
     }
 
     findByUserId(userId) {
@@ -34,43 +39,119 @@ class InventoryRepository extends BaseRepository {
         ).get(userId, itemName);
     }
 
-    findLowStock(userId) {
+    findLowStock(userId, threshold = 5) {
         return this.db.prepare(
-            'SELECT * FROM inventory WHERE user_id = ? AND quantity <= 5 ORDER BY quantity ASC'
-        ).all(userId);
+            'SELECT * FROM inventory WHERE user_id = ? AND quantity <= ? ORDER BY quantity ASC'
+        ).all(userId, threshold);
+    }
+
+    update(id, data) {
+        const fields = [];
+        const values = [];
+
+        if (data.item_name !== undefined) {
+            fields.push('item_name = ?');
+            values.push(data.item_name);
+        }
+        if (data.quantity !== undefined) {
+            fields.push('quantity = ?');
+            values.push(data.quantity);
+        }
+        if (data.cost_price !== undefined) {
+            fields.push('cost_price = ?');
+            values.push(data.cost_price);
+        }
+        if (data.selling_price !== undefined) {
+            fields.push('selling_price = ?');
+            values.push(data.selling_price);
+        }
+        if (data.reorder_level !== undefined) {
+            fields.push('reorder_level = ?');
+            values.push(data.reorder_level);
+        }
+
+        fields.push('updated_at = CURRENT_TIMESTAMP');
+
+        if (fields.length === 0) {
+            throw new Error('No fields to update');
+        }
+
+        values.push(id);
+
+        const stmt = this.db.prepare(
+            `UPDATE inventory SET ${fields.join(', ')} WHERE id = ?`
+        );
+        const result = stmt.run(...values);
+
+        if (result.changes === 0) {
+            throw new Error('Item not found or no changes made');
+        }
+
+        return this.findById(id);
     }
 
     addStock(inventoryId, quantity) {
         const item = this.findById(inventoryId);
         if (!item) throw new Error('Inventory item not found');
-
-        const newQuantity = item.quantity + quantity;
-        return this.update(inventoryId, { quantity: newQuantity });
+        return this.update(inventoryId, { quantity: item.quantity + quantity });
     }
 
     reduceStock(inventoryId, quantity) {
         const item = this.findById(inventoryId);
         if (!item) throw new Error('Inventory item not found');
-
         if (item.quantity < quantity) {
             throw new Error(`Insufficient stock. Available: ${item.quantity}, Requested: ${quantity}`);
         }
-
-        const newQuantity = item.quantity - quantity;
-        return this.update(inventoryId, { quantity: newQuantity });
+        return this.update(inventoryId, { quantity: item.quantity - quantity });
     }
 
+    // =============================================
+    // SUMMARY (UPDATED with profit)
+    // =============================================
     getSummary(userId) {
-        return this.db.prepare(`
+        const result = this.db.prepare(`
             SELECT 
                 COUNT(*) as total_items,
-                SUM(quantity) as total_quantity,
-                SUM(quantity * cost_price) as total_cost_value,
-                SUM(quantity * selling_price) as total_selling_value,
+                COALESCE(SUM(quantity), 0) as total_quantity,
+                COALESCE(SUM(quantity * cost_price), 0) as total_cost_value,
+                COALESCE(SUM(quantity * selling_price), 0) as total_selling_value,
+                COALESCE(SUM(quantity * (selling_price - cost_price)), 0) as total_profit,
                 COUNT(CASE WHEN quantity <= 5 THEN 1 END) as low_stock_count
             FROM inventory 
             WHERE user_id = ?
         `).get(userId);
+
+        return {
+            total_items: result?.total_items || 0,
+            total_quantity: result?.total_quantity || 0,
+            total_cost_value: result?.total_cost_value || 0,
+            total_selling_value: result?.total_selling_value || 0,
+            total_profit: result?.total_profit || 0,
+            low_stock_count: result?.low_stock_count || 0
+        };
+    }
+
+    getTotalValue(userId) {
+        const result = this.db.prepare(`
+            SELECT 
+                COALESCE(SUM(quantity * cost_price), 0) as total_cost,
+                COALESCE(SUM(quantity * selling_price), 0) as total_selling,
+                COALESCE(SUM(quantity * (selling_price - cost_price)), 0) as total_profit
+            FROM inventory 
+            WHERE user_id = ?
+        `).get(userId);
+
+        return {
+            total_cost: result?.total_cost || 0,
+            total_selling: result?.total_selling || 0,
+            total_profit: result?.total_profit || 0
+        };
+    }
+
+    delete(id) {
+        const stmt = this.db.prepare('DELETE FROM inventory WHERE id = ?');
+        const result = stmt.run(id);
+        return result.changes > 0;
     }
 }
 

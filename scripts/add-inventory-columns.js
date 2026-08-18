@@ -5,7 +5,9 @@ const db = getDatabase();
 
 console.log('🔄 Setting up inventory table...');
 
-// Create inventory table if it doesn't exist
+// =============================================
+// CREATE INVENTORY TABLE
+// =============================================
 try {
     db.exec(`
         CREATE TABLE IF NOT EXISTS inventory (
@@ -15,6 +17,7 @@ try {
             quantity INTEGER DEFAULT 0,
             cost_price REAL DEFAULT 0,
             selling_price REAL DEFAULT 0,
+            reorder_level INTEGER DEFAULT 5,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -25,11 +28,14 @@ try {
     console.error('❌ Error creating inventory table:', e.message);
 }
 
-// Check if cost_price column exists
+// =============================================
+// ADD MISSING COLUMNS
+// =============================================
 try {
     const columns = db.prepare('PRAGMA table_info(inventory)').all();
     const hasCostPrice = columns.some(c => c.name === 'cost_price');
     const hasSellingPrice = columns.some(c => c.name === 'selling_price');
+    const hasReorderLevel = columns.some(c => c.name === 'reorder_level');
 
     if (!hasCostPrice) {
         db.exec('ALTER TABLE inventory ADD COLUMN cost_price REAL DEFAULT 0');
@@ -44,11 +50,20 @@ try {
     } else {
         console.log('⚠️ selling_price column already exists');
     }
+
+    if (!hasReorderLevel) {
+        db.exec('ALTER TABLE inventory ADD COLUMN reorder_level INTEGER DEFAULT 5');
+        console.log('✅ reorder_level column added');
+    } else {
+        console.log('⚠️ reorder_level column already exists');
+    }
 } catch (e) {
-    console.error('❌ Error checking columns:', e.message);
+    console.error('❌ Error checking/adding columns:', e.message);
 }
 
-// Also create sales table if it doesn't exist
+// =============================================
+// CREATE SALES TABLE
+// =============================================
 try {
     db.exec(`
         CREATE TABLE IF NOT EXISTS sales (

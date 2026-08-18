@@ -14,24 +14,58 @@ const addStockUseCase = new AddStockUseCase(inventoryRepo);
 
 const LOW_STOCK_THRESHOLD = 5;
 
+// Helper function to get text from either message or callback query
+function getTextFromContext(ctx) {
+    // Check for text message
+    if (ctx.message && ctx.message.text) {
+        return ctx.message.text.trim();
+    }
+    // Check for callback query
+    if (ctx.callbackQuery && ctx.callbackQuery.data) {
+        return ctx.callbackQuery.data.trim();
+    }
+    // Check for update callback query
+    if (ctx.update && ctx.update.callback_query && ctx.update.callback_query.data) {
+        return ctx.update.callback_query.data.trim();
+    }
+    return null;
+}
+
 async function inventoryHandler(ctx) {
     try {
+        console.log('🔍 [1] Inventory handler called');
         const telegramId = ctx.from.id;
-        const session = sessionManager.getSession(telegramId);
+        console.log('🔍 [2] Telegram ID:', telegramId);
+
+        let session = sessionManager.getSession(telegramId);
+        console.log('🔍 [3] Session:', session ? 'exists' : 'null');
+
         const user = await userRepo.findByTelegramId(telegramId);
+        console.log('🔍 [4] User:', user ? `found (id: ${user.id})` : 'not found');
 
         if (!user) {
             await ctx.reply('⚠️ Please register first. Type /start');
             return;
         }
 
+        // Check if this is a button click (callback query)
+        const isButtonClick = ctx.callbackQuery || (ctx.update && ctx.update.callback_query);
+        if (isButtonClick) {
+            console.log('🔍 [5] Button click detected — clearing session');
+            sessionManager.clearSession(telegramId);
+            session = sessionManager.getSession(telegramId);
+        }
+
         const state = session ? session.state : null;
+        console.log('🔍 [6] State:', state);
 
         if (!state || !state.startsWith('INVENTORY_')) {
+            console.log('🔍 [7] Showing inventory menu');
             await showInventoryMenu(ctx, telegramId, user);
             return;
         }
 
+        console.log('🔍 [8] Handling state:', state);
         switch (state) {
             case 'INVENTORY_WAITING_ITEM':
                 await handleAddItem(ctx, telegramId, user);
@@ -72,64 +106,92 @@ async function inventoryHandler(ctx) {
         }
 
     } catch (error) {
-        logger.error('Inventory handler error:', error);
-        await ctx.reply('❌ Something went wrong. Please try again.');
+        console.error('❌ INVENTORY HANDLER CRASH:', error.message);
+        console.error('❌ Stack:', error.stack);
+        logger.error('Inventory handler error:', {
+            message: error.message,
+            stack: error.stack
+        });
+        await ctx.reply(`❌ Error: ${error.message}`);
     }
 }
 
 // =============================================
-// SHOW INVENTORY MENU
+// SHOW INVENTORY MENU (UPDATED with profit & margin)
 // =============================================
 async function showInventoryMenu(ctx, telegramId, user) {
-    const inventoryItems = await inventoryRepo.findByUserId(user.id);
-    const summary = await inventoryRepo.getSummary(user.id);
+    try {
+        console.log('🔍 [menu] Starting showInventoryMenu');
+        console.log('🔍 [menu] User ID:', user.id);
 
-    let message =
-        `📦 **Inventory Management**\n\n` +
-        `📊 **Summary**\n` +
-        `• Total Items: ${summary.total_items || 0}\n` +
-        `• Total Stock: ${summary.total_quantity || 0} units\n` +
-        `• Total Cost Value: ₦${(summary.total_cost_value || 0).toLocaleString()}\n` +
-        `• Total Selling Value: ₦${(summary.total_selling_value || 0).toLocaleString()}\n` +
-        `• Low Stock: ${summary.low_stock_count || 0} items\n\n`;
+        console.log('🔍 [menu] Calling findByUserId...');
+        const inventoryItems = await inventoryRepo.findByUserId(user.id);
+        console.log('🔍 [menu] Found items:', inventoryItems.length);
 
-    if (inventoryItems.length > 0) {
-        message += `**Your Items:**\n`;
-        for (const item of inventoryItems.slice(0, 10)) {
-            const status = item.quantity <= 0 ? '🚫' : item.quantity <= LOW_STOCK_THRESHOLD ? '⚠️' : '✅';
-            const profit = (item.selling_price || 0) - (item.cost_price || 0);
-            const profitMargin = item.cost_price > 0 ? ((profit / item.cost_price) * 100).toFixed(1) : 0;
-            message += `${status} **${item.item_name}**\n`;
-            message += `   📦 ${item.quantity} units\n`;
-            message += `   💰 Cost: ₦${(item.cost_price || 0).toLocaleString()}\n`;
-            message += `   💲 Sell: ₦${(item.selling_price || 0).toLocaleString()}\n`;
-            if (profit > 0) {
-                message += `   📈 Profit: ₦${profit.toLocaleString()} (${profitMargin}% margin)\n`;
+        console.log('🔍 [menu] Calling getSummary...');
+        const summary = await inventoryRepo.getSummary(user.id);
+        console.log('🔍 [menu] Summary:', summary);
+
+        // Calculate margin
+        const margin = summary.total_cost_value > 0 
+            ? ((summary.total_profit / summary.total_cost_value) * 100).toFixed(1) 
+            : 0;
+
+        let message =
+            `📦 **Inventory Management**\n\n` +
+            `📊 **Summary**\n` +
+            `• Total Items: ${summary.total_items || 0}\n` +
+            `• Total Stock: ${summary.total_quantity || 0} units\n` +
+            `• Total Cost Value: ₦${(summary.total_cost_value || 0).toLocaleString()}\n` +
+            `• Total Selling Value: ₦${(summary.total_selling_value || 0).toLocaleString()}\n` +
+            `• Potential Profit: ₦${(summary.total_profit || 0).toLocaleString()}\n` +
+            `• Margin: ${margin}%\n` +
+            `• Low Stock: ${summary.low_stock_count || 0} items\n\n`;
+
+        if (inventoryItems.length > 0) {
+            message += `**Your Items:**\n`;
+            for (const item of inventoryItems.slice(0, 10)) {
+                const status = item.quantity <= 0 ? '🚫' : item.quantity <= LOW_STOCK_THRESHOLD ? '⚠️' : '✅';
+                const profit = (item.selling_price || 0) - (item.cost_price || 0);
+                const profitMargin = item.cost_price > 0 ? ((profit / item.cost_price) * 100).toFixed(1) : 0;
+                message += `${status} **${item.item_name}**\n`;
+                message += `   📦 ${item.quantity} units\n`;
+                message += `   💰 Cost: ₦${(item.cost_price || 0).toLocaleString()}\n`;
+                message += `   💲 Sell: ₦${(item.selling_price || 0).toLocaleString()}\n`;
+                if (profit > 0) {
+                    message += `   📈 Profit: ₦${profit.toLocaleString()} (${profitMargin}% margin)\n`;
+                }
+                message += `   🆔 ID: ${item.id}\n\n`;
             }
-            message += `   🆔 ID: ${item.id}\n\n`;
+            if (inventoryItems.length > 10) {
+                message += `... and ${inventoryItems.length - 10} more.\n\n`;
+            }
+        } else {
+            message += `✅ No items in inventory.\n\n`;
         }
-        if (inventoryItems.length > 10) {
-            message += `... and ${inventoryItems.length - 10} more.\n\n`;
-        }
-    } else {
-        message += `✅ No items in inventory.\n\n`;
+
+        message += `Select an option below:`;
+
+        const keyboard = getInventoryKeyboard();
+
+        await ctx.reply(message, {
+            parse_mode: 'Markdown',
+            ...keyboard,
+        });
+
+    } catch (error) {
+        console.error('❌ [menu] showInventoryMenu crashed:', error.message);
+        console.error('❌ [menu] Stack:', error.stack);
+        throw error;
     }
-
-    message += `Select an option below:`;
-
-    const keyboard = getInventoryKeyboard();
-
-    await ctx.reply(message, {
-        parse_mode: 'Markdown',
-        ...keyboard,
-    });
 }
 
 // =============================================
 // ADD ITEM FLOW
 // =============================================
 async function handleAddItem(ctx, telegramId, user) {
-    const text = ctx.message.text.trim();
+    const text = getTextFromContext(ctx);
+    console.log('🔍 [addItem] Text received:', text);
 
     if (!text || text.length < 2) {
         await ctx.reply('Please enter a valid item name (at least 2 characters).');
@@ -159,7 +221,8 @@ async function handleAddItem(ctx, telegramId, user) {
 }
 
 async function handleAddQuantity(ctx, telegramId, user) {
-    const text = ctx.message.text.trim();
+    const text = getTextFromContext(ctx);
+    console.log('🔍 [addQuantity] Text received:', text);
     const quantity = parseInt(text);
 
     if (isNaN(quantity) || quantity <= 0) {
@@ -179,9 +242,11 @@ async function handleAddQuantity(ctx, telegramId, user) {
 }
 
 async function handleCostPrice(ctx, telegramId, user) {
-    const text = ctx.message.text.trim().replace(/,/g, '');
+    const text = getTextFromContext(ctx);
+    console.log('🔍 [costPrice] Text received:', text);
+    const cleanText = text ? text.replace(/,/g, '') : '';
     const session = sessionManager.getSession(telegramId);
-    const costPrice = parseFloat(text);
+    const costPrice = parseFloat(cleanText);
 
     if (isNaN(costPrice) || costPrice < 0) {
         await ctx.reply('⚠️ Please enter a valid cost price (e.g., 5000).');
@@ -200,9 +265,11 @@ async function handleCostPrice(ctx, telegramId, user) {
 }
 
 async function handleSellingPrice(ctx, telegramId, user) {
-    const text = ctx.message.text.trim().replace(/,/g, '');
+    const text = getTextFromContext(ctx);
+    console.log('🔍 [sellingPrice] Text received:', text);
+    const cleanText = text ? text.replace(/,/g, '') : '';
     const session = sessionManager.getSession(telegramId);
-    const sellingPrice = parseFloat(text);
+    const sellingPrice = parseFloat(cleanText);
 
     if (isNaN(sellingPrice) || sellingPrice < 0) {
         await ctx.reply('⚠️ Please enter a valid selling price (e.g., 7000).');
@@ -243,10 +310,12 @@ async function handleSellingPrice(ctx, telegramId, user) {
 // EDIT ITEM FLOW
 // =============================================
 async function handleEditItem(ctx, telegramId, user) {
-    const text = ctx.message.text.trim();
+    const text = getTextFromContext(ctx);
+    console.log('🔍 [editItem] Text received:', text);
 
-    if (!text) {
-        await ctx.reply('Please enter the item name or ID to edit.');
+    // If it's a menu button (starts with "menu_"), show the menu instead
+    if (!text || text.startsWith('menu_')) {
+        await showInventoryMenu(ctx, telegramId, user);
         return;
     }
 
@@ -266,6 +335,7 @@ async function handleEditItem(ctx, telegramId, user) {
         return;
     }
 
+    const session = sessionManager.getSession(telegramId);
     sessionManager.setData(telegramId, { 
         ...session.data, 
         itemId: item.id,
@@ -291,7 +361,8 @@ async function handleEditItem(ctx, telegramId, user) {
 }
 
 async function handleEditField(ctx, telegramId, user) {
-    const text = ctx.message.text.trim();
+    const text = getTextFromContext(ctx);
+    console.log('🔍 [editField] Text received:', text);
     const session = sessionManager.getSession(telegramId);
 
     if (!['1', '2', '3'].includes(text)) {
@@ -321,9 +392,11 @@ async function handleEditField(ctx, telegramId, user) {
 }
 
 async function handleEditValue(ctx, telegramId, user) {
-    const text = ctx.message.text.trim().replace(/,/g, '');
+    const text = getTextFromContext(ctx);
+    console.log('🔍 [editValue] Text received:', text);
+    const cleanText = text ? text.replace(/,/g, '') : '';
     const session = sessionManager.getSession(telegramId);
-    const value = parseFloat(text);
+    const value = parseFloat(cleanText);
 
     if (isNaN(value) || value < 0) {
         await ctx.reply('⚠️ Please enter a valid positive number.');
@@ -359,7 +432,8 @@ async function handleEditValue(ctx, telegramId, user) {
 // ADJUST STOCK FLOW
 // =============================================
 async function handleAdjustItem(ctx, telegramId, user) {
-    const text = ctx.message.text.trim();
+    const text = getTextFromContext(ctx);
+    console.log('🔍 [adjustItem] Text received:', text);
 
     if (!text) {
         await ctx.reply('Please enter the item name or ID to adjust.');
@@ -382,6 +456,7 @@ async function handleAdjustItem(ctx, telegramId, user) {
         return;
     }
 
+    const session = sessionManager.getSession(telegramId);
     sessionManager.setData(telegramId, { 
         ...session.data, 
         itemId: item.id,
@@ -402,7 +477,8 @@ async function handleAdjustItem(ctx, telegramId, user) {
 }
 
 async function handleAdjustType(ctx, telegramId, user) {
-    const text = ctx.message.text.trim();
+    const text = getTextFromContext(ctx);
+    console.log('🔍 [adjustType] Text received:', text);
     const session = sessionManager.getSession(telegramId);
 
     if (!['1', '2', '3'].includes(text)) {
@@ -432,7 +508,8 @@ async function handleAdjustType(ctx, telegramId, user) {
 }
 
 async function handleAdjustValue(ctx, telegramId, user) {
-    const text = ctx.message.text.trim();
+    const text = getTextFromContext(ctx);
+    console.log('🔍 [adjustValue] Text received:', text);
     const session = sessionManager.getSession(telegramId);
     const quantity = parseInt(text);
 
@@ -445,17 +522,14 @@ async function handleAdjustValue(ctx, telegramId, user) {
     const adjustType = session.data.adjustType;
 
     if (adjustType === '1') {
-        // Add Stock
         newQuantity = session.data.currentQuantity + quantity;
     } else if (adjustType === '2') {
-        // Remove Stock
         if (quantity > session.data.currentQuantity) {
             await ctx.reply(`⚠️ Cannot remove ${quantity} units. Only ${session.data.currentQuantity} units available.`);
             return;
         }
         newQuantity = session.data.currentQuantity - quantity;
     } else if (adjustType === '3') {
-        // Set Exact Quantity
         newQuantity = quantity;
     }
 
@@ -480,18 +554,42 @@ async function handleAdjustValue(ctx, telegramId, user) {
 }
 
 // =============================================
-// CONFIRMATION HANDLER (Handles ALL confirmations)
+// CONFIRMATION HANDLER (FIXED)
 // =============================================
 async function handleConfirmation(ctx, telegramId, user) {
-    const text = ctx.message.text.trim().toUpperCase();
     const session = sessionManager.getSession(telegramId);
+    
+    // Get text from context - handle both message and callback query
+    let text = null;
+    if (ctx.message && ctx.message.text) {
+        text = ctx.message.text.trim();
+    } else if (ctx.callbackQuery && ctx.callbackQuery.data) {
+        text = ctx.callbackQuery.data.trim();
+    } else if (ctx.update && ctx.update.callback_query && ctx.update.callback_query.data) {
+        text = ctx.update.callback_query.data.trim();
+    }
 
-    if (text === 'YES') {
+    console.log('🔍 [confirmation] Raw text received:', text);
+    console.log('🔍 [confirmation] Session state:', session ? session.state : 'null');
+    console.log('🔍 [confirmation] Pending action:', session?.data?.pendingAction);
+
+    if (!session || !session.data || !session.data.pendingAction) {
+        console.log('🔍 [confirmation] No session or pending action, showing menu');
+        await ctx.reply('⚠️ Session expired. Please start over.');
+        await showInventoryMenu(ctx, telegramId, user);
+        return;
+    }
+
+    // Normalize text for comparison
+    const normalizedText = text ? text.toUpperCase() : '';
+    console.log('🔍 [confirmation] Normalized text:', normalizedText);
+
+    if (normalizedText === 'YES') {
         const pendingAction = session.data.pendingAction;
+        console.log('🔍 [confirmation] Processing YES for action:', pendingAction);
 
         try {
             if (pendingAction === 'add_stock') {
-                // Add new stock
                 await addStockUseCase.execute({
                     userId: user.id,
                     itemName: session.data.itemName,
@@ -517,7 +615,6 @@ async function handleConfirmation(ctx, telegramId, user) {
                 );
 
             } else if (pendingAction === 'adjust_stock') {
-                // Adjust existing stock
                 await inventoryRepo.update(session.data.itemId, {
                     quantity: session.data.newQuantity,
                 });
@@ -536,18 +633,18 @@ async function handleConfirmation(ctx, telegramId, user) {
                 );
 
             } else {
-                // Unknown action
                 sessionManager.clearSession(telegramId);
                 await ctx.reply('❌ Unknown action. Please try again.');
                 await showInventoryMenu(ctx, telegramId, user);
             }
 
         } catch (error) {
+            console.error('❌ [confirmation] Error:', error.message);
             logger.error('Confirmation error:', error);
             await ctx.reply(`❌ Failed to complete action: ${error.message}`);
         }
 
-    } else if (text === 'NO') {
+    } else if (normalizedText === 'NO') {
         sessionManager.clearSession(telegramId);
         await ctx.reply(
             `❌ **Operation Cancelled.**\n\nSelect an option below:`,
@@ -585,7 +682,7 @@ async function handleConfirmation(ctx, telegramId, user) {
 }
 
 // =============================================
-// LIST INVENTORY
+// LIST INVENTORY (UPDATED with correct profit)
 // =============================================
 async function listInventory(ctx) {
     const telegramId = ctx.from.id;
@@ -608,27 +705,51 @@ async function listInventory(ctx) {
     let message = `📦 **Inventory List**\n\n`;
     let totalCostValue = 0;
     let totalSellingValue = 0;
+    let totalProfitValue = 0;
 
     for (const item of items) {
-        const status = item.quantity <= 0 ? '🚫' : item.quantity <= LOW_STOCK_THRESHOLD ? '⚠️' : '✅';
-        const profit = (item.selling_price || 0) - (item.cost_price || 0);
-        totalCostValue += (item.quantity || 0) * (item.cost_price || 0);
-        totalSellingValue += (item.quantity || 0) * (item.selling_price || 0);
+        const quantity = item.quantity || 0;
+        const costPrice = item.cost_price || 0;
+        const sellingPrice = item.selling_price || 0;
+        
+        // Calculate per item totals
+        const itemCost = quantity * costPrice;
+        const itemSell = quantity * sellingPrice;
+        const itemProfit = itemSell - itemCost;
+        
+        totalCostValue += itemCost;
+        totalSellingValue += itemSell;
+        totalProfitValue += itemProfit;
+
+        // Status indicator
+        const status = quantity <= 0 ? '🚫' : quantity <= LOW_STOCK_THRESHOLD ? '⚠️' : '✅';
+        
+        // Per-unit profit and margin
+        const unitProfit = sellingPrice - costPrice;
+        const profitMargin = costPrice > 0 ? ((unitProfit / costPrice) * 100).toFixed(1) : 0;
 
         message += `${status} **${item.item_name}**\n`;
-        message += `   📦 ${item.quantity || 0} units\n`;
-        message += `   💰 Cost: ₦${(item.cost_price || 0).toLocaleString()}\n`;
-        message += `   💲 Sell: ₦${(item.selling_price || 0).toLocaleString()}\n`;
-        if (profit > 0) {
-            message += `   📈 Profit: ₦${profit.toLocaleString()} (${item.cost_price > 0 ? ((profit / item.cost_price) * 100).toFixed(1) : 0}% margin)\n`;
+        message += `   📦 ${quantity} units\n`;
+        message += `   💰 Cost: ₦${costPrice.toLocaleString()}\n`;
+        message += `   💲 Sell: ₦${sellingPrice.toLocaleString()}\n`;
+        
+        // Only show profit if selling price > 0
+        if (sellingPrice > 0 && unitProfit > 0) {
+            message += `   📈 Profit: ₦${unitProfit.toLocaleString()} (${profitMargin}% margin) per unit\n`;
+        } else if (sellingPrice > 0 && unitProfit <= 0) {
+            message += `   📉 Loss: ₦${Math.abs(unitProfit).toLocaleString()} (${profitMargin}% margin) per unit\n`;
         }
         message += `   🆔 ID: ${item.id}\n\n`;
     }
 
+    // Calculate total margin
+    const totalMargin = totalCostValue > 0 ? ((totalProfitValue / totalCostValue) * 100).toFixed(1) : 0;
+
     message += `📊 **Total Value**\n`;
-    message += `   💰 Cost: ₦${totalCostValue.toLocaleString()}\n`;
-    message += `   💲 Sell: ₦${totalSellingValue.toLocaleString()}\n`;
-    message += `   📈 Potential Profit: ₦${(totalSellingValue - totalCostValue).toLocaleString()}`;
+    message += `   💰 Total Cost: ₦${totalCostValue.toLocaleString()}\n`;
+    message += `   💲 Total Selling: ₦${totalSellingValue.toLocaleString()}\n`;
+    message += `   📈 Potential Profit: ₦${totalProfitValue.toLocaleString()}\n`;
+    message += `   📊 Margin: ${totalMargin}%\n`;
 
     await ctx.reply(message);
     await ctx.reply(`Select an option below:`, { ...getInventoryKeyboard() });
