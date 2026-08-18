@@ -1,14 +1,18 @@
-// src/application/useCases/debtors/RecordDebtorPaymentUseCase.js
+// src/application/useCases/payments/ReceivePaymentUseCase.js
 
-class RecordDebtorPaymentUseCase {
+class ReceivePaymentUseCase {
     constructor({
-        debtorRepository,
         paymentRepository,
+        debtorRepository,
         transactionRepository,
+        saleRepository,
+        incomeRepository,
     }) {
-        this.debtorRepository = debtorRepository;
         this.paymentRepository = paymentRepository;
+        this.debtorRepository = debtorRepository;
         this.transactionRepository = transactionRepository;
+        this.saleRepository = saleRepository;
+        this.incomeRepository = incomeRepository;
     }
 
     async execute({
@@ -30,19 +34,23 @@ class RecordDebtorPaymentUseCase {
             throw new Error('Payment amount must be greater than zero');
         }
 
+        // Get debtor
         const debtor = await this.debtorRepository.findById(debtorId);
         if (!debtor) {
             throw new Error('Debtor not found');
         }
 
+        // Verify business ownership
         if (debtor.businessId !== businessId) {
             throw new Error('Access denied: Debtor does not belong to this business');
         }
 
+        // Check if debtor is already paid
         if (debtor.isFullyPaid()) {
             throw new Error('Debtor is already fully paid');
         }
 
+        // Check if payment exceeds balance
         if (amount > debtor.balanceRemaining) {
             throw new Error(`Payment amount (${amount}) exceeds remaining balance (${debtor.balanceRemaining})`);
         }
@@ -59,9 +67,9 @@ class RecordDebtorPaymentUseCase {
             notes,
         });
 
-        await this.paymentRepository.create(payment);
+        const savedPayment = await this.paymentRepository.create(payment);
 
-        // Create transaction
+        // Create transaction for payment
         const Transaction = require('../../../domain/entities/Transaction');
         const transaction = new Transaction({
             businessId,
@@ -77,20 +85,52 @@ class RecordDebtorPaymentUseCase {
 
         await this.transactionRepository.create(transaction);
 
-        // Update debtor
+        // Update debtor balance
         debtor.receivePayment(amount);
         await this.debtorRepository.update(debtor.id, debtor);
 
+        // If debtor is linked to a sale, update sale payment status
+        if (debtor.referenceType === 'SALE' && debtor.referenceId) {
+            const sale = await this.saleRepository.findById(debtor.referenceId);
+            if (sale && sale.businessId === businessId) {
+                const totalPaid = debtor.amountPaid;
+                const totalAmount = debtor.originalAmount;
+
+                if (totalPaid >= totalAmount) {
+                    sale.markAsPaid();
+                } else if (totalPaid > 0) {
+                    sale.markAsPartial(totalPaid);
+                }
+                await this.saleRepository.update(sale.id, sale);
+            }
+        }
+
+        // If debtor is linked to income, update income payment status
+        if (debtor.referenceType === 'INCOME' && debtor.referenceId) {
+            const income = await this.incomeRepository.findById(debtor.referenceId);
+            if (income && income.businessId === businessId) {
+                const totalPaid = debtor.amountPaid;
+                const totalAmount = debtor.originalAmount;
+
+                if (totalPaid >= totalAmount) {
+                    income.markAsPaid();
+                } else if (totalPaid > 0) {
+                    income.markAsPartial(totalPaid);
+                }
+                await this.incomeRepository.update(income.id, income);
+            }
+        }
+
         return {
             success: true,
+            payment: savedPayment.toJSON(),
             debtor: debtor.toJSON(),
-            payment: payment.toJSON(),
             remainingBalance: debtor.balanceRemaining,
             message: debtor.isFullyPaid()
                 ? 'Debtor fully paid'
-                : `Payment recorded. Remaining balance: ${debtor.balanceRemaining}`,
+                : `Payment received. Remaining balance: ${debtor.balanceRemaining}`,
         };
     }
 }
 
-module.exports = RecordDebtorPaymentUseCase;
+module.exports = ReceivePaymentUseCase;

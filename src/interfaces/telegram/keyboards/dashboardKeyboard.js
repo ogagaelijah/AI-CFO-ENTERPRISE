@@ -1,299 +1,323 @@
 // src/interfaces/telegram/keyboards/dashboardKeyboard.js
 
-const { Markup } = require('telegraf');
+// FIXED PATH: ../../../config/industries (was ../../config/industries)
+const { INDUSTRIES } = require('../../../config/industries');
 
 // =============================================
-// MAIN DASHBOARD KEYBOARD
+// MAIN MENU KEYBOARD
 // =============================================
-function getMainMenuKeyboard(industry) {
-    const industryButtons = getIndustryButtons(industry);
-    
-    const coreButtons = [
-        { text: '📊 Dashboard', callback_data: 'menu_dashboard' },
-        { text: '📋 Reports', callback_data: 'menu_reports' },
-        { text: '🤖 Ask AI', callback_data: 'menu_ai' },
-        { text: '⚙️ Settings', callback_data: 'menu_settings' },
-    ];
+function getMainMenuKeyboard(industry = 'RETAIL') {
+    const industryConfig = INDUSTRIES[industry] || INDUSTRIES.RETAIL;
+    const features = industryConfig.features || {};
 
-    const allButtons = [...industryButtons, ...coreButtons];
+    const buttons = [];
+
+    // Core Financial Modules
+    buttons.push([{ text: '💰 Record Sale', callback_data: 'menu_sale' }]);
     
-    const rows = [];
-    for (let i = 0; i < allButtons.length; i += 2) {
-        const row = [];
-        row.push(Markup.button.callback(allButtons[i].text, allButtons[i].callback_data));
-        if (allButtons[i + 1]) {
-            row.push(Markup.button.callback(allButtons[i + 1].text, allButtons[i + 1].callback_data));
-        }
-        rows.push(row);
+    if (features.inventory) {
+        buttons.push([{ text: '📦 Inventory', callback_data: 'menu_inventory' }]);
     }
-
-    return Markup.inlineKeyboard(rows);
-}
-
-// =============================================
-// INDUSTRY-SPECIFIC BUTTONS
-// =============================================
-function getIndustryButtons(industry) {
-    const baseButtons = [
+    
+    buttons.push([
         { text: '💰 Income', callback_data: 'menu_income' },
-        { text: '📉 Expense', callback_data: 'menu_expense' },
-        { text: '🛒 Purchase', callback_data: 'menu_purchase' },
-    ];
+        { text: '📉 Expenses', callback_data: 'menu_expense' }
+    ]);
+    
+    if (features.debtors) {
+        buttons.push([{ text: '👥 Debtors', callback_data: 'menu_debtors' }]);
+    }
+    
+    if (features.creditors) {
+        buttons.push([{ text: '🏦 Creditors', callback_data: 'menu_creditors' }]);
+    }
+    
+    buttons.push([{ text: '🛒 Purchases', callback_data: 'menu_purchase' }]);
+    buttons.push([{ text: '📊 Dashboard', callback_data: 'menu_dashboard' }]);
+    buttons.push([{ text: '📋 Reports', callback_data: 'menu_reports' }]);
+    
+    // New Modules
+    buttons.push([{ text: '📈 Forecast', callback_data: 'menu_forecast' }]);
+    buttons.push([{ text: '💡 Recommendations', callback_data: 'menu_recommendations' }]);
+    buttons.push([{ text: '🧠 Ask AI', callback_data: 'menu_ai' }]);
+    buttons.push([{ text: '📋 Subscription', callback_data: 'menu_subscription' }]);
+    
+    // Customers, Suppliers, Projects
+    buttons.push([
+        { text: '👤 Customers', callback_data: 'menu_customers' },
+        { text: '🏢 Suppliers', callback_data: 'menu_suppliers' }
+    ]);
+    buttons.push([{ text: '🏗️ Projects', callback_data: 'menu_projects' }]);
+    
+    buttons.push([{ text: '⚙️ Settings', callback_data: 'menu_settings' }]);
 
-    const industrySpecific = {
-        RETAIL: [
-            { text: '📝 Record Sale', callback_data: 'menu_sale' },
-            { text: '📦 Inventory', callback_data: 'menu_inventory' },
-            { text: '👥 Debtors', callback_data: 'menu_debtors' },
-            { text: '🏦 Creditors', callback_data: 'menu_creditors' },
-        ],
-        MANUFACTURING: [
-            { text: '🏭 Production', callback_data: 'menu_production' },
-            { text: '📦 Inventory', callback_data: 'menu_inventory' },
-            { text: '📝 Record Sale', callback_data: 'menu_sale' },
-            { text: '👥 Debtors', callback_data: 'menu_debtors' },
-            { text: '🏦 Creditors', callback_data: 'menu_creditors' },
-        ],
-        CONSTRUCTION: [
-            { text: '🏗️ Projects', callback_data: 'menu_projects' },
-            { text: '📦 Materials', callback_data: 'menu_inventory' },
-            { text: '📝 Record Sale', callback_data: 'menu_sale' },
-            { text: '👥 Debtors', callback_data: 'menu_debtors' },
-            { text: '🏦 Creditors', callback_data: 'menu_creditors' },
-        ],
-        HEALTHCARE: [
-            { text: '🩺 Register Visit', callback_data: 'menu_visit' },
-            { text: '💊 Supplies', callback_data: 'menu_inventory' },
-            { text: '👥 Debtors', callback_data: 'menu_debtors' },
-            { text: '🏦 Creditors', callback_data: 'menu_creditors' },
-        ],
-        CONSULTANCY: [
-            { text: '💼 Projects', callback_data: 'menu_projects' },
-            { text: '👥 Clients', callback_data: 'menu_clients' },
-            { text: '📝 Log Hours', callback_data: 'menu_loghours' },
-            { text: '👥 Debtors', callback_data: 'menu_debtors' },
-        ],
-        REAL_ESTATE: [
-            { text: '🏠 Properties', callback_data: 'menu_properties' },
-            { text: '👥 Tenants', callback_data: 'menu_tenants' },
-            { text: '💰 Record Rent', callback_data: 'menu_rent' },
-            { text: '👥 Debtors', callback_data: 'menu_debtors' },
-        ],
-        EDUCATION: [
-            { text: '📚 Students', callback_data: 'menu_students' },
-            { text: '💰 Record Fees', callback_data: 'menu_fees' },
-            { text: '👥 Debtors', callback_data: 'menu_debtors' },
-            { text: '🏦 Creditors', callback_data: 'menu_creditors' },
-        ],
-        LOGISTICS: [
-            { text: '🚛 Record Trip', callback_data: 'menu_trip' },
-            { text: '🚗 Vehicles', callback_data: 'menu_vehicles' },
-            { text: '👥 Debtors', callback_data: 'menu_debtors' },
-            { text: '🏦 Creditors', callback_data: 'menu_creditors' },
-        ],
+    return {
+        reply_markup: {
+            inline_keyboard: buttons,
+        },
     };
-
-    const specific = industrySpecific[industry] || industrySpecific.RETAIL;
-    return [...baseButtons, ...specific];
 }
 
 // =============================================
-// INVENTORY SUB-MENU (UPDATED)
+// INVENTORY KEYBOARD
 // =============================================
 function getInventoryKeyboard() {
-    return Markup.inlineKeyboard([
-        [
-            Markup.button.callback('➕ Add Stock', 'inventory_add'),
-            Markup.button.callback('📋 View All', 'inventory_list'),
-        ],
-        [
-            Markup.button.callback('✏️ Edit Item', 'inventory_edit'),
-            Markup.button.callback('📦 Adjust Stock', 'inventory_adjust'),
-        ],
-        [
-            Markup.button.callback('⚠️ Low Stock', 'inventory_low'),
-            Markup.button.callback('💰 Total Value', 'inventory_value'),
-        ],
-        [
-            Markup.button.callback('🔙 Back to Main', 'menu_back'),
-        ],
-    ]);
+    return {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: '📦 Add Stock', callback_data: 'inventory_add' }],
+                [{ text: '✏️ Edit Item', callback_data: 'inventory_edit' }],
+                [{ text: '📊 Adjust Stock', callback_data: 'inventory_adjust' }],
+                [{ text: '📋 List All', callback_data: 'inventory_list' }],
+                [{ text: '⚠️ Low Stock Alerts', callback_data: 'inventory_low' }],
+                [{ text: '💰 Total Value', callback_data: 'inventory_value' }],
+                [{ text: '🔙 Back to Main Menu', callback_data: 'menu_back' }],
+            ],
+        },
+    };
 }
 
 // =============================================
-// DEBTORS SUB-MENU
+// DEBTOR KEYBOARD
 // =============================================
 function getDebtorKeyboard() {
-    return Markup.inlineKeyboard([
-        [
-            Markup.button.callback('➕ Add Debtor', 'debtor_add'),
-            Markup.button.callback('💰 Record Payment', 'debtor_pay'),
-        ],
-        [
-            Markup.button.callback('📋 View All', 'debtor_list'),
-            Markup.button.callback('🔴 Overdue', 'debtor_overdue'),
-        ],
-        [
-            Markup.button.callback('🔙 Back to Main', 'menu_back'),
-        ],
-    ]);
+    return {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: '➕ Add Debtor', callback_data: 'debtor_add' }],
+                [{ text: '💰 Record Payment', callback_data: 'debtor_pay' }],
+                [{ text: '📋 List All Debtors', callback_data: 'debtor_list' }],
+                [{ text: '⚠️ Overdue Debtors', callback_data: 'debtor_overdue' }],
+                [{ text: '🔙 Back to Main Menu', callback_data: 'menu_back' }],
+            ],
+        },
+    };
 }
 
 // =============================================
-// CREDITORS SUB-MENU
+// CREDITOR KEYBOARD
 // =============================================
 function getCreditorKeyboard() {
-    return Markup.inlineKeyboard([
-        [
-            Markup.button.callback('➕ Add Creditor', 'creditor_add'),
-            Markup.button.callback('💰 Record Payment', 'creditor_pay'),
-        ],
-        [
-            Markup.button.callback('📋 View All', 'creditor_list'),
-            Markup.button.callback('🔴 Overdue', 'creditor_overdue'),
-        ],
-        [
-            Markup.button.callback('🔙 Back to Main', 'menu_back'),
-        ],
-    ]);
+    return {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: '➕ Add Creditor', callback_data: 'creditor_add' }],
+                [{ text: '💰 Make Payment', callback_data: 'creditor_pay' }],
+                [{ text: '📋 List All Creditors', callback_data: 'creditor_list' }],
+                [{ text: '⚠️ Overdue Creditors', callback_data: 'creditor_overdue' }],
+                [{ text: '🔙 Back to Main Menu', callback_data: 'menu_back' }],
+            ],
+        },
+    };
 }
 
 // =============================================
-// PURCHASE SUB-MENU
+// PURCHASE KEYBOARD
 // =============================================
 function getPurchaseKeyboard() {
-    return Markup.inlineKeyboard([
-        [
-            Markup.button.callback('➕ Record Purchase', 'purchase_add'),
-            Markup.button.callback('📋 View All', 'purchase_list'),
-        ],
-        [
-            Markup.button.callback('📊 Summary', 'purchase_summary'),
-            Markup.button.callback('📅 Today', 'purchase_today'),
-        ],
-        [
-            Markup.button.callback('🔙 Back to Main', 'menu_back'),
-        ],
-    ]);
+    return {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: '🛒 Record Purchase', callback_data: 'purchase_add' }],
+                [{ text: '📋 List Purchases', callback_data: 'purchase_list' }],
+                [{ text: '📊 Purchase Summary', callback_data: 'purchase_summary' }],
+                [{ text: '📈 Today\'s Purchases', callback_data: 'purchase_today' }],
+                [{ text: '🔙 Back to Main Menu', callback_data: 'menu_back' }],
+            ],
+        },
+    };
 }
 
 // =============================================
-// REPORTS SUB-MENU
-// =============================================
-function getReportKeyboard() {
-    return Markup.inlineKeyboard([
-        [
-            Markup.button.callback('📊 Daily', 'report_daily'),
-            Markup.button.callback('📈 Weekly', 'report_weekly'),
-        ],
-        [
-            Markup.button.callback('📉 Monthly', 'report_monthly'),
-            Markup.button.callback('📋 Executive', 'report_executive'),
-        ],
-        [
-            Markup.button.callback('📄 Export PDF', 'report_pdf'),
-            Markup.button.callback('📊 Export Excel', 'report_excel'),
-        ],
-        [
-            Markup.button.callback('🔙 Back to Main', 'menu_back'),
-        ],
-    ]);
-}
-
-// =============================================
-// INCOME SUB-MENU
+// INCOME KEYBOARD
 // =============================================
 function getIncomeKeyboard() {
-    return Markup.inlineKeyboard([
-        [
-            Markup.button.callback('➕ Record Income', 'income_add'),
-            Markup.button.callback('📋 View All', 'income_list'),
-        ],
-        [
-            Markup.button.callback('📊 Summary', 'income_summary'),
-            Markup.button.callback('📅 Today', 'income_today'),
-        ],
-        [
-            Markup.button.callback('🔙 Back to Main', 'menu_back'),
-        ],
-    ]);
+    return {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: '💰 Record Income', callback_data: 'income_add' }],
+                [{ text: '📋 List Income', callback_data: 'income_list' }],
+                [{ text: '📊 Income Summary', callback_data: 'income_summary' }],
+                [{ text: '📈 Today\'s Income', callback_data: 'income_today' }],
+                [{ text: '🔙 Back to Main Menu', callback_data: 'menu_back' }],
+            ],
+        },
+    };
 }
 
 // =============================================
-// EXPENSE SUB-MENU
+// EXPENSE KEYBOARD
 // =============================================
 function getExpenseKeyboard() {
-    return Markup.inlineKeyboard([
-        [
-            Markup.button.callback('➕ Record Expense', 'expense_add'),
-            Markup.button.callback('📋 View All', 'expense_list'),
-        ],
-        [
-            Markup.button.callback('📊 Summary', 'expense_summary'),
-            Markup.button.callback('📅 Today', 'expense_today'),
-        ],
-        [
-            Markup.button.callback('🔙 Back to Main', 'menu_back'),
-        ],
-    ]);
+    return {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: '📉 Record Expense', callback_data: 'expense_add' }],
+                [{ text: '📋 List Expenses', callback_data: 'expense_list' }],
+                [{ text: '📊 Expense Summary', callback_data: 'expense_summary' }],
+                [{ text: '📈 Today\'s Expenses', callback_data: 'expense_today' }],
+                [{ text: '🔙 Back to Main Menu', callback_data: 'menu_back' }],
+            ],
+        },
+    };
 }
 
 // =============================================
-// ASK AI SUB-MENU
+// REPORT KEYBOARD
+// =============================================
+function getReportKeyboard() {
+    return {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: '📊 Executive Summary', callback_data: 'report_executive' }],
+                [{ text: '📈 Daily Report', callback_data: 'report_daily' }],
+                [{ text: '📈 Weekly Report', callback_data: 'report_weekly' }],
+                [{ text: '📈 Monthly Report', callback_data: 'report_monthly' }],
+                [{ text: '📄 Export PDF', callback_data: 'report_pdf' }],
+                [{ text: '📊 Export Excel', callback_data: 'report_excel' }],
+                [{ text: '🔙 Back to Main Menu', callback_data: 'menu_back' }],
+            ],
+        },
+    };
+}
+
+// =============================================
+// AI KEYBOARD
 // =============================================
 function getAiKeyboard() {
-    return Markup.inlineKeyboard([
-        [
-            Markup.button.callback('💬 Ask a Question', 'ai_ask'),
-            Markup.button.callback('📊 Summary', 'ai_summary'),
-        ],
-        [
-            Markup.button.callback('🔙 Back to Main', 'menu_back'),
-        ],
-    ]);
+    return {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: '❓ Ask a Question', callback_data: 'ai_ask' }],
+                [{ text: '📊 AI Summary', callback_data: 'ai_summary' }],
+                [{ text: '🔙 Back to Main Menu', callback_data: 'menu_back' }],
+            ],
+        },
+    };
 }
 
 // =============================================
-// SETTINGS SUB-MENU
+// SETTINGS KEYBOARD
 // =============================================
 function getSettingsKeyboard() {
-    return Markup.inlineKeyboard([
-        [
-            Markup.button.callback('👤 Profile', 'settings_profile'),
-            Markup.button.callback('🏢 Business', 'settings_business'),
-        ],
-        [
-            Markup.button.callback('🔑 Subscription', 'settings_subscription'),
-            Markup.button.callback('📋 Help', 'settings_help'),
-        ],
-        [
-            Markup.button.callback('🔙 Back to Main', 'menu_back'),
-        ],
-    ]);
+    return {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: '👤 Profile', callback_data: 'settings_profile' }],
+                [{ text: '🏢 Business', callback_data: 'settings_business' }],
+                [{ text: '📋 Subscription', callback_data: 'menu_subscription' }],
+                [{ text: '🔙 Back to Main Menu', callback_data: 'menu_back' }],
+            ],
+        },
+    };
 }
 
 // =============================================
-// BACK TO MAIN KEYBOARD
+// NEW KEYBOARDS
+// =============================================
+
+// FORECAST KEYBOARD
+function getForecastKeyboard() {
+    return {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: '📈 3-Month Forecast', callback_data: 'forecast_3' }],
+                [{ text: '📈 6-Month Forecast', callback_data: 'forecast_6' }],
+                [{ text: '📈 12-Month Forecast', callback_data: 'forecast_12' }],
+                [{ text: '📊 Seasonality Analysis', callback_data: 'forecast_seasonality' }],
+                [{ text: '🔙 Back to Main Menu', callback_data: 'menu_back' }],
+            ],
+        },
+    };
+}
+
+// SUBSCRIPTION KEYBOARD
+function getSubscriptionKeyboard() {
+    return {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: '📊 View Current Plan', callback_data: 'subscription_view' }],
+                [{ text: '⬆️ Upgrade Plan', callback_data: 'subscription_upgrade' }],
+                [{ text: '📊 Feature Access Check', callback_data: 'subscription_features' }],
+                [{ text: '❌ Cancel Subscription', callback_data: 'subscription_cancel' }],
+                [{ text: '🔙 Back to Main Menu', callback_data: 'menu_back' }],
+            ],
+        },
+    };
+}
+
+// CUSTOMER KEYBOARD
+function getCustomerKeyboard() {
+    return {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: '➕ Add Customer', callback_data: 'customer_create' }],
+                [{ text: '👤 View Customer', callback_data: 'customer_view' }],
+                [{ text: '📋 List All Customers', callback_data: 'customer_list' }],
+                [{ text: '📊 Customer History', callback_data: 'customer_history' }],
+                [{ text: '🔙 Back to Main Menu', callback_data: 'menu_back' }],
+            ],
+        },
+    };
+}
+
+// SUPPLIER KEYBOARD
+function getSupplierKeyboard() {
+    return {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: '➕ Add Supplier', callback_data: 'supplier_create' }],
+                [{ text: '👤 View Supplier', callback_data: 'supplier_view' }],
+                [{ text: '📋 List All Suppliers', callback_data: 'supplier_list' }],
+                [{ text: '🔙 Back to Main Menu', callback_data: 'menu_back' }],
+            ],
+        },
+    };
+}
+
+// PROJECT KEYBOARD
+function getProjectKeyboard() {
+    return {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: '➕ Create Project', callback_data: 'project_create' }],
+                [{ text: '👤 View Project', callback_data: 'project_view' }],
+                [{ text: '📋 List All Projects', callback_data: 'project_list' }],
+                [{ text: '💰 Project Financials', callback_data: 'project_financials' }],
+                [{ text: '🔙 Back to Main Menu', callback_data: 'menu_back' }],
+            ],
+        },
+    };
+}
+
+// =============================================
+// BACK KEYBOARD
 // =============================================
 function getBackKeyboard() {
-    return Markup.inlineKeyboard([
-        [
-            Markup.button.callback('🔙 Back to Main', 'menu_back'),
-        ],
-    ]);
+    return {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: '🔙 Back', callback_data: 'menu_back' }],
+            ],
+        },
+    };
 }
 
 module.exports = {
     getMainMenuKeyboard,
-    getIndustryButtons,
     getInventoryKeyboard,
     getDebtorKeyboard,
     getCreditorKeyboard,
     getPurchaseKeyboard,
-    getReportKeyboard,
     getIncomeKeyboard,
     getExpenseKeyboard,
+    getReportKeyboard,
     getAiKeyboard,
     getSettingsKeyboard,
+    getForecastKeyboard,
+    getSubscriptionKeyboard,
+    getCustomerKeyboard,
+    getSupplierKeyboard,
+    getProjectKeyboard,
     getBackKeyboard,
 };

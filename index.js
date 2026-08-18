@@ -15,7 +15,30 @@ const { debtorHandler, listDebtors, overdueDebtors } = require('./src/interfaces
 const { creditorHandler, listCreditors, overdueCreditors } = require('./src/interfaces/telegram/handlers/creditorHandler');
 const { purchaseHandler, startPurchaseFlow, listPurchases, purchaseSummary, purchaseToday } = require('./src/interfaces/telegram/handlers/purchaseHandler');
 const reportHandler = require('./src/interfaces/telegram/handlers/reportHandler');
-const { getMainMenuKeyboard, getInventoryKeyboard, getDebtorKeyboard, getCreditorKeyboard, getPurchaseKeyboard, getReportKeyboard, getIncomeKeyboard, getExpenseKeyboard, getAiKeyboard, getSettingsKeyboard } = require('./src/interfaces/telegram/keyboards/dashboardKeyboard');
+const forecastHandler = require('./src/interfaces/telegram/handlers/forecastHandler');
+const recommendationHandler = require('./src/interfaces/telegram/handlers/recommendationHandler');
+const aiHandler = require('./src/interfaces/telegram/handlers/aiHandler');
+const subscriptionHandler = require('./src/interfaces/telegram/handlers/subscriptionHandler');
+const customerHandler = require('./src/interfaces/telegram/handlers/customerHandler');
+const supplierHandler = require('./src/interfaces/telegram/handlers/supplierHandler');
+const projectHandler = require('./src/interfaces/telegram/handlers/projectHandler');
+
+const { 
+    getMainMenuKeyboard, 
+    getInventoryKeyboard, 
+    getDebtorKeyboard, 
+    getCreditorKeyboard, 
+    getPurchaseKeyboard, 
+    getReportKeyboard, 
+    getIncomeKeyboard, 
+    getExpenseKeyboard, 
+    getAiKeyboard, 
+    getSettingsKeyboard,
+    getCustomerKeyboard,
+    getSupplierKeyboard,
+    getProjectKeyboard 
+} = require('./src/interfaces/telegram/keyboards/dashboardKeyboard');
+
 const { INDUSTRIES } = require('./src/config/industries');
 const SetupBusinessUseCase = require('./src/application/useCases/onboarding/SetupBusinessUseCase');
 const UserRepository = require('./src/infrastructure/database/sqlite/repositories/UserRepository');
@@ -65,6 +88,13 @@ botInstance.command('debtors', debtorHandler);
 botInstance.command('creditors', creditorHandler);
 botInstance.command('purchase', purchaseHandler);
 botInstance.command('reports', reportHandler);
+botInstance.command('forecast', forecastHandler);
+botInstance.command('recommendations', recommendationHandler);
+botInstance.command('ai', aiHandler);
+botInstance.command('subscription', subscriptionHandler);
+botInstance.command('customers', customerHandler);
+botInstance.command('suppliers', supplierHandler);
+botInstance.command('projects', projectHandler);
 
 // =============================================
 // TEXT HANDLER
@@ -122,6 +152,29 @@ botInstance.on('text', async (ctx) => {
         return;
     }
 
+    // =============================================
+    // NEW HANDLERS
+    // =============================================
+    if (session && session.state && session.state.startsWith('CUSTOMER_')) {
+        await customerHandler(ctx);
+        return;
+    }
+
+    if (session && session.state && session.state.startsWith('SUPPLIER_')) {
+        await supplierHandler(ctx);
+        return;
+    }
+
+    if (session && session.state && session.state.startsWith('PROJECT_')) {
+        await projectHandler(ctx);
+        return;
+    }
+
+    if (session && session.state === 'AI_WAITING_QUESTION') {
+        await aiHandler(ctx);
+        return;
+    }
+
     await ctx.reply('Type /help for available commands.');
 });
 
@@ -169,10 +222,7 @@ botInstance.on('callback_query', async (ctx) => {
         }
 
         if (data === 'menu_ai') {
-            await ctx.editMessageText(
-                `🤖 **Ask AI**\n\nGet financial insights and advice:`,
-                { parse_mode: 'Markdown', ...getAiKeyboard() }
-            );
+            await aiHandler(ctx);
             return;
         }
 
@@ -235,7 +285,40 @@ botInstance.on('callback_query', async (ctx) => {
         }
 
         // =============================================
-        // INVENTORY ACTIONS (UPDATED)
+        // NEW MENU NAVIGATION
+        // =============================================
+        if (data === 'menu_forecast') {
+            await forecastHandler(ctx);
+            return;
+        }
+
+        if (data === 'menu_recommendations') {
+            await recommendationHandler(ctx);
+            return;
+        }
+
+        if (data === 'menu_subscription') {
+            await subscriptionHandler(ctx);
+            return;
+        }
+
+        if (data === 'menu_customers') {
+            await customerHandler(ctx);
+            return;
+        }
+
+        if (data === 'menu_suppliers') {
+            await supplierHandler(ctx);
+            return;
+        }
+
+        if (data === 'menu_projects') {
+            await projectHandler(ctx);
+            return;
+        }
+
+        // =============================================
+        // INVENTORY ACTIONS
         // =============================================
         if (data === 'inventory_add') {
             sessionManager.createSession(telegramId, 'INVENTORY_WAITING_ITEM', {});
@@ -418,30 +501,93 @@ botInstance.on('callback_query', async (ctx) => {
         // =============================================
         // REPORT ACTIONS
         // =============================================
-        if (data === 'report_daily' || data === 'report_weekly' || data === 'report_monthly') {
+        if (data === 'report_daily' || data === 'report_weekly' || data === 'report_monthly' || data === 'report_executive') {
             await reportHandler(ctx);
             return;
         }
-        if (data === 'report_executive') {
-            await reportHandler(ctx);
-            return;
-        }
-        if (data === 'report_pdf') {
-            await reportHandler(ctx);
-            return;
-        }
-        if (data === 'report_excel') {
+        if (data === 'report_pdf' || data === 'report_excel') {
             await reportHandler(ctx);
             return;
         }
 
         // =============================================
-        // ASK AI ACTIONS
+        // FORECAST ACTIONS
         // =============================================
-        if (data === 'ai_ask') {
-            await ctx.reply('🤖 **Ask AI**\n\nType your financial question below:');
+        if (data === 'forecast_3' || data === 'forecast_6' || data === 'forecast_12' || data === 'forecast_seasonality' || data === 'forecast_again') {
+            await forecastHandler(ctx);
             return;
         }
+
+        // =============================================
+        // RECOMMENDATION ACTIONS
+        // =============================================
+        if (data === 'refresh_recommendations') {
+            await recommendationHandler(ctx);
+            return;
+        }
+
+        // =============================================
+        // AI ACTIONS
+        // =============================================
+        if (data === 'ai_ask' || data === 'ai_ask_question' || data === 'ai_advice' || data === 'ai_advice_revenue' || data === 'ai_advice_costs' || data === 'ai_menu') {
+            await aiHandler(ctx);
+            return;
+        }
+
+        // =============================================
+        // SUBSCRIPTION ACTIONS
+        // =============================================
+        if (data === 'subscription_upgrade' || data === 'subscription_features' || data === 'subscription_cancel' || data === 'back_subscription' || data === 'upgrade_pro' || data === 'upgrade_business' || data === 'cancel_confirm') {
+            await subscriptionHandler(ctx);
+            return;
+        }
+
+        // =============================================
+        // CUSTOMER ACTIONS
+        // =============================================
+        if (data === 'customer_create' || data === 'customer_view' || data === 'customer_list' || data === 'customer_history' || data === 'customer_back') {
+            await customerHandler(ctx);
+            return;
+        }
+        if (data && data.startsWith('customer_history_')) {
+            await customerHandler(ctx);
+            return;
+        }
+
+        // =============================================
+        // SUPPLIER ACTIONS
+        // =============================================
+        if (data === 'supplier_create' || data === 'supplier_view' || data === 'supplier_list' || data === 'supplier_back') {
+            await supplierHandler(ctx);
+            return;
+        }
+
+        // =============================================
+        // PROJECT ACTIONS
+        // =============================================
+        if (data === 'project_create' || data === 'project_view' || data === 'project_list' || data === 'project_financials' || data === 'project_back') {
+            await projectHandler(ctx);
+            return;
+        }
+        if (data && data.startsWith('project_financials_')) {
+            await projectHandler(ctx);
+            return;
+        }
+
+        // =============================================
+        // BACK TO MAIN
+        // =============================================
+        if (data === 'back_main') {
+            await ctx.editMessageText(
+                `📊 **Main Menu**\n\nSelect an option below:`,
+                { parse_mode: 'Markdown', ...getMainMenuKeyboard(industry) }
+            );
+            return;
+        }
+
+        // =============================================
+        // ASK AI ACTIONS (Legacy)
+        // =============================================
         if (data === 'ai_summary') {
             await ctx.reply('📊 **AI Summary**\n\nComing soon in Phase 3!');
             return;
@@ -539,6 +685,13 @@ bot.launch().then(() => {
     console.log('📊 Professional dashboard with sub-menus loaded');
     console.log('🛒 Purchase module integrated with Inventory & Creditors');
     console.log('✏️ Inventory Edit & Adjust Stock features added');
+    console.log('📈 Forecast module loaded');
+    console.log('💡 Recommendations module loaded');
+    console.log('🧠 AI Assistant loaded');
+    console.log('📋 Subscription module loaded');
+    console.log('👤 Customer module loaded');
+    console.log('🏢 Supplier module loaded');
+    console.log('🏗️ Project module loaded');
     console.log('=====================================');
 }).catch((error) => {
     console.error('❌ Failed to launch bot:', error);

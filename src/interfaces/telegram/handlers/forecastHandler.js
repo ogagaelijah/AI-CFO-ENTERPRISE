@@ -1,0 +1,255 @@
+// src/interfaces/telegram/handlers/forecastHandler.js
+
+const { getSessionManager } = require('../sessionManager');
+const UserRepository = require('../../../infrastructure/database/sqlite/repositories/UserRepository');
+const BusinessRepository = require('../../../infrastructure/database/sqlite/repositories/BusinessRepository');
+const GetForecastUseCase = require('../../../application/useCases/reports/GetForecastUseCase');
+const SaleRepository = require('../../../infrastructure/database/sqlite/repositories/SaleRepository');
+const IncomeRepository = require('../../../infrastructure/database/sqlite/repositories/IncomeRepository');
+const PurchaseRepository = require('../../../infrastructure/database/sqlite/repositories/PurchaseRepository');
+const ExpenseRepository = require('../../../infrastructure/database/sqlite/repositories/ExpenseRepository');
+const { getMainMenuKeyboard, getBackKeyboard } = require('../keyboards/dashboardKeyboard');
+const logger = require('../../../shared/utils/logger');
+
+const sessionManager = getSessionManager();
+const userRepo = new UserRepository();
+const businessRepo = new BusinessRepository();
+const saleRepo = new SaleRepository();
+const incomeRepo = new IncomeRepository();
+const purchaseRepo = new PurchaseRepository();
+const expenseRepo = new ExpenseRepository();
+
+const forecastUseCase = new GetForecastUseCase({
+    saleRepository: saleRepo,
+    incomeRepository: incomeRepo,
+    purchaseRepository: purchaseRepo,
+    expenseRepository: expenseRepo,
+});
+
+async function forecastHandler(ctx) {
+    try {
+        const telegramId = ctx.from.id;
+        const session = sessionManager.getSession(telegramId);
+        const user = await userRepo.findByTelegramId(telegramId);
+
+        if (!user) {
+            await ctx.reply('⚠️ Please register first. Type /start');
+            return;
+        }
+
+        const business = await businessRepo.findByUserId(user.id);
+        if (!business) {
+            await ctx.reply('⚠️ Please set up your business first. Type /start');
+            return;
+        }
+
+        const state = session ? session.state : null;
+
+        if (!state || state !== 'FORECAST_MENU') {
+            await showForecastMenu(ctx, business.id);
+            return;
+        }
+
+        switch (state) {
+            case 'FORECAST_MENU':
+                await handleForecastAction(ctx, business.id);
+                break;
+            default:
+                await showForecastMenu(ctx, business.id);
+                break;
+        }
+
+    } catch (error) {
+        logger.error('Forecast handler error:', error);
+        await ctx.reply('❌ Something went wrong. Please try again.');
+    }
+}
+
+async function showForecastMenu(ctx, businessId) {
+    sessionManager.setState(ctx.from.id, 'FORECAST_MENU');
+
+    const keyboard = {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: '📈 3-Month Forecast', callback_data: 'forecast_3' }],
+                [{ text: '📈 6-Month Forecast', callback_data: 'forecast_6' }],
+                [{ text: '📈 12-Month Forecast', callback_data: 'forecast_12' }],
+                [{ text: '📊 Seasonality Analysis', callback_data: 'forecast_seasonality' }],
+                [{ text: '🔙 Back to Reports', callback_data: 'back_reports' }],
+            ],
+        },
+    };
+
+    await ctx.reply(
+        `📈 **Forecasting & Predictive Insights**
+
+Get AI-powered predictions about your business future.
+
+• **3-Month Forecast** — Short-term predictions
+• **6-Month Forecast** — Medium-term trends
+• **12-Month Forecast** — Annual projections
+• **Seasonality Analysis** — Monthly patterns
+
+Select an option below:`,
+        { parse_mode: 'Markdown', ...keyboard }
+    );
+}
+
+async function handleForecastAction(ctx, businessId) {
+    const data = ctx.callbackQuery?.data;
+
+    if (!data) {
+        await ctx.reply('Please use the buttons below.');
+        return;
+    }
+
+    await ctx.answerCallbackQuery();
+
+    const months = {
+        forecast_3: 3,
+        forecast_6: 6,
+        forecast_12: 12,
+    };
+
+    if (data === 'forecast_seasonality') {
+        await generateSeasonalityReport(ctx, businessId);
+        return;
+    }
+
+    if (data === 'back_reports') {
+        const { reportHandler } = require('./reportHandler');
+        await reportHandler(ctx);
+        return;
+    }
+
+    const monthsCount = months[data];
+    if (monthsCount) {
+        await generateForecastReport(ctx, businessId, monthsCount);
+    }
+}
+
+async function generateForecastReport(ctx, businessId, months) {
+    try {
+        await ctx.reply(`⏳ Generating ${months}-month forecast...`);
+
+        const result = await forecastUseCase.execute({
+            businessId,
+            months,
+            lookbackMonths: 12,
+        });
+
+        if (!result.success) {
+            await ctx.reply('❌ Could not generate forecast. Please ensure you have enough historical data.');
+            return;
+        }
+
+        let message = `📈 **${months}-Month Forecast**\n\n`;
+        message += `📊 Based on last ${result.summary.lookbackMonths} months of data\n\n`;
+        message += `💰 **Average Monthly Revenue:** ₦${result.summary.averageMonthlyRevenue.toLocaleString()}\n`;
+        message += `📉 **Average Monthly Costs:** ₦${result.summary.averageMonthlyCosts.toLocaleString()}\n`;
+        message += `📈 **Average Monthly Profit:** ₦${result.summary.averageMonthlyProfit.toLocaleString()}\n`;
+        message += `📊 **Revenue Trend:** ${result.summary.revenueTrend}\n\n`;
+        message += `**Projected Totals:**\n`;
+        message += `• Revenue: ₦${result.summary.totalProjectedRevenue.toLocaleString()}\n`;
+        message += `• Profit: ₦${result.summary.totalProjectedProfit.toLocaleString()}\n\n`;
+
+        message += `**Monthly Breakdown:**\n`;
+        for (const forecast of result.forecast) {
+            message += `• ${forecast.month}: ₦${forecast.projectedRevenue.toLocaleString()} (${forecast.confidence} confidence)\n`;
+        }
+
+        await ctx.reply(message, { parse_mode: 'Markdown' });
+
+        // Show seasonality if available
+        if (result.seasonality && result.seasonality.length > 0) {
+            let seasonalityMessage = `📊 **Seasonality Patterns**\n\n`;
+            for (const s of result.seasonality) {
+                seasonalityMessage += `• ${s.month}: ₦${s.averageRevenue.toLocaleString()}\n`;
+            }
+            await ctx.reply(seasonalityMessage);
+        }
+
+        await ctx.reply('Select an option below:', {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '🔄 New Forecast', callback_data: 'forecast_again' }],
+                    [{ text: '🔙 Back to Reports', callback_data: 'back_reports' }],
+                ],
+            },
+        });
+
+    } catch (error) {
+        logger.error('Generate forecast error:', error);
+        await ctx.reply(`❌ Failed to generate forecast: ${error.message}`);
+    }
+}
+
+async function generateSeasonalityReport(ctx, businessId) {
+    try {
+        await ctx.reply('⏳ Analyzing seasonal patterns...');
+
+        const result = await forecastUseCase.execute({
+            businessId,
+            months: 3,
+            lookbackMonths: 12,
+        });
+
+        if (!result.seasonality || result.seasonality.length === 0) {
+            await ctx.reply('❌ Not enough data for seasonality analysis.');
+            return;
+        }
+
+        let message = `📊 **Seasonality Analysis**\n\n`;
+        message += `Monthly revenue patterns over the last year:\n\n`;
+
+        // Find best and worst months
+        const sorted = [...result.seasonality].sort((a, b) => b.averageRevenue - a.averageRevenue);
+        const best = sorted[0];
+        const worst = sorted[sorted.length - 1];
+
+        for (const s of result.seasonality) {
+            const isBest = s.month === best.month ? '🏆 ' : '';
+            const isWorst = s.month === worst.month ? '📉 ' : '';
+            message += `${isBest}${isWorst}• ${s.month}: ₦${s.averageRevenue.toLocaleString()}\n`;
+        }
+
+        message += `\n**Insights:**\n`;
+        message += `• Best month: ${best.month} (₦${best.averageRevenue.toLocaleString()})\n`;
+        message += `• Worst month: ${worst.month} (₦${worst.averageRevenue.toLocaleString()})\n`;
+        const diff = ((best.averageRevenue - worst.averageRevenue) / worst.averageRevenue * 100);
+        message += `• ${best.month} is ${diff.toFixed(0)}% higher than ${worst.month}\n`;
+
+        await ctx.reply(message, { parse_mode: 'Markdown' });
+
+        await ctx.reply('Select an option below:', {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '🔄 Refresh Analysis', callback_data: 'forecast_seasonality' }],
+                    [{ text: '🔙 Back to Forecast', callback_data: 'forecast_again' }],
+                ],
+            },
+        });
+
+    } catch (error) {
+        logger.error('Seasonality analysis error:', error);
+        await ctx.reply(`❌ Failed to analyze seasonality: ${error.message}`);
+    }
+}
+
+async function handleButtonClick(ctx, businessId) {
+    const data = ctx.callbackQuery?.data;
+
+    if (data === 'forecast_again') {
+        await showForecastMenu(ctx, businessId);
+        return;
+    }
+
+    await handleForecastAction(ctx, businessId);
+}
+
+module.exports = {
+    forecastHandler,
+    showForecastMenu,
+    generateForecastReport,
+    generateSeasonalityReport,
+};
