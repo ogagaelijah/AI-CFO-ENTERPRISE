@@ -33,6 +33,11 @@ class DebtorRepository extends BaseRepository {
         ).all(userId);
     }
 
+    /**
+     * Find only active debtors (balance > 0 and not PAID)
+     * @param {number} userId - User ID
+     * @returns {Array} Array of active debtors
+     */
     findActive(userId) {
         return this.db.prepare(
             `SELECT * FROM debtors 
@@ -41,6 +46,22 @@ class DebtorRepository extends BaseRepository {
              AND status != 'PAID'
              ORDER BY balance_remaining DESC`
         ).all(userId);
+    }
+
+    /**
+     * Get total outstanding amount for active debtors
+     * @param {number} userId - User ID
+     * @returns {number} Total outstanding amount
+     */
+    getTotalOutstanding(userId) {
+        const result = this.db.prepare(
+            `SELECT COALESCE(SUM(balance_remaining), 0) as total_outstanding
+             FROM debtors 
+             WHERE user_id = ? 
+             AND balance_remaining > 0 
+             AND status != 'PAID'`
+        ).get(userId);
+        return result?.total_outstanding || 0;
     }
 
     findOverdue(userId) {

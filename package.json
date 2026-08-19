@@ -18,7 +18,8 @@
     "dotenv": "^16.4.5",
     "exceljs": "^4.4.0",
     "pdfkit": "^0.19.1",
-    "telegraf": "^4.16.3"
+    "telegraf": "^4.16.3",
+    "nodemailer": "^6.9.13"
   },
   "devDependencies": {
     "nodemon": "^3.1.4",

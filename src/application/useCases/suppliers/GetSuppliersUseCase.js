@@ -21,29 +21,32 @@ class GetSuppliersUseCase {
             suppliers = await this.supplierRepository.search(
                 businessId,
                 search,
-                limit,
-                offset
+                { limit, offset }
             );
         } else {
             suppliers = await this.supplierRepository.findByBusinessId(
                 businessId,
-                limit,
-                offset
+                { limit, offset }
             );
+        }
+
+        // ✅ Ensure suppliers is always an array
+        if (!suppliers) {
+            suppliers = [];
         }
 
         const total = await this.supplierRepository.countByBusinessId(
             businessId,
-            search
+            search ? { search } : {}
         );
 
         return {
             success: true,
-            suppliers: suppliers.map(s => s.toJSON()),
-            total,
+            suppliers: suppliers.map(s => s.toJSON ? s.toJSON() : s),
+            total: total || 0,
             limit,
             offset,
-            hasMore: offset + suppliers.length < total,
+            hasMore: offset + suppliers.length < (total || 0),
         };
     }
 }

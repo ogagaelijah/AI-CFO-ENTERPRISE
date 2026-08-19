@@ -33,10 +33,40 @@ class InventoryRepository extends BaseRepository {
         ).all(userId);
     }
 
+    /**
+     * Find inventory item by exact name (case-sensitive)
+     * @param {number} userId - User ID
+     * @param {string} itemName - Item name (exact match)
+     * @returns {Object|null} Inventory item or null
+     */
     findByName(userId, itemName) {
         return this.db.prepare(
             'SELECT * FROM inventory WHERE user_id = ? AND item_name = ?'
         ).get(userId, itemName);
+    }
+
+    /**
+     * Find inventory item by name (case-insensitive)
+     * @param {number} userId - User ID
+     * @param {string} itemName - Item name (case-insensitive)
+     * @returns {Object|null} Inventory item or null
+     */
+    findByNameIgnoreCase(userId, itemName) {
+        return this.db.prepare(
+            'SELECT * FROM inventory WHERE user_id = ? AND LOWER(item_name) = LOWER(?)'
+        ).get(userId, itemName);
+    }
+
+    /**
+     * Search inventory items by name (case-insensitive, partial match)
+     * @param {number} userId - User ID
+     * @param {string} searchTerm - Search term
+     * @returns {Array} Array of matching inventory items
+     */
+    searchByName(userId, searchTerm) {
+        return this.db.prepare(
+            'SELECT * FROM inventory WHERE user_id = ? AND LOWER(item_name) LIKE LOWER(?) ORDER BY item_name ASC'
+        ).all(userId, `%${searchTerm}%`);
     }
 
     findLowStock(userId, threshold = 5) {

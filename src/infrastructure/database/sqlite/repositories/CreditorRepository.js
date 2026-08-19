@@ -9,18 +9,27 @@ class CreditorRepository extends BaseRepository {
 
     create(creditorData) {
         const stmt = this.db.prepare(`
-            INSERT INTO creditors (user_id, supplier_name, total_owed, amount_paid, balance_remaining, status, due_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO creditors (
+                user_id, business_id, supplier_id, supplier_name, 
+                total_owed, amount_paid, balance_remaining, 
+                status, due_date, reference_type, reference_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
+
         const result = stmt.run(
             creditorData.user_id,
+            creditorData.business_id || null,
+            creditorData.supplier_id || null,
             creditorData.supplier_name,
             creditorData.total_owed,
             creditorData.amount_paid || 0,
             creditorData.balance_remaining || creditorData.total_owed,
             creditorData.status || 'ACTIVE',
-            creditorData.due_date || null
+            creditorData.due_date || null,
+            creditorData.reference_type || null,
+            creditorData.reference_id || null
         );
+
         return this.findById(result.lastInsertRowid);
     }
 
@@ -34,6 +43,12 @@ class CreditorRepository extends BaseRepository {
         ).all(userId);
     }
 
+    findByBusinessId(businessId) {
+        return this.db.prepare(
+            'SELECT * FROM creditors WHERE business_id = ? ORDER BY balance_remaining DESC'
+        ).all(businessId);
+    }
+
     findActive(userId) {
         return this.db.prepare(
             `SELECT * FROM creditors 
@@ -42,6 +57,17 @@ class CreditorRepository extends BaseRepository {
              AND status != 'PAID'
              ORDER BY balance_remaining DESC`
         ).all(userId);
+    }
+
+    getTotalOutstanding(userId) {
+        const result = this.db.prepare(
+            `SELECT COALESCE(SUM(balance_remaining), 0) as total_outstanding
+             FROM creditors 
+             WHERE user_id = ? 
+             AND balance_remaining > 0 
+             AND status != 'PAID'`
+        ).get(userId);
+        return result?.total_outstanding || 0;
     }
 
     findOverdue(userId) {
@@ -65,16 +91,29 @@ class CreditorRepository extends BaseRepository {
         `).all(userId, `%${supplierName}%`);
     }
 
-    // ✅ FIX: Properly update amount_paid and balance_remaining
+    findBySupplierId(userId, supplierId) {
+        return this.db.prepare(`
+            SELECT * FROM creditors 
+            WHERE user_id = ? AND supplier_id = ? 
+            ORDER BY balance_remaining DESC
+        `).all(userId, supplierId);
+    }
+
+    findByReference(businessId, referenceType, referenceId) {
+        return this.db.prepare(`
+            SELECT * FROM creditors 
+            WHERE business_id = ? 
+            AND reference_type = ? 
+            AND reference_id = ?
+        `).get(businessId, referenceType, referenceId);
+    }
+
     recordPayment(creditorId, amount) {
         const creditor = this.findById(creditorId);
         if (!creditor) throw new Error('Creditor not found');
 
-        // ✅ Calculate new values
         const newPaid = (creditor.amount_paid || 0) + amount;
         const newBalance = creditor.total_owed - newPaid;
-        
-        // ✅ Ensure balance doesn't go negative
         const finalBalance = newBalance < 0 ? 0 : newBalance;
 
         let status = creditor.status;
@@ -110,20 +149,22 @@ class CreditorRepository extends BaseRepository {
         return this.findById(creditorId);
     }
 
-    // ✅ New method: Create creditor from purchase
     createFromPurchase(purchaseData) {
         return this.create({
             user_id: purchaseData.user_id,
+            business_id: purchaseData.business_id,
+            supplier_id: purchaseData.supplier_id,
             supplier_name: purchaseData.supplier_name,
             total_owed: purchaseData.total_owed,
             amount_paid: purchaseData.amount_paid || 0,
             balance_remaining: purchaseData.balance_remaining || purchaseData.total_owed,
             status: purchaseData.status || 'ACTIVE',
             due_date: purchaseData.due_date || null,
+            reference_type: 'PURCHASE',
+            reference_id: purchaseData.purchase_id || null,
         });
     }
 
-    // ✅ New method: Update creditor from purchase payment
     updateFromPayment(creditorId, amountPaid) {
         return this.recordPayment(creditorId, amountPaid);
     }

@@ -2,19 +2,30 @@
 
 const { getSessionManager } = require('../sessionManager');
 const UserRepository = require('../../../infrastructure/database/sqlite/repositories/UserRepository');
+const BusinessRepository = require('../../../infrastructure/database/sqlite/repositories/BusinessRepository');
 const SaleRepository = require('../../../infrastructure/database/sqlite/repositories/SaleRepository');
 const InventoryRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryRepository');
 const DebtorRepository = require('../../../infrastructure/database/sqlite/repositories/DebtorRepository');
+const CustomerRepository = require('../../../infrastructure/database/sqlite/repositories/CustomerRepository');
 const RecordSaleUseCase = require('../../../application/useCases/sales/RecordSaleUseCase');
 const { getMainMenuKeyboard } = require('../keyboards/dashboardKeyboard');
 const logger = require('../../../shared/utils/logger');
 
 const sessionManager = getSessionManager();
 const userRepo = new UserRepository();
+const businessRepo = new BusinessRepository();
 const saleRepo = new SaleRepository();
 const inventoryRepo = new InventoryRepository();
 const debtorRepo = new DebtorRepository();
-const recordSaleUseCase = new RecordSaleUseCase(saleRepo, inventoryRepo, debtorRepo);
+const customerRepo = new CustomerRepository();
+
+// ✅ Pass customerRepo to RecordSaleUseCase
+const recordSaleUseCase = new RecordSaleUseCase(
+    saleRepo, 
+    inventoryRepo, 
+    debtorRepo, 
+    customerRepo
+);
 
 async function saleHandler(ctx) {
     try {
@@ -28,6 +39,10 @@ async function saleHandler(ctx) {
             await ctx.reply('⚠️ Please register first. Type /start');
             return;
         }
+
+        // ✅ Get business for industry and ID
+        const businesses = await businessRepo.findByUserId(user.id);
+        const business = Array.isArray(businesses) && businesses.length > 0 ? businesses[0] : null;
 
         let session = sessionManager.getSession(telegramId);
         console.log('🔍 Current session:', session);
@@ -64,7 +79,7 @@ async function saleHandler(ctx) {
                 await handlePartialAmount(ctx, telegramId, user);
                 break;
             case 'SALE_WAITING_CONFIRMATION':
-                await handleSaleConfirmation(ctx, telegramId, user);
+                await handleSaleConfirmation(ctx, telegramId, user, business);
                 break;
             default:
                 console.log('🔍 Unknown state, starting new sale flow');
@@ -126,8 +141,8 @@ async function handleSaleItem(ctx, telegramId, user) {
         } else if (itemName.toUpperCase() === 'NO') {
             // User wants to cancel - clear session and return to main menu
             sessionManager.clearSession(telegramId);
-            const businesses = await new (require('../../../infrastructure/database/sqlite/repositories/BusinessRepository'))().findByUserId(user.id);
-            const business = businesses.length > 0 ? businesses[0] : null;
+            const businesses = await businessRepo.findByUserId(user.id);
+            const business = Array.isArray(businesses) && businesses.length > 0 ? businesses[0] : null;
             const industry = business ? business.industry : 'RETAIL';
             await ctx.reply(`❌ Sale cancelled.\n\n📊 **Main Menu**\n\nSelect an option below:`, { ...getMainMenuKeyboard(industry) });
             return;
@@ -137,8 +152,8 @@ async function handleSaleItem(ctx, telegramId, user) {
         }
     }
 
-    // ✅ Check if item exists in inventory
-    const inventoryItem = await inventoryRepo.findByName(user.id, itemName);
+    // ✅ Check if item exists in inventory (CASE-INSENSITIVE)
+    const inventoryItem = await inventoryRepo.findByNameIgnoreCase(user.id, itemName);
 
     if (!inventoryItem) {
         await ctx.reply(
@@ -160,14 +175,14 @@ async function handleSaleItem(ctx, telegramId, user) {
 
     if (inventoryItem.quantity <= 0) {
         await ctx.reply(
-            `⚠️ "${itemName}" is **out of stock**.\n` +
+            `⚠️ "${inventoryItem.item_name}" is **out of stock**.\n` +
             `Available: 0\n\n` +
             `Please add stock first using /inventory.`
         );
         // Clear session and return to main menu
         sessionManager.clearSession(telegramId);
-        const businesses = await new (require('../../../infrastructure/database/sqlite/repositories/BusinessRepository'))().findByUserId(user.id);
-        const business = businesses.length > 0 ? businesses[0] : null;
+        const businesses = await businessRepo.findByUserId(user.id);
+        const business = Array.isArray(businesses) && businesses.length > 0 ? businesses[0] : null;
         const industry = business ? business.industry : 'RETAIL';
         await ctx.reply(`📊 **Main Menu**\n\nSelect an option below:`, { ...getMainMenuKeyboard(industry) });
         return;
@@ -175,7 +190,7 @@ async function handleSaleItem(ctx, telegramId, user) {
 
     sessionManager.setData(telegramId, {
         ...session.data,
-        itemName,
+        itemName: inventoryItem.item_name, // Use the actual item name from DB
         inventoryId: inventoryItem.id,
         currentStock: inventoryItem.quantity,
         pendingCheck: false
@@ -183,7 +198,7 @@ async function handleSaleItem(ctx, telegramId, user) {
     sessionManager.setState(telegramId, 'SALE_WAITING_QUANTITY');
 
     await ctx.reply(
-        `📦 **${itemName}**\n` +
+        `📦 **${inventoryItem.item_name}**\n` +
         `Available stock: **${inventoryItem.quantity}** units\n\n` +
         `Enter the **quantity** to sell:`
     );
@@ -388,7 +403,7 @@ async function showSaleConfirmation(ctx, telegramId, user, paymentStatus, amount
     await ctx.reply(message);
 }
 
-async function handleSaleConfirmation(ctx, telegramId, user) {
+async function handleSaleConfirmation(ctx, telegramId, user, business) {
     let text = '';
     
     if (ctx.message && ctx.message.text) {
@@ -402,8 +417,12 @@ async function handleSaleConfirmation(ctx, telegramId, user) {
 
     if (text === 'YES') {
         try {
+            // ✅ Get business ID
+            const businessId = business ? business.id : null;
+
             const result = await recordSaleUseCase.execute({
                 userId: user.id,
+                businessId: businessId,
                 itemName: session.data.itemName,
                 quantity: session.data.quantity,
                 unitPrice: session.data.unitPrice,
@@ -416,8 +435,6 @@ async function handleSaleConfirmation(ctx, telegramId, user) {
 
             sessionManager.clearSession(telegramId);
 
-            const businesses = await new (require('../../../infrastructure/database/sqlite/repositories/BusinessRepository'))().findByUserId(user.id);
-            const business = businesses.length > 0 ? businesses[0] : null;
             const industry = business ? business.industry : 'RETAIL';
 
             let message =
@@ -439,6 +456,10 @@ async function handleSaleConfirmation(ctx, telegramId, user) {
                 message += `👥 Added to Debtors Register\n`;
             }
 
+            if (result.customerId && session.data.customer) {
+                message += `👤 Customer linked: ${session.data.customer} (ID: ${result.customerId})\n`;
+            }
+
             message += `\n📊 **Select an option below to continue:**`;
 
             await ctx.reply(message, {
@@ -452,8 +473,6 @@ async function handleSaleConfirmation(ctx, telegramId, user) {
         }
     } else if (text === 'NO') {
         sessionManager.clearSession(telegramId);
-        const businesses = await new (require('../../../infrastructure/database/sqlite/repositories/BusinessRepository'))().findByUserId(user.id);
-        const business = businesses.length > 0 ? businesses[0] : null;
         const industry = business ? business.industry : 'RETAIL';
         await ctx.reply(
             `❌ **Sale Cancelled.**\n\n📊 **Main Menu**\n\nSelect an option below:`,

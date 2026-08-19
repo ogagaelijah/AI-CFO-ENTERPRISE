@@ -35,6 +35,7 @@ const getCustomerHistoryUseCase = new GetCustomerHistoryUseCase({
 
 async function customerHandler(ctx) {
     try {
+        console.log('🔍 [customerHandler] Started');
         const telegramId = ctx.from.id;
         const session = sessionManager.getSession(telegramId);
         const user = await userRepo.findByTelegramId(telegramId);
@@ -44,61 +45,112 @@ async function customerHandler(ctx) {
             return;
         }
 
-        const business = await businessRepo.findByUserId(user.id);
+        // ✅ FIX: Handle business lookup properly
+        let businesses = await businessRepo.findByUserId(user.id);
+        console.log('🔍 [customerHandler] Raw businesses:', JSON.stringify(businesses, null, 2));
+
+        // If businesses is an array, get the first one
+        let business = null;
+        if (Array.isArray(businesses) && businesses.length > 0) {
+            business = businesses[0];
+        } else if (businesses && !Array.isArray(businesses)) {
+            business = businesses;
+        }
+
+        // ✅ If no business found, try to create one or use default
         if (!business) {
+            console.log('🔍 [customerHandler] No business found, attempting to create...');
+            // Try to create a default business
+            try {
+                const Business = require('../../../domain/entities/Business');
+                const newBusiness = new Business({
+                    userId: user.id,
+                    name: `${user.fullName}'s Business`,
+                    industry: 'RETAIL',
+                    categories: {},
+                    features: {},
+                    setupCompleted: true,
+                });
+                business = await businessRepo.create(newBusiness);
+                console.log('✅ Created new business:', business.id);
+            } catch (createError) {
+                console.error('Failed to create business:', createError.message);
+                await ctx.reply('⚠️ Please set up your business first. Type /start');
+                return;
+            }
+        }
+
+        const businessId = business ? business.id : null;
+        console.log('🔍 [customerHandler] Business ID:', businessId);
+
+        if (!businessId) {
             await ctx.reply('⚠️ Please set up your business first. Type /start');
             return;
         }
 
-        const state = session ? session.state : null;
-
-        if (state === 'CUSTOMER_CREATE_NAME') {
-            await handleCreateCustomer(ctx, business.id);
-            return;
-        }
-
-        if (state === 'CUSTOMER_VIEW_ID') {
-            await handleViewCustomer(ctx, business.id);
-            return;
-        }
-
-        if (state === 'CUSTOMER_HISTORY_ID') {
-            await handleViewCustomerHistory(ctx, business.id);
-            return;
-        }
-
-        // Check if this is a button click
         if (ctx.callbackQuery) {
-            await handleButtonClick(ctx, business.id);
+            await ctx.answerCbQuery();
+            await handleButtonClick(ctx, businessId, telegramId);
             return;
         }
 
-        await showCustomerMenu(ctx);
+        const state = session ? session.state : null;
+        console.log('🔍 [customerHandler] State:', state);
+
+        switch (state) {
+            case 'CUSTOMER_CREATE_NAME':
+                await handleCreateCustomerName(ctx, businessId, telegramId);
+                break;
+            case 'CUSTOMER_CREATE_PHONE':
+                await handleCreateCustomerPhone(ctx, businessId, telegramId);
+                break;
+            case 'CUSTOMER_CREATE_EMAIL':
+                await handleCreateCustomerEmail(ctx, businessId, telegramId);
+                break;
+            case 'CUSTOMER_CREATE_CONFIRM':
+                await handleCreateCustomerConfirm(ctx, businessId, telegramId);
+                break;
+            case 'CUSTOMER_VIEW_ID':
+                await handleViewCustomer(ctx, businessId, telegramId);
+                break;
+            case 'CUSTOMER_HISTORY_ID':
+                await handleViewCustomerHistory(ctx, businessId, telegramId);
+                break;
+            default:
+                await showCustomerMenu(ctx, telegramId);
+                break;
+        }
 
     } catch (error) {
-        logger.error('Customer handler error:', error);
+        console.error('❌ Customer handler error:', error.message);
+        console.error('❌ Stack:', error.stack);
+        logger.error('Customer handler error:', {
+            message: error.message,
+            stack: error.stack
+        });
         await ctx.reply('❌ Something went wrong. Please try again.');
     }
 }
 
-async function showCustomerMenu(ctx) {
-    const telegramId = ctx.from.id;
-    sessionManager.setState(telegramId, 'CUSTOMER_MENU');
+async function showCustomerMenu(ctx, telegramId) {
+    try {
+        console.log('🔍 [showCustomerMenu] Started');
+        sessionManager.clearSession(telegramId);
 
-    const keyboard = {
-        reply_markup: {
-            inline_keyboard: [
-                [{ text: '➕ Add Customer', callback_data: 'customer_create' }],
-                [{ text: '👤 View Customer', callback_data: 'customer_view' }],
-                [{ text: '📋 List All Customers', callback_data: 'customer_list' }],
-                [{ text: '📊 Customer History', callback_data: 'customer_history' }],
-                [{ text: '🔙 Back to Main Menu', callback_data: 'back_main' }],
-            ],
-        },
-    };
+        const keyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '➕ Add Customer', callback_data: 'customer_create' }],
+                    [{ text: '👤 View Customer', callback_data: 'customer_view' }],
+                    [{ text: '📋 List All Customers', callback_data: 'customer_list' }],
+                    [{ text: '📊 Customer History', callback_data: 'customer_history' }],
+                    [{ text: '🔙 Back to Main Menu', callback_data: 'back_main' }],
+                ],
+            },
+        };
 
-    await ctx.reply(
-        `👤 **Customer Management**
+        await ctx.reply(
+            `👤 **Customer Management**
 
 Manage your customers, patients, clients, tenants, or students.
 
@@ -108,28 +160,157 @@ Manage your customers, patients, clients, tenants, or students.
 • **Customer History** — View transaction history
 
 Select an option below:`,
-        { parse_mode: 'Markdown', ...keyboard }
-    );
+            { parse_mode: 'Markdown', ...keyboard }
+        );
+    } catch (error) {
+        console.error('❌ [showCustomerMenu] Error:', error.message);
+        throw error;
+    }
 }
 
-async function handleCreateCustomer(ctx, businessId) {
-    const text = ctx.message?.text;
-    const telegramId = ctx.from.id;
+// =============================================
+// ADD CUSTOMER FLOW (With Confirmation)
+// =============================================
+async function handleCreateCustomerName(ctx, businessId, telegramId) {
+    try {
+        const text = ctx.message?.text;
 
-    if (!text) {
-        sessionManager.setState(telegramId, 'CUSTOMER_CREATE_NAME');
-        await ctx.reply(
-            `📝 **Add New Customer**
+        if (!text) {
+            sessionManager.setState(telegramId, 'CUSTOMER_CREATE_NAME');
+            await ctx.reply(
+                `📝 **Add New Customer**
 
 Enter the customer's full name:`
-        );
-        return;
-    }
+            );
+            return;
+        }
 
+        const name = text.trim();
+        if (name.length < 2) {
+            await ctx.reply('⚠️ Please enter a valid name (at least 2 characters).');
+            return;
+        }
+
+        sessionManager.setData(telegramId, { name });
+        sessionManager.setState(telegramId, 'CUSTOMER_CREATE_PHONE');
+
+        await ctx.reply(
+            `📝 **Customer: ${name}**
+
+Enter the customer's **phone number** (or type "skip"):`
+        );
+
+    } catch (error) {
+        console.error('❌ [handleCreateCustomerName] Error:', error.message);
+        await ctx.reply(`❌ Failed: ${error.message}`);
+    }
+}
+
+async function handleCreateCustomerPhone(ctx, businessId, telegramId) {
     try {
+        const text = ctx.message?.text;
+        const session = sessionManager.getSession(telegramId);
+
+        if (!text) {
+            await ctx.reply('Please enter the phone number or type "skip":');
+            return;
+        }
+
+        const phone = text.trim().toLowerCase() === 'skip' ? null : text.trim();
+        sessionManager.setData(telegramId, { ...session.data, phone });
+        sessionManager.setState(telegramId, 'CUSTOMER_CREATE_EMAIL');
+
+        await ctx.reply(
+            `📝 **Customer: ${session.data.name}**
+📞 Phone: ${phone || 'Not set'}
+
+Enter the customer's **email address** (or type "skip"):`
+        );
+
+    } catch (error) {
+        console.error('❌ [handleCreateCustomerPhone] Error:', error.message);
+        await ctx.reply(`❌ Failed: ${error.message}`);
+    }
+}
+
+async function handleCreateCustomerEmail(ctx, businessId, telegramId) {
+    try {
+        const text = ctx.message?.text;
+        const session = sessionManager.getSession(telegramId);
+
+        if (!text) {
+            await ctx.reply('Please enter the email address or type "skip":');
+            return;
+        }
+
+        const email = text.trim().toLowerCase() === 'skip' ? null : text.trim();
+        sessionManager.setData(telegramId, { ...session.data, email });
+        sessionManager.setState(telegramId, 'CUSTOMER_CREATE_CONFIRM');
+
+        const data = session.data;
+        let message =
+            `📋 **Confirm Customer Details**\n\n` +
+            `📛 Name: ${data.name}\n` +
+            `📞 Phone: ${data.phone || 'Not set'}\n` +
+            `📧 Email: ${data.email || 'Not set'}\n\n` +
+            `Reply with **YES** to confirm or **NO** to cancel.`;
+
+        await ctx.reply(message);
+
+    } catch (error) {
+        console.error('❌ [handleCreateCustomerEmail] Error:', error.message);
+        await ctx.reply(`❌ Failed: ${error.message}`);
+    }
+}
+
+async function handleCreateCustomerConfirm(ctx, businessId, telegramId) {
+    try {
+        const text = ctx.message?.text;
+        const session = sessionManager.getSession(telegramId);
+
+        if (!text) {
+            await ctx.reply('⚠️ Please reply with **YES** or **NO**.');
+            return;
+        }
+
+        const response = text.trim().toUpperCase();
+
+        if (response === 'NO') {
+            sessionManager.clearSession(telegramId);
+            await ctx.reply('❌ Customer creation cancelled.');
+            await showCustomerMenu(ctx, telegramId);
+            return;
+        }
+
+        if (response !== 'YES') {
+            await ctx.reply('⚠️ Please reply with **YES** or **NO**.');
+            return;
+        }
+
+        const data = session.data;
+
+        // Check if customer already exists (case-insensitive)
+        const existingCustomers = await customerRepo.findByBusinessId(businessId, {
+            search: data.name,
+            limit: 1,
+        });
+
+        const existing = existingCustomers.find(c => 
+            c.name.toLowerCase() === data.name.toLowerCase()
+        );
+
+        if (existing) {
+            await ctx.reply(`⚠️ Customer "${data.name}" already exists.`);
+            sessionManager.clearSession(telegramId);
+            await showCustomerMenu(ctx, telegramId);
+            return;
+        }
+
         const result = await createCustomerUseCase.execute({
-            businessId,
-            name: text,
+            businessId: businessId,
+            name: data.name,
+            phone: data.phone,
+            email: data.email,
             type: 'CUSTOMER',
         });
 
@@ -147,58 +328,66 @@ Enter the customer's full name:`
 📋 **Details:**
 • Name: ${customer.name}
 • ID: ${customer.id}
+• Phone: ${customer.phone || 'Not set'}
+• Email: ${customer.email || 'Not set'}
 • Type: ${customer.type}
 
 What would you like to do next?`,
             { parse_mode: 'Markdown' }
         );
 
-        await showCustomerMenu(ctx);
+        await showCustomerMenu(ctx, telegramId);
 
     } catch (error) {
-        logger.error('Create customer error:', error);
+        console.error('❌ [handleCreateCustomerConfirm] Error:', error.message);
         await ctx.reply(`❌ Failed to create customer: ${error.message}`);
         sessionManager.clearSession(telegramId);
     }
 }
 
-async function handleViewCustomer(ctx, businessId) {
-    const text = ctx.message?.text;
-    const telegramId = ctx.from.id;
+// =============================================
+// VIEW CUSTOMER
+// =============================================
+async function handleViewCustomer(ctx, businessId, telegramId) {
+    try {
+        const text = ctx.message?.text;
 
-    if (!text) {
-        sessionManager.setState(telegramId, 'CUSTOMER_VIEW_ID');
-        await ctx.reply(
-            `👤 **View Customer**
+        if (!text) {
+            sessionManager.setState(telegramId, 'CUSTOMER_VIEW_ID');
+            await ctx.reply(
+                `👤 **View Customer**
 
 Enter the customer's ID or name:`
-        );
-        return;
-    }
+            );
+            return;
+        }
 
-    try {
         let customer;
         const id = parseInt(text);
         if (!isNaN(id) && id > 0) {
             const result = await getCustomerUseCase.execute({
                 customerId: id,
-                businessId,
+                businessId: businessId,
             });
             if (result.success) {
                 customer = result.customer;
             }
         } else {
-            // Search by name
-            const customers = await customerRepo.search(businessId, text, { limit: 1 });
+            const customers = await customerRepo.findByBusinessId(businessId, {
+                search: text,
+                limit: 1,
+            });
             if (customers && customers.length > 0) {
-                customer = customers[0];
+                customer = customers.find(c => 
+                    c.name.toLowerCase() === text.toLowerCase()
+                ) || customers[0];
             }
         }
 
         if (!customer) {
             await ctx.reply(`❌ Customer "${text}" not found.`);
             sessionManager.clearSession(telegramId);
-            await showCustomerMenu(ctx);
+            await showCustomerMenu(ctx, telegramId);
             return;
         }
 
@@ -216,7 +405,6 @@ Enter the customer's ID or name:`
 
         await ctx.reply(message, { parse_mode: 'Markdown' });
 
-        // Show history option
         await ctx.reply('Select an option:', {
             reply_markup: {
                 inline_keyboard: [
@@ -227,34 +415,38 @@ Enter the customer's ID or name:`
         });
 
     } catch (error) {
-        logger.error('View customer error:', error);
+        console.error('❌ [handleViewCustomer] Error:', error.message);
         await ctx.reply(`❌ Failed to view customer: ${error.message}`);
         sessionManager.clearSession(telegramId);
     }
 }
 
-async function handleViewCustomerHistory(ctx, businessId) {
-    const text = ctx.message?.text;
-    const telegramId = ctx.from.id;
+// =============================================
+// CUSTOMER HISTORY
+// =============================================
+async function handleViewCustomerHistory(ctx, businessId, telegramId) {
+    try {
+        const text = ctx.message?.text;
 
-    if (!text) {
-        sessionManager.setState(telegramId, 'CUSTOMER_HISTORY_ID');
-        await ctx.reply(
-            `📊 **Customer History**
+        if (!text) {
+            sessionManager.setState(telegramId, 'CUSTOMER_HISTORY_ID');
+            await ctx.reply(
+                `📊 **Customer History**
 
 Enter the customer's ID or name:`
-        );
-        return;
-    }
+            );
+            return;
+        }
 
-    try {
         let customerId;
         const id = parseInt(text);
         if (!isNaN(id) && id > 0) {
             customerId = id;
         } else {
-            // Search by name
-            const customers = await customerRepo.search(businessId, text, { limit: 1 });
+            const customers = await customerRepo.findByBusinessId(businessId, {
+                search: text,
+                limit: 1,
+            });
             if (customers && customers.length > 0) {
                 customerId = customers[0].id;
             }
@@ -263,7 +455,7 @@ Enter the customer's ID or name:`
         if (!customerId) {
             await ctx.reply(`❌ Customer "${text}" not found.`);
             sessionManager.clearSession(telegramId);
-            await showCustomerMenu(ctx);
+            await showCustomerMenu(ctx, telegramId);
             return;
         }
 
@@ -272,13 +464,14 @@ Enter the customer's ID or name:`
         await ctx.reply('⏳ Loading customer history...');
 
         const result = await getCustomerHistoryUseCase.execute({
-            customerId,
-            businessId,
+            customerId: customerId,
+            businessId: businessId,
             limit: 20,
         });
 
         if (!result.success) {
             await ctx.reply(`❌ ${result.message}`);
+            await showCustomerMenu(ctx, telegramId);
             return;
         }
 
@@ -304,17 +497,22 @@ Enter the customer's ID or name:`
 
         await ctx.reply(message, { parse_mode: 'Markdown' });
 
-        await showCustomerMenu(ctx);
+        await showCustomerMenu(ctx, telegramId);
 
     } catch (error) {
-        logger.error('Customer history error:', error);
+        console.error('❌ [handleViewCustomerHistory] Error:', error.message);
         await ctx.reply(`❌ Failed to load history: ${error.message}`);
         sessionManager.clearSession(telegramId);
+        await showCustomerMenu(ctx, telegramId);
     }
 }
 
-async function listCustomers(ctx, businessId) {
+// =============================================
+// LIST CUSTOMERS
+// =============================================
+async function listCustomers(ctx, businessId, telegramId) {
     try {
+        console.log('🔍 [listCustomers] Started');
         const customers = await customerRepo.findByBusinessId(businessId, { limit: 50 });
 
         if (customers.length === 0) {
@@ -336,119 +534,130 @@ async function listCustomers(ctx, businessId) {
 
         await ctx.reply(message, { parse_mode: 'Markdown' });
 
-        await ctx.reply('Select an option:', {
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: '➕ Add Customer', callback_data: 'customer_create' }],
-                    [{ text: '🔙 Back to Customers', callback_data: 'customer_back' }],
-                ],
-            },
-        });
+        await showCustomerMenu(ctx, telegramId);
 
     } catch (error) {
-        logger.error('List customers error:', error);
+        console.error('❌ [listCustomers] Error:', error.message);
         await ctx.reply(`❌ Failed to list customers: ${error.message}`);
     }
 }
 
-async function handleButtonClick(ctx, businessId) {
-    const data = ctx.callbackQuery?.data;
-    const telegramId = ctx.from.id;
+// =============================================
+// HANDLE BUTTON CLICKS
+// =============================================
+async function handleButtonClick(ctx, businessId, telegramId) {
+    try {
+        const data = ctx.callbackQuery?.data;
 
-    await ctx.answerCallbackQuery();
+        console.log('🔍 [handleButtonClick] Data:', data);
 
-    if (data === 'customer_create') {
-        sessionManager.setState(telegramId, 'CUSTOMER_CREATE_NAME');
-        await ctx.reply(
-            `📝 **Add New Customer**
+        if (data === 'menu_customers') {
+            await showCustomerMenu(ctx, telegramId);
+            return;
+        }
+
+        if (data === 'customer_create') {
+            sessionManager.clearSession(telegramId);
+            sessionManager.setState(telegramId, 'CUSTOMER_CREATE_NAME');
+            await ctx.reply(
+                `📝 **Add New Customer**
 
 Enter the customer's full name:`
-        );
-        return;
-    }
-
-    if (data === 'customer_view') {
-        sessionManager.setState(telegramId, 'CUSTOMER_VIEW_ID');
-        await ctx.reply(
-            `👤 **View Customer**
-
-Enter the customer's ID or name:`
-        );
-        return;
-    }
-
-    if (data === 'customer_history') {
-        sessionManager.setState(telegramId, 'CUSTOMER_HISTORY_ID');
-        await ctx.reply(
-            `📊 **Customer History**
-
-Enter the customer's ID or name:`
-        );
-        return;
-    }
-
-    if (data === 'customer_list') {
-        await listCustomers(ctx, businessId);
-        return;
-    }
-
-    if (data === 'customer_back') {
-        await showCustomerMenu(ctx);
-        return;
-    }
-
-    if (data === 'back_main') {
-        const { startHandler } = require('./startHandler');
-        await startHandler(ctx);
-        return;
-    }
-
-    // Handle customer history from inline button
-    if (data && data.startsWith('customer_history_')) {
-        const customerId = parseInt(data.replace('customer_history_', ''));
-        if (!isNaN(customerId)) {
-            await ctx.reply('⏳ Loading customer history...');
-            const result = await getCustomerHistoryUseCase.execute({
-                customerId,
-                businessId,
-                limit: 20,
-            });
-
-            if (!result.success) {
-                await ctx.reply(`❌ ${result.message}`);
-                return;
-            }
-
-            const summary = result.summary;
-            let message = `📊 **Customer History: ${result.customer.name}**\n\n`;
-            message += `📋 **Summary**\n`;
-            message += `• Total Sales: ${summary.totalSales}\n`;
-            message += `• Total Amount: ₦${summary.totalAmount.toLocaleString()}\n`;
-            message += `• Total Paid: ₦${summary.totalPaid.toLocaleString()}\n`;
-            message += `• Total Unpaid: ₦${summary.totalUnpaid.toLocaleString()}\n`;
-            message += `• Outstanding Debt: ₦${summary.outstandingDebt.toLocaleString()}\n`;
-            message += `• Overdue Debt: ₦${summary.overdueDebt.toLocaleString()}\n`;
-
-            if (result.recentSales && result.recentSales.length > 0) {
-                message += `\n📋 **Recent Transactions:**\n`;
-                for (const sale of result.recentSales.slice(0, 5)) {
-                    message += `• ₦${sale.totalAmount.toLocaleString()} — ${new Date(sale.saleDate).toLocaleDateString()}\n`;
-                }
-                if (result.recentSales.length > 5) {
-                    message += `... and ${result.recentSales.length - 5} more.\n`;
-                }
-            }
-
-            await ctx.reply(message, { parse_mode: 'Markdown' });
-            await showCustomerMenu(ctx);
+            );
+            return;
         }
+
+        if (data === 'customer_view') {
+            sessionManager.clearSession(telegramId);
+            sessionManager.setState(telegramId, 'CUSTOMER_VIEW_ID');
+            await ctx.reply(
+                `👤 **View Customer**
+
+Enter the customer's ID or name:`
+            );
+            return;
+        }
+
+        if (data === 'customer_history') {
+            sessionManager.clearSession(telegramId);
+            sessionManager.setState(telegramId, 'CUSTOMER_HISTORY_ID');
+            await ctx.reply(
+                `📊 **Customer History**
+
+Enter the customer's ID or name:`
+            );
+            return;
+        }
+
+        if (data === 'customer_list') {
+            await listCustomers(ctx, businessId, telegramId);
+            return;
+        }
+
+        if (data === 'customer_back') {
+            await showCustomerMenu(ctx, telegramId);
+            return;
+        }
+
+        if (data === 'back_main') {
+            const { startHandler } = require('./startHandler');
+            await startHandler(ctx);
+            return;
+        }
+
+        if (data && data.startsWith('customer_history_')) {
+            const customerId = parseInt(data.replace('customer_history_', ''));
+            if (!isNaN(customerId)) {
+                await ctx.reply('⏳ Loading customer history...');
+                const result = await getCustomerHistoryUseCase.execute({
+                    customerId: customerId,
+                    businessId: businessId,
+                    limit: 20,
+                });
+
+                if (!result.success) {
+                    await ctx.reply(`❌ ${result.message}`);
+                    await showCustomerMenu(ctx, telegramId);
+                    return;
+                }
+
+                const summary = result.summary;
+                let message = `📊 **Customer History: ${result.customer.name}**\n\n`;
+                message += `📋 **Summary**\n`;
+                message += `• Total Sales: ${summary.totalSales}\n`;
+                message += `• Total Amount: ₦${summary.totalAmount.toLocaleString()}\n`;
+                message += `• Total Paid: ₦${summary.totalPaid.toLocaleString()}\n`;
+                message += `• Total Unpaid: ₦${summary.totalUnpaid.toLocaleString()}\n`;
+                message += `• Outstanding Debt: ₦${summary.outstandingDebt.toLocaleString()}\n`;
+                message += `• Overdue Debt: ₦${summary.overdueDebt.toLocaleString()}\n`;
+
+                if (result.recentSales && result.recentSales.length > 0) {
+                    message += `\n📋 **Recent Transactions:**\n`;
+                    for (const sale of result.recentSales.slice(0, 5)) {
+                        message += `• ₦${sale.totalAmount.toLocaleString()} — ${new Date(sale.saleDate).toLocaleDateString()}\n`;
+                    }
+                    if (result.recentSales.length > 5) {
+                        message += `... and ${result.recentSales.length - 5} more.\n`;
+                    }
+                }
+
+                await ctx.reply(message, { parse_mode: 'Markdown' });
+                await showCustomerMenu(ctx, telegramId);
+            }
+        }
+    } catch (error) {
+        console.error('❌ [handleButtonClick] Error:', error.message);
+        throw error;
     }
 }
 
 module.exports = {
     customerHandler,
     showCustomerMenu,
-    handleCreateCustomer,
+    handleCreateCustomerName,
+    handleCreateCustomerPhone,
+    handleCreateCustomerEmail,
+    handleCreateCustomerConfirm,
     handleViewCustomer,
     handleViewCustomerHistory,
     listCustomers,

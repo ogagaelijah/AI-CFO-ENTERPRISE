@@ -7,12 +7,15 @@ class SaleRepository extends BaseRepository {
         super('sales');
     }
 
-    // Create a sale
     create(saleData) {
         const stmt = this.db.prepare(`
-            INSERT INTO sales (user_id, item_name, quantity, unit_price, total_price, customer_name, payment_status, amount_paid, balance_remaining)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO sales (
+                user_id, item_name, quantity, unit_price, total_price,
+                customer_name, customer_id, customer_type, business_id,
+                payment_status, amount_paid, balance_remaining, sale_date
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
+
         const result = stmt.run(
             saleData.user_id,
             saleData.item_name,
@@ -20,102 +23,142 @@ class SaleRepository extends BaseRepository {
             saleData.unit_price,
             saleData.total_price,
             saleData.customer_name || null,
+            saleData.customer_id || null,
+            saleData.customer_type || 'CUSTOMER',
+            saleData.business_id || null,
             saleData.payment_status || 'UNPAID',
             saleData.amount_paid || 0,
-            saleData.balance_remaining || saleData.total_price
+            saleData.balance_remaining || 0,
+            saleData.sale_date || new Date().toISOString()
         );
+
         return this.findById(result.lastInsertRowid);
     }
 
-    // Find sales by user ID
+    findById(id) {
+        return this.db.prepare('SELECT * FROM sales WHERE id = ?').get(id);
+    }
+
     findByUserId(userId) {
         return this.db.prepare(
             'SELECT * FROM sales WHERE user_id = ? ORDER BY sale_date DESC'
         ).all(userId);
     }
 
-    // Find sales by date range
+    findByBusinessId(businessId) {
+        return this.db.prepare(
+            'SELECT * FROM sales WHERE business_id = ? ORDER BY sale_date DESC'
+        ).all(businessId);
+    }
+
     findByDateRange(userId, startDate, endDate) {
         return this.db.prepare(`
             SELECT * FROM sales 
-            WHERE user_id = ? AND sale_date BETWEEN ? AND ? 
+            WHERE user_id = ? 
+            AND sale_date >= ? 
+            AND sale_date <= ?
             ORDER BY sale_date DESC
         `).all(userId, startDate, endDate);
     }
 
-    // Get today's sales
-    getTodaySales(userId) {
-        const today = new Date().toISOString().split('T')[0];
+    findByCustomerName(userId, customerName) {
         return this.db.prepare(`
             SELECT * FROM sales 
-            WHERE user_id = ? AND DATE(sale_date) = ? 
+            WHERE user_id = ? 
+            AND customer_name LIKE ?
             ORDER BY sale_date DESC
-        `).all(userId, today);
+        `).all(userId, `%${customerName}%`);
     }
 
-    // Get sales summary
-    getSalesSummary(userId) {
+    findByCustomerId(businessId, customerId) {
+        return this.db.prepare(`
+            SELECT * FROM sales 
+            WHERE business_id = ? 
+            AND customer_id = ?
+            ORDER BY sale_date DESC
+        `).all(businessId, customerId);
+    }
+
+    update(id, data) {
+        const fields = [];
+        const values = [];
+
+        if (data.item_name !== undefined) {
+            fields.push('item_name = ?');
+            values.push(data.item_name);
+        }
+        if (data.quantity !== undefined) {
+            fields.push('quantity = ?');
+            values.push(data.quantity);
+        }
+        if (data.unit_price !== undefined) {
+            fields.push('unit_price = ?');
+            values.push(data.unit_price);
+        }
+        if (data.total_price !== undefined) {
+            fields.push('total_price = ?');
+            values.push(data.total_price);
+        }
+        if (data.customer_name !== undefined) {
+            fields.push('customer_name = ?');
+            values.push(data.customer_name);
+        }
+        if (data.customer_id !== undefined) {
+            fields.push('customer_id = ?');
+            values.push(data.customer_id);
+        }
+        if (data.payment_status !== undefined) {
+            fields.push('payment_status = ?');
+            values.push(data.payment_status);
+        }
+        if (data.amount_paid !== undefined) {
+            fields.push('amount_paid = ?');
+            values.push(data.amount_paid);
+        }
+        if (data.balance_remaining !== undefined) {
+            fields.push('balance_remaining = ?');
+            values.push(data.balance_remaining);
+        }
+
+        fields.push('updated_at = CURRENT_TIMESTAMP');
+
+        if (fields.length === 0) {
+            throw new Error('No fields to update');
+        }
+
+        values.push(id);
+
+        const stmt = this.db.prepare(
+            `UPDATE sales SET ${fields.join(', ')} WHERE id = ?`
+        );
+        const result = stmt.run(...values);
+
+        if (result.changes === 0) {
+            throw new Error('Sale not found or no changes made');
+        }
+
+        return this.findById(id);
+    }
+
+    delete(id) {
+        const stmt = this.db.prepare('DELETE FROM sales WHERE id = ?');
+        const result = stmt.run(id);
+        return result.changes > 0;
+    }
+
+    getSummary(userId) {
         return this.db.prepare(`
             SELECT 
                 COUNT(*) as total_sales,
-                SUM(total_price) as total_revenue,
-                SUM(quantity) as total_items_sold,
-                AVG(total_price) as average_sale_value,
-                SUM(CASE WHEN payment_status = 'PAID' THEN total_price ELSE 0 END) as paid_amount,
-                SUM(CASE WHEN payment_status = 'UNPAID' OR payment_status = 'PARTIAL' THEN balance_remaining ELSE 0 END) as unpaid_amount
+                SUM(total_price) as total_amount,
+                SUM(CASE WHEN payment_status = 'PAID' THEN total_price ELSE 0 END) as total_paid,
+                SUM(CASE WHEN payment_status IN ('UNPAID', 'PARTIAL') THEN balance_remaining ELSE 0 END) as total_outstanding,
+                COUNT(CASE WHEN payment_status = 'PAID' THEN 1 END) as paid_count,
+                COUNT(CASE WHEN payment_status = 'UNPAID' THEN 1 END) as unpaid_count,
+                COUNT(CASE WHEN payment_status = 'PARTIAL' THEN 1 END) as partial_count
             FROM sales 
             WHERE user_id = ?
         `).get(userId);
-    }
-
-    // Record payment on a sale
-    recordPayment(saleId, amount) {
-        const sale = this.findById(saleId);
-        if (!sale) throw new Error('Sale not found');
-
-        const currentPaid = sale.amount_paid || 0;
-        const totalPrice = sale.total_price;
-        const newPaid = currentPaid + amount;
-        const balance = totalPrice - newPaid;
-
-        let status = 'PARTIAL';
-        if (balance <= 0) {
-            status = 'PAID';
-        }
-
-        return this.update(saleId, {
-            amount_paid: newPaid,
-            balance_remaining: balance > 0 ? balance : 0,
-            payment_status: status,
-        });
-    }
-
-    // Get daily report
-    getDailyReport(userId, date) {
-        const targetDate = date || new Date().toISOString().split('T')[0];
-        return this.db.prepare(`
-            SELECT 
-                COUNT(*) as total_transactions,
-                SUM(total_price) as total_revenue,
-                SUM(quantity) as total_items
-            FROM sales 
-            WHERE user_id = ? AND DATE(sale_date) = ?
-        `).get(userId, targetDate);
-    }
-
-    // Get weekly report
-    getWeeklyReport(userId, startDate, endDate) {
-        return this.db.prepare(`
-            SELECT 
-                DATE(sale_date) as day,
-                COUNT(*) as transactions,
-                SUM(total_price) as revenue,
-                SUM(quantity) as items_sold
-            FROM sales 
-            WHERE user_id = ? AND DATE(sale_date) BETWEEN ? AND ?
-            GROUP BY DATE(sale_date)
-            ORDER BY day DESC
-        `).all(userId, startDate, endDate);
     }
 }
 

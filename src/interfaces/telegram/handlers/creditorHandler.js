@@ -23,6 +23,21 @@ async function creditorHandler(ctx) {
             return;
         }
 
+        // ✅ Handle callback query for total owed FIRST
+        if (ctx.callbackQuery) {
+            await ctx.answerCbQuery();
+            const data = ctx.callbackQuery.data;
+            
+            if (data === 'creditor_total') {
+                await showTotalOwed(ctx, telegramId, user);
+                return;
+            }
+            
+            // For other callback queries, show the creditor menu
+            await showCreditorMenu(ctx, telegramId, user);
+            return;
+        }
+
         const state = session ? session.state : null;
 
         if (!state || !state.startsWith('CREDITOR_')) {
@@ -52,7 +67,11 @@ async function creditorHandler(ctx) {
         }
 
     } catch (error) {
-        logger.error('Creditor handler error:', error);
+        console.error('❌ Creditor handler error:', error);
+        logger.error('Creditor handler error:', {
+            message: error.message,
+            stack: error.stack
+        });
         await ctx.reply('❌ Something went wrong. Please try again.');
     }
 }
@@ -62,16 +81,13 @@ async function creditorHandler(ctx) {
 // =============================================
 async function showCreditorMenu(ctx, telegramId, user) {
     try {
-        // ✅ Get all creditors
-        const allCreditors = await creditorRepo.findByUserId(user.id);
+        // ✅ Get ONLY active creditors (balance > 0 AND status != 'PAID')
+        const activeCreditors = await creditorRepo.findActive(user.id);
         
-        // ✅ FILTER: ONLY show creditors with balance > 0 AND status != 'PAID'
-        const activeCreditors = allCreditors.filter(c => 
-            c.balance_remaining > 0 && 
-            c.status !== 'PAID'
-        );
-
-        const totalOutstanding = activeCreditors.reduce((sum, c) => sum + c.balance_remaining, 0);
+        // ✅ Get total outstanding using the new method
+        const totalOutstanding = await creditorRepo.getTotalOutstanding(user.id);
+        
+        // ✅ Get overdue count from active creditors
         const overdueCount = activeCreditors.filter(c => c.status === 'OVERDUE').length;
 
         let message =
@@ -81,9 +97,11 @@ async function showCreditorMenu(ctx, telegramId, user) {
             `• Total Owed: ₦${totalOutstanding.toLocaleString()}\n` +
             `• Overdue: ${overdueCount}\n\n`;
 
-        if (activeCreditors.length > 0) {
+        if (activeCreditors && activeCreditors.length > 0) {
             message += `**Active Creditors:**\n`;
-            for (const creditor of activeCreditors) {
+            // Show only first 10 to avoid message length issues
+            const displayCreditors = activeCreditors.slice(0, 10);
+            for (const creditor of displayCreditors) {
                 const status = creditor.status === 'OVERDUE' ? '🔴' : '🟡';
                 const daysOverdue = creditor.due_date ? Math.ceil((new Date() - new Date(creditor.due_date)) / (1000 * 60 * 60 * 24)) : 0;
                 message += `${status} **${creditor.supplier_name}**\n`;
@@ -95,6 +113,9 @@ async function showCreditorMenu(ctx, telegramId, user) {
                     }
                 }
                 message += `   🆔 ID: ${creditor.id}\n\n`;
+            }
+            if (activeCreditors.length > 10) {
+                message += `... and ${activeCreditors.length - 10} more.\n`;
             }
         } else {
             message += `✅ No active creditors.\n\n`;
@@ -110,11 +131,57 @@ async function showCreditorMenu(ctx, telegramId, user) {
         });
 
     } catch (error) {
+        console.error('❌ Show creditor menu error:', error);
         logger.error('Show creditor menu error:', error);
         await ctx.reply(`🏦 **Creditors Register**\n\nSelect an option below:`, {
             parse_mode: 'Markdown',
             ...getCreditorKeyboard(),
         });
+    }
+}
+
+// =============================================
+// SHOW TOTAL OWED (New Function)
+// =============================================
+async function showTotalOwed(ctx, telegramId, user) {
+    try {
+        // ✅ Get ALL creditors for full picture
+        const allCreditors = await creditorRepo.findByUserId(user.id);
+        
+        // ✅ Get active creditors only
+        const activeCreditors = await creditorRepo.findActive(user.id);
+        
+        // ✅ Calculate totals
+        const totalOwed = allCreditors.reduce((sum, c) => sum + c.total_owed, 0);
+        const totalPaid = allCreditors.reduce((sum, c) => sum + (c.amount_paid || 0), 0);
+        const totalOutstanding = await creditorRepo.getTotalOutstanding(user.id);
+        const totalOverdue = allCreditors
+            .filter(c => c.status === 'OVERDUE' && c.balance_remaining > 0)
+            .reduce((sum, c) => sum + c.balance_remaining, 0);
+
+        let message = `📊 **Total Owed to Creditors Summary**\n\n`;
+        message += `💰 **Total Owed (History):** ₦${totalOwed.toLocaleString()}\n`;
+        message += `💵 **Total Paid:** ₦${totalPaid.toLocaleString()}\n`;
+        message += `🔴 **Total Outstanding:** ₦${totalOutstanding.toLocaleString()}\n`;
+        message += `📊 **Overdue:** ₦${totalOverdue.toLocaleString()}\n\n`;
+        
+        message += `📋 **Details:**\n`;
+        message += `• Active Creditors: ${activeCreditors.length}\n`;
+        message += `• Fully Paid: ${allCreditors.filter(c => c.balance_remaining <= 0 || c.status === 'PAID').length}\n`;
+        message += `• Overdue: ${allCreditors.filter(c => c.status === 'OVERDUE' && c.balance_remaining > 0).length}\n`;
+
+        // ✅ Send the summary message
+        await ctx.reply(message, { parse_mode: 'Markdown' });
+
+        // ✅ Then show the menu again
+        const keyboard = getCreditorKeyboard();
+        await ctx.reply(`Select an option below:`, { ...keyboard });
+
+    } catch (error) {
+        console.error('❌ Show total owed error:', error);
+        logger.error('Show total owed error:', error);
+        await ctx.reply('❌ Failed to load total owed summary. Please try again.');
+        await showCreditorMenu(ctx, telegramId, user);
     }
 }
 
@@ -172,11 +239,10 @@ async function handleCreditorAmount(ctx, telegramId, user) {
 }
 
 // =============================================
-// RECORD PAYMENT FLOW - START
+// RECORD PAYMENT FLOW
 // =============================================
 async function handleCreditorPaymentId(ctx, telegramId, user) {
-    const allCreditors = await creditorRepo.findByUserId(user.id);
-    const activeCreditors = allCreditors.filter(c => c.balance_remaining > 0 && c.status !== 'PAID');
+    const activeCreditors = await creditorRepo.findActive(user.id);
 
     if (activeCreditors.length === 0) {
         await ctx.reply('✅ No active creditors to make payments to.');
@@ -372,7 +438,7 @@ async function handleCreditorPaymentConfirmation(ctx, telegramId, user) {
 }
 
 // =============================================
-// LIST ALL CREDITORS (Including Paid)
+// LIST ALL CREDITORS (Including Paid - Full History)
 // =============================================
 async function listCreditors(ctx) {
     const telegramId = ctx.from.id;
@@ -382,6 +448,7 @@ async function listCreditors(ctx) {
         return;
     }
 
+    // ✅ Get ALL creditors (including paid) for full history
     const creditors = await creditorRepo.findByUserId(user.id);
 
     if (creditors.length === 0) {
@@ -390,7 +457,17 @@ async function listCreditors(ctx) {
         return;
     }
 
-    let message = `🏦 **All Creditors**\n\n`;
+    // ✅ Calculate totals from all creditors
+    const totalOwed = creditors.reduce((sum, c) => sum + c.total_owed, 0);
+    const totalPaid = creditors.reduce((sum, c) => sum + (c.amount_paid || 0), 0);
+    const totalOutstanding = creditors.reduce((sum, c) => sum + c.balance_remaining, 0);
+
+    let message = `🏦 **All Creditors (Full History)**\n\n`;
+    message += `📊 **Totals:**\n`;
+    message += `• Total Owed: ₦${totalOwed.toLocaleString()}\n`;
+    message += `• Total Paid: ₦${totalPaid.toLocaleString()}\n`;
+    message += `• Total Outstanding: ₦${totalOutstanding.toLocaleString()}\n\n`;
+
     for (const creditor of creditors) {
         const status = creditor.balance_remaining <= 0 ? '✅ PAID' : creditor.status === 'OVERDUE' ? '🔴 OVERDUE' : '🟡 ACTIVE';
         message += `${status}: **${creditor.supplier_name}**\n`;
@@ -399,7 +476,7 @@ async function listCreditors(ctx) {
         message += `   🔴 Balance: ₦${creditor.balance_remaining.toLocaleString()}\n`;
         if (creditor.due_date) {
             const daysOverdue = Math.ceil((new Date() - new Date(creditor.due_date)) / (1000 * 60 * 60 * 24));
-            if (daysOverdue > 0) {
+            if (daysOverdue > 0 && creditor.balance_remaining > 0) {
                 message += `   ⏰ ${daysOverdue} days overdue\n`;
             }
         }
@@ -422,11 +499,7 @@ async function overdueCreditors(ctx) {
     }
 
     try {
-        const allCreditors = await creditorRepo.findByUserId(user.id);
-        const overdue = allCreditors.filter(c => 
-            c.balance_remaining > 0 && 
-            c.status === 'OVERDUE'
-        );
+        const overdue = await creditorRepo.findOverdue(user.id);
 
         if (overdue.length === 0) {
             await ctx.reply('✅ **No overdue creditors!**');
@@ -434,7 +507,11 @@ async function overdueCreditors(ctx) {
             return;
         }
 
+        const totalOverdue = overdue.reduce((sum, c) => sum + c.balance_remaining, 0);
+
         let message = `🔴 **Overdue Creditors**\n\n`;
+        message += `📊 Total Overdue: ₦${totalOverdue.toLocaleString()}\n\n`;
+
         for (const creditor of overdue) {
             const daysOverdue = creditor.due_date ? Math.ceil((new Date() - new Date(creditor.due_date)) / (1000 * 60 * 60 * 24)) : 0;
             message += `🏢 ${creditor.supplier_name}\n`;

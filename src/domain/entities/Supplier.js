@@ -27,14 +27,6 @@ class Supplier {
         this.updatedAt = updatedAt;
     }
 
-    updateContact(phone, email, address) {
-        if (phone !== undefined) this.phone = phone;
-        if (email !== undefined) this.email = email;
-        if (address !== undefined) this.address = address;
-        this.updatedAt = new Date();
-        return this;
-    }
-
     toJSON() {
         return {
             id: this.id,

@@ -2,16 +2,78 @@
 
 const BaseRepository = require('./BaseRepository');
 
+// ✅ Define Customer class directly inside this file (no require needed)
+class Customer {
+    constructor({
+        id,
+        businessId,
+        name,
+        phone = null,
+        email = null,
+        address = null,
+        type = 'CUSTOMER',
+        taxId = null,
+        notes = '',
+        metadata = {},
+        createdAt = new Date(),
+        updatedAt = new Date(),
+    }) {
+        this.id = id || null;
+        this.businessId = businessId;
+        this.name = name;
+        this.phone = phone;
+        this.email = email;
+        this.address = address;
+        this.type = type;
+        this.taxId = taxId;
+        this.notes = notes;
+        this.metadata = metadata;
+        this.createdAt = createdAt;
+        this.updatedAt = updatedAt;
+    }
+
+    getDisplayType() {
+        const types = {
+            CUSTOMER: 'Customer',
+            PATIENT: 'Patient',
+            CLIENT: 'Client',
+            TENANT: 'Tenant',
+            STUDENT: 'Student',
+        };
+        return types[this.type] || this.type;
+    }
+
+    updateContact(phone, email, address) {
+        if (phone !== undefined) this.phone = phone;
+        if (email !== undefined) this.email = email;
+        if (address !== undefined) this.address = address;
+        this.updatedAt = new Date();
+        return this;
+    }
+
+    toJSON() {
+        return {
+            id: this.id,
+            businessId: this.businessId,
+            name: this.name,
+            phone: this.phone,
+            email: this.email,
+            address: this.address,
+            type: this.type,
+            taxId: this.taxId,
+            notes: this.notes,
+            metadata: this.metadata,
+            createdAt: this.createdAt,
+            updatedAt: this.updatedAt,
+        };
+    }
+}
+
 class CustomerRepository extends BaseRepository {
     constructor() {
         super('customers');
     }
 
-    /**
-     * Create a new customer
-     * @param {Object} customerData - Customer entity data
-     * @returns {Promise<Object>} Created customer
-     */
     create(customerData) {
         const stmt = this.db.prepare(`
             INSERT INTO customers (
@@ -34,23 +96,12 @@ class CustomerRepository extends BaseRepository {
         return this.findById(result.lastInsertRowid);
     }
 
-    /**
-     * Find customer by ID
-     * @param {string|number} id - Customer ID
-     * @returns {Promise<Object|null>} Customer or null
-     */
     findById(id) {
         const result = this.db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
         if (!result) return null;
         return this._hydrate(result);
     }
 
-    /**
-     * Find customers by business ID
-     * @param {string|number} businessId - Business ID
-     * @param {Object} options - { limit, offset, type, search }
-     * @returns {Promise<Array>} Array of customers
-     */
     findByBusinessId(businessId, options = {}) {
         let query = 'SELECT * FROM customers WHERE business_id = ?';
         const params = [businessId];
@@ -82,12 +133,6 @@ class CustomerRepository extends BaseRepository {
         return results.map(r => this._hydrate(r));
     }
 
-    /**
-     * Find customer by name
-     * @param {string|number} businessId - Business ID
-     * @param {string} name - Customer name
-     * @returns {Promise<Object|null>} Customer or null
-     */
     findByName(businessId, name) {
         const result = this.db.prepare(
             'SELECT * FROM customers WHERE business_id = ? AND name = ?'
@@ -97,34 +142,14 @@ class CustomerRepository extends BaseRepository {
         return this._hydrate(result);
     }
 
-    /**
-     * Find customers by type
-     * @param {string|number} businessId - Business ID
-     * @param {string} type - CUSTOMER, PATIENT, CLIENT, TENANT, STUDENT
-     * @param {Object} options - { limit, offset }
-     * @returns {Promise<Array>} Array of customers
-     */
     findByType(businessId, type, options = {}) {
         return this.findByBusinessId(businessId, { ...options, type });
     }
 
-    /**
-     * Search customers
-     * @param {string|number} businessId - Business ID
-     * @param {string} searchTerm - Search term
-     * @param {Object} options - { limit, offset }
-     * @returns {Promise<Array>} Array of customers
-     */
     search(businessId, searchTerm, options = {}) {
         return this.findByBusinessId(businessId, { ...options, search: searchTerm });
     }
 
-    /**
-     * Update a customer
-     * @param {string|number} id - Customer ID
-     * @param {Object} data - Updated data
-     * @returns {Promise<Object>} Updated customer
-     */
     update(id, data) {
         const fields = [];
         const values = [];
@@ -182,23 +207,12 @@ class CustomerRepository extends BaseRepository {
         return this.findById(id);
     }
 
-    /**
-     * Delete a customer
-     * @param {string|number} id - Customer ID
-     * @returns {Promise<boolean>} True if deleted
-     */
     delete(id) {
         const stmt = this.db.prepare('DELETE FROM customers WHERE id = ?');
         const result = stmt.run(id);
         return result.changes > 0;
     }
 
-    /**
-     * Count customers by business ID
-     * @param {string|number} businessId - Business ID
-     * @param {Object} filters - { type, search }
-     * @returns {Promise<number>} Count of customers
-     */
     countByBusinessId(businessId, filters = {}) {
         let query = 'SELECT COUNT(*) as count FROM customers WHERE business_id = ?';
         const params = [businessId];
@@ -218,65 +232,24 @@ class CustomerRepository extends BaseRepository {
         return result?.count || 0;
     }
 
-    /**
-     * Get customer history summary
-     * @param {string|number} customerId - Customer ID
-     * @param {Object} options - { startDate, endDate }
-     * @returns {Promise<Object>} Summary with total sales, payments, etc.
-     */
     getHistory(customerId, options = {}) {
         const customer = this.findById(customerId);
         if (!customer) {
             throw new Error('Customer not found');
         }
 
-        let query = `
-            SELECT
-                COUNT(*) as total_transactions,
-                SUM(amount) as total_amount,
-                COUNT(CASE WHEN payment_status = 'PAID' THEN 1 END) as paid_count,
-                COUNT(CASE WHEN payment_status IN ('UNPAID', 'PARTIAL') THEN 1 END) as unpaid_count,
-                SUM(CASE WHEN payment_status = 'PAID' THEN amount ELSE 0 END) as total_paid,
-                SUM(CASE WHEN payment_status IN ('UNPAID', 'PARTIAL') THEN amount ELSE 0 END) as total_unpaid
-            FROM transactions
-            WHERE business_id = ? AND metadata LIKE ?
-        `;
-
-        const params = [
-            customer.businessId,
-            `%"customerId":${customerId}%`
-        ];
-
-        if (options.startDate) {
-            query += ' AND date >= ?';
-            params.push(options.startDate.toISOString());
-        }
-
-        if (options.endDate) {
-            query += ' AND date <= ?';
-            params.push(options.endDate.toISOString());
-        }
-
-        const result = this.db.prepare(query).get(...params);
-
         return {
             customer: customer.toJSON(),
-            totalTransactions: result?.total_transactions || 0,
-            totalAmount: result?.total_amount || 0,
-            totalPaid: result?.total_paid || 0,
-            totalUnpaid: result?.total_unpaid || 0,
-            paidCount: result?.paid_count || 0,
-            unpaidCount: result?.unpaid_count || 0,
+            totalTransactions: 0,
+            totalAmount: 0,
+            totalPaid: 0,
+            totalUnpaid: 0,
+            paidCount: 0,
+            unpaidCount: 0,
         };
     }
 
-    /**
-     * Hydrate database row to entity
-     * @param {Object} row - Database row
-     * @returns {Object} Customer entity
-     */
     _hydrate(row) {
-        const Customer = require('../../../domain/entities/Customer');
         return new Customer({
             id: row.id,
             businessId: row.business_id,

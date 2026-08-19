@@ -1,10 +1,11 @@
 // src/application/useCases/sales/RecordSaleUseCase.js
 
 class RecordSaleUseCase {
-    constructor(saleRepository, inventoryRepository, debtorRepository) {
+    constructor(saleRepository, inventoryRepository, debtorRepository, customerRepository = null) {
         this.saleRepository = saleRepository;
         this.inventoryRepository = inventoryRepository;
         this.debtorRepository = debtorRepository;
+        this.customerRepository = customerRepository; // ✅ Added for customer linking
     }
 
     async execute({
@@ -13,10 +14,12 @@ class RecordSaleUseCase {
         quantity,
         unitPrice,
         customerName,
+        customerId = null, // ✅ New: Optional customer ID
         paymentStatus,
         amountPaid,
         skipInventory = false,
         inventoryId = null,
+        businessId = null, // ✅ New: Required for customer linking
     }) {
         const totalPrice = quantity * unitPrice;
         let balanceRemaining = 0;
@@ -31,7 +34,44 @@ class RecordSaleUseCase {
             balanceRemaining = totalPrice;
         }
 
-        // Save the sale
+        // ✅ Find or create customer for analytics
+        let finalCustomerId = customerId;
+        let finalCustomerType = 'CUSTOMER';
+
+        if (customerName && businessId) {
+            // Try to find existing customer by name
+            let customer = null;
+            if (this.customerRepository) {
+                // Try to find by exact name
+                const existingCustomers = await this.customerRepository.findByBusinessId(businessId, { search: customerName, limit: 1 });
+                if (existingCustomers && existingCustomers.length > 0) {
+                    customer = existingCustomers[0];
+                }
+
+                // If not found, create new customer
+                if (!customer) {
+                    try {
+                        const Customer = require('../../../domain/entities/Customer');
+                        const newCustomer = new Customer({
+                            businessId: businessId,
+                            name: customerName,
+                            type: 'CUSTOMER',
+                        });
+                        customer = await this.customerRepository.create(newCustomer);
+                        console.log(`✅ Created new customer: ${customerName} (ID: ${customer.id})`);
+                    } catch (error) {
+                        console.error('Failed to create customer:', error.message);
+                    }
+                }
+            }
+
+            if (customer) {
+                finalCustomerId = customer.id;
+                finalCustomerType = customer.type || 'CUSTOMER';
+            }
+        }
+
+        // Save the sale with customer linking
         const sale = await this.saleRepository.create({
             user_id: userId,
             item_name: itemName,
@@ -39,9 +79,12 @@ class RecordSaleUseCase {
             unit_price: unitPrice,
             total_price: totalPrice,
             customer_name: customerName,
+            customer_id: finalCustomerId, // ✅ New: Link to customer table
+            customer_type: finalCustomerType, // ✅ New: Customer type
             payment_status: paymentStatus,
             amount_paid: amountPaid || 0,
             balance_remaining: balanceRemaining,
+            business_id: businessId, // ✅ New: Link to business
         });
 
         // Update inventory (if not skipped)
@@ -65,6 +108,7 @@ class RecordSaleUseCase {
                 await this.debtorRepository.create({
                     user_id: userId,
                     customer_name: customerName,
+                    customer_id: finalCustomerId, // ✅ Link debtor to customer
                     total_owed: balanceRemaining,
                     balance_remaining: balanceRemaining,
                     status: 'ACTIVE',
@@ -72,7 +116,11 @@ class RecordSaleUseCase {
             }
         }
 
-        return sale;
+        return {
+            ...sale,
+            customerId: finalCustomerId,
+            customerType: finalCustomerType,
+        };
     }
 }
 

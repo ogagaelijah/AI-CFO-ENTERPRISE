@@ -11,7 +11,6 @@ class CreateSupplierUseCase {
         phone = null,
         email = null,
         address = null,
-        taxId = null,
         notes = '',
         metadata = {},
     }) {
@@ -23,34 +22,39 @@ class CreateSupplierUseCase {
             throw new Error('Supplier name is required');
         }
 
-        // Check for duplicate supplier (same name and business)
-        const existingSupplier = await this.supplierRepository.findByName(
-            businessId,
-            name.trim()
-        );
+        const trimmedName = name.trim();
 
-        if (existingSupplier) {
-            throw new Error(`Supplier "${name}" already exists in this business`);
-        }
-
-        // Create supplier
-        const Supplier = require('../../../domain/entities/Supplier');
-        const supplier = new Supplier({
-            businessId,
-            name: name.trim(),
-            phone,
-            email,
-            address,
-            taxId,
-            notes,
-            metadata,
+        // ✅ Check for duplicate supplier (case-insensitive)
+        const existingSuppliers = await this.supplierRepository.findByBusinessId(businessId, {
+            search: trimmedName,
+            limit: 10,
         });
 
-        const savedSupplier = await this.supplierRepository.create(supplier);
+        const existing = existingSuppliers && existingSuppliers.length > 0
+            ? existingSuppliers.find(s => s.name.toLowerCase() === trimmedName.toLowerCase())
+            : null;
+
+        if (existing) {
+            throw new Error(`Supplier "${trimmedName}" already exists in this business`);
+        }
+
+        // ✅ Create supplier using the repository's create method
+        // The repository will handle creating the Supplier entity internally
+        const supplierData = {
+            businessId: businessId,
+            name: trimmedName,
+            phone: phone || null,
+            email: email || null,
+            address: address || null,
+            notes: notes,
+            metadata: metadata,
+        };
+
+        const savedSupplier = await this.supplierRepository.create(supplierData);
 
         return {
             success: true,
-            supplier: savedSupplier.toJSON(),
+            supplier: savedSupplier.toJSON ? savedSupplier.toJSON() : savedSupplier,
             message: 'Supplier created successfully',
         };
     }

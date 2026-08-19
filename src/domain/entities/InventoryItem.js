@@ -3,6 +3,7 @@
 class InventoryItem {
     constructor({
         id,
+        userId,
         businessId,
         name,
         category = null,
@@ -17,22 +18,33 @@ class InventoryItem {
         metadata = {},
         createdAt = new Date(),
         updatedAt = new Date(),
+        // ✅ Support snake_case from database
+        user_id,
+        business_id,
+        item_name,
+        reorder_level,
+        cost_price,
+        selling_price,
+        supplier_id,
+        created_at,
+        updated_at,
     }) {
         this.id = id || null;
-        this.businessId = businessId;
-        this.name = name;
-        this.category = category;
-        this.sku = sku;
-        this.quantity = quantity;
-        this.reorderLevel = reorderLevel;
-        this.costPrice = costPrice;
-        this.sellingPrice = sellingPrice;
-        this.unit = unit;
-        this.location = location;
-        this.supplierId = supplierId;
-        this.metadata = metadata;
-        this.createdAt = createdAt;
-        this.updatedAt = updatedAt;
+        this.userId = userId || user_id;
+        this.businessId = businessId || business_id;
+        this.name = name || item_name;
+        this.category = category || null;
+        this.sku = sku || null;
+        this.quantity = quantity || 0;
+        this.reorderLevel = reorderLevel || reorder_level || 5;
+        this.costPrice = costPrice || cost_price || 0;
+        this.sellingPrice = sellingPrice || selling_price || 0;
+        this.unit = unit || 'unit';
+        this.location = location || null;
+        this.supplierId = supplierId || supplier_id || null;
+        this.metadata = metadata || {};
+        this.createdAt = createdAt || created_at || new Date();
+        this.updatedAt = updatedAt || updated_at || new Date();
     }
 
     getProfitPerUnit() {
@@ -96,20 +108,19 @@ class InventoryItem {
     toJSON() {
         return {
             id: this.id,
-            businessId: this.businessId,
-            name: this.name,
-            category: this.category,
-            sku: this.sku,
+            user_id: this.userId,
+            business_id: this.businessId,
+            item_name: this.name,
             quantity: this.quantity,
-            reorderLevel: this.reorderLevel,
-            costPrice: this.costPrice,
-            sellingPrice: this.sellingPrice,
+            reorder_level: this.reorderLevel,
+            cost_price: this.costPrice,
+            selling_price: this.sellingPrice,
             unit: this.unit,
             location: this.location,
-            supplierId: this.supplierId,
+            supplier_id: this.supplierId,
             metadata: this.metadata,
-            createdAt: this.createdAt,
-            updatedAt: this.updatedAt,
+            created_at: this.createdAt,
+            updated_at: this.updatedAt,
         };
     }
 }

@@ -19,9 +19,10 @@ const forecastHandler = require('./src/interfaces/telegram/handlers/forecastHand
 const recommendationHandler = require('./src/interfaces/telegram/handlers/recommendationHandler');
 const aiHandler = require('./src/interfaces/telegram/handlers/aiHandler');
 const subscriptionHandler = require('./src/interfaces/telegram/handlers/subscriptionHandler');
-const customerHandler = require('./src/interfaces/telegram/handlers/customerHandler');
-const supplierHandler = require('./src/interfaces/telegram/handlers/supplierHandler');
-const projectHandler = require('./src/interfaces/telegram/handlers/projectHandler');
+// ✅ FIXED: Destructure imports for handlers that export objects
+const { customerHandler } = require('./src/interfaces/telegram/handlers/customerHandler');
+const { supplierHandler } = require('./src/interfaces/telegram/handlers/supplierHandler');
+const { projectHandler } = require('./src/interfaces/telegram/handlers/projectHandler');
 
 const { 
     getMainMenuKeyboard, 
@@ -358,7 +359,7 @@ botInstance.on('callback_query', async (ctx) => {
         }
 
         // =============================================
-        // DEBTOR ACTIONS
+        // DEBTOR ACTIONS (UPDATED with Total Owed)
         // =============================================
         if (data === 'debtor_add') {
             sessionManager.createSession(telegramId, 'DEBTOR_WAITING_NAME', {});
@@ -392,13 +393,17 @@ botInstance.on('callback_query', async (ctx) => {
             await listDebtors(ctx);
             return;
         }
+        if (data === 'debtor_total') {
+            await debtorHandler(ctx);
+            return;
+        }
         if (data === 'debtor_overdue') {
             await overdueDebtors(ctx);
             return;
         }
 
         // =============================================
-        // CREDITOR ACTIONS
+        // CREDITOR ACTIONS (UPDATED with Total Owed)
         // =============================================
         if (data === 'creditor_add') {
             sessionManager.createSession(telegramId, 'CREDITOR_WAITING_NAME', {});
@@ -431,6 +436,10 @@ botInstance.on('callback_query', async (ctx) => {
         }
         if (data === 'creditor_list') {
             await listCreditors(ctx);
+            return;
+        }
+        if (data === 'creditor_total') {
+            await creditorHandler(ctx);
             return;
         }
         if (data === 'creditor_overdue') {
