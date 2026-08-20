@@ -14,7 +14,7 @@ const { inventoryHandler, listInventory, lowStockAlert, inventoryValue } = requi
 const { debtorHandler, listDebtors, overdueDebtors } = require('./src/interfaces/telegram/handlers/debtorHandler');
 const { creditorHandler, listCreditors, overdueCreditors } = require('./src/interfaces/telegram/handlers/creditorHandler');
 const { purchaseHandler, startPurchaseFlow, listPurchases, purchaseSummary, purchaseToday } = require('./src/interfaces/telegram/handlers/purchaseHandler');
-const reportHandler = require('./src/interfaces/telegram/handlers/reportHandler');
+const { reportHandler, reportCallbackHandler } = require('./src/interfaces/telegram/handlers/reportHandler');
 const forecastHandler = require('./src/interfaces/telegram/handlers/forecastHandler');
 const recommendationHandler = require('./src/interfaces/telegram/handlers/recommendationHandler');
 const aiHandler = require('./src/interfaces/telegram/handlers/aiHandler');
@@ -23,6 +23,14 @@ const subscriptionHandler = require('./src/interfaces/telegram/handlers/subscrip
 const { customerHandler } = require('./src/interfaces/telegram/handlers/customerHandler');
 const { supplierHandler } = require('./src/interfaces/telegram/handlers/supplierHandler');
 const { projectHandler } = require('./src/interfaces/telegram/handlers/projectHandler');
+
+// =============================================
+// REPORT SERVICE IMPORTS
+// =============================================
+const ReportService = require('./src/application/services/reportService');
+const SaleRepository = require('./src/infrastructure/database/sqlite/repositories/SaleRepository');
+const PurchaseRepository = require('./src/infrastructure/database/sqlite/repositories/PurchaseRepository');
+const CustomerRepository = require('./src/infrastructure/database/sqlite/repositories/CustomerRepository');
 
 const { 
     getMainMenuKeyboard, 
@@ -68,6 +76,24 @@ const debtorRepo = new DebtorRepository();
 const creditorRepo = new CreditorRepository();
 
 // =============================================
+// INITIALIZE REPORT SERVICE
+// =============================================
+const saleRepo = new SaleRepository();
+const purchaseRepo = new PurchaseRepository();
+const customerRepo = new CustomerRepository();
+
+const reportService = new ReportService({
+    saleRepository: saleRepo,
+    incomeRepository: incomeRepo,
+    expenseRepository: expenseRepo,
+    purchaseRepository: purchaseRepo,
+    debtorRepository: debtorRepo,
+    creditorRepository: creditorRepo,
+    inventoryRepository: inventoryRepo,
+    customerRepository: customerRepo,
+});
+
+// =============================================
 // GET BOT INSTANCE
 // =============================================
 const bot = getBotInstance();
@@ -88,7 +114,20 @@ botInstance.command('inventory', inventoryHandler);
 botInstance.command('debtors', debtorHandler);
 botInstance.command('creditors', creditorHandler);
 botInstance.command('purchase', purchaseHandler);
-botInstance.command('reports', reportHandler);
+
+// =============================================
+// REPORT COMMANDS (Pass reportService)
+// =============================================
+botInstance.command('reports', (ctx) => reportHandler(ctx, reportService));
+botInstance.command('daily', (ctx) => reportHandler(ctx, reportService));
+botInstance.command('weekly', (ctx) => reportHandler(ctx, reportService));
+botInstance.command('monthly', (ctx) => reportHandler(ctx, reportService));
+botInstance.command('yearly', (ctx) => reportHandler(ctx, reportService));
+botInstance.command('executive', (ctx) => reportHandler(ctx, reportService));
+
+// =============================================
+// OTHER COMMANDS
+// =============================================
 botInstance.command('forecast', forecastHandler);
 botInstance.command('recommendations', recommendationHandler);
 botInstance.command('ai', aiHandler);
@@ -219,6 +258,16 @@ botInstance.on('callback_query', async (ctx) => {
                 `📋 **Reports**\n\nSelect a report type:`,
                 { parse_mode: 'Markdown', ...getReportKeyboard() }
             );
+            return;
+        }
+
+        // =============================================
+        // REPORT CALLBACKS (Pass reportService)
+        // =============================================
+        if (data === 'report_daily' || data === 'report_weekly' || 
+            data === 'report_monthly' || data === 'report_yearly' || 
+            data === 'report_executive') {
+            await reportCallbackHandler(ctx, reportService);
             return;
         }
 
@@ -357,9 +406,18 @@ botInstance.on('callback_query', async (ctx) => {
             await inventoryValue(ctx);
             return;
         }
+        // ✅ NEW: Inventory Delete
+        if (data === 'inventory_delete') {
+            sessionManager.clearSession(telegramId);
+            sessionManager.setState(telegramId, 'INVENTORY_WAITING_DELETE_ID');
+            await ctx.editMessageText(
+                `🗑️ **Delete Inventory Item**\n\nEnter the item ID to delete:`
+            );
+            return;
+        }
 
         // =============================================
-        // DEBTOR ACTIONS (UPDATED with Total Owed)
+        // DEBTOR ACTIONS (UPDATED with Total Owed & Delete)
         // =============================================
         if (data === 'debtor_add') {
             sessionManager.createSession(telegramId, 'DEBTOR_WAITING_NAME', {});
@@ -401,9 +459,18 @@ botInstance.on('callback_query', async (ctx) => {
             await overdueDebtors(ctx);
             return;
         }
+        // ✅ NEW: Debtor Delete
+        if (data === 'debtor_delete') {
+            sessionManager.clearSession(telegramId);
+            sessionManager.setState(telegramId, 'DEBTOR_WAITING_DELETE_ID');
+            await ctx.editMessageText(
+                `🗑️ **Delete Debtor**\n\nEnter the debtor ID to delete:`
+            );
+            return;
+        }
 
         // =============================================
-        // CREDITOR ACTIONS (UPDATED with Total Owed)
+        // CREDITOR ACTIONS (UPDATED with Total Owed & Delete)
         // =============================================
         if (data === 'creditor_add') {
             sessionManager.createSession(telegramId, 'CREDITOR_WAITING_NAME', {});
@@ -446,9 +513,18 @@ botInstance.on('callback_query', async (ctx) => {
             await overdueCreditors(ctx);
             return;
         }
+        // ✅ NEW: Creditor Delete
+        if (data === 'creditor_delete') {
+            sessionManager.clearSession(telegramId);
+            sessionManager.setState(telegramId, 'CREDITOR_WAITING_DELETE_ID');
+            await ctx.editMessageText(
+                `🗑️ **Delete Creditor**\n\nEnter the creditor ID to delete:`
+            );
+            return;
+        }
 
         // =============================================
-        // PURCHASE ACTIONS
+        // PURCHASE ACTIONS (UPDATED with Delete)
         // =============================================
         if (data === 'purchase_add') {
             await startPurchaseFlow(ctx, telegramId);
@@ -464,6 +540,15 @@ botInstance.on('callback_query', async (ctx) => {
         }
         if (data === 'purchase_today') {
             await purchaseToday(ctx);
+            return;
+        }
+        // ✅ NEW: Purchase Delete
+        if (data === 'purchase_delete') {
+            sessionManager.clearSession(telegramId);
+            sessionManager.setState(telegramId, 'PURCHASE_WAITING_DELETE_ID');
+            await ctx.editMessageText(
+                `🗑️ **Delete Purchase**\n\nEnter the purchase ID to delete:`
+            );
             return;
         }
 
@@ -508,18 +593,6 @@ botInstance.on('callback_query', async (ctx) => {
         }
 
         // =============================================
-        // REPORT ACTIONS
-        // =============================================
-        if (data === 'report_daily' || data === 'report_weekly' || data === 'report_monthly' || data === 'report_executive') {
-            await reportHandler(ctx);
-            return;
-        }
-        if (data === 'report_pdf' || data === 'report_excel') {
-            await reportHandler(ctx);
-            return;
-        }
-
-        // =============================================
         // FORECAST ACTIONS
         // =============================================
         if (data === 'forecast_3' || data === 'forecast_6' || data === 'forecast_12' || data === 'forecast_seasonality' || data === 'forecast_again') {
@@ -552,7 +625,7 @@ botInstance.on('callback_query', async (ctx) => {
         }
 
         // =============================================
-        // CUSTOMER ACTIONS
+        // CUSTOMER ACTIONS (UPDATED with Delete)
         // =============================================
         if (data === 'customer_create' || data === 'customer_view' || data === 'customer_list' || data === 'customer_history' || data === 'customer_back') {
             await customerHandler(ctx);
@@ -562,12 +635,30 @@ botInstance.on('callback_query', async (ctx) => {
             await customerHandler(ctx);
             return;
         }
+        // ✅ NEW: Customer Delete
+        if (data === 'customer_delete') {
+            sessionManager.clearSession(telegramId);
+            sessionManager.setState(telegramId, 'CUSTOMER_WAITING_DELETE_ID');
+            await ctx.editMessageText(
+                `🗑️ **Delete Customer**\n\nEnter the customer ID to delete:`
+            );
+            return;
+        }
 
         // =============================================
-        // SUPPLIER ACTIONS
+        // SUPPLIER ACTIONS (UPDATED with Delete)
         // =============================================
         if (data === 'supplier_create' || data === 'supplier_view' || data === 'supplier_list' || data === 'supplier_back') {
             await supplierHandler(ctx);
+            return;
+        }
+        // ✅ NEW: Supplier Delete
+        if (data === 'supplier_delete') {
+            sessionManager.clearSession(telegramId);
+            sessionManager.setState(telegramId, 'SUPPLIER_WAITING_DELETE_ID');
+            await ctx.editMessageText(
+                `🗑️ **Delete Supplier**\n\nEnter the supplier ID to delete:`
+            );
             return;
         }
 
@@ -701,6 +792,8 @@ bot.launch().then(() => {
     console.log('👤 Customer module loaded');
     console.log('🏢 Supplier module loaded');
     console.log('🏗️ Project module loaded');
+    console.log('🗑️ Delete functionality added to all modules');
+    console.log('📊 Report Service loaded (Daily/Weekly/Monthly/Yearly/Executive)');
     console.log('=====================================');
 }).catch((error) => {
     console.error('❌ Failed to launch bot:', error);

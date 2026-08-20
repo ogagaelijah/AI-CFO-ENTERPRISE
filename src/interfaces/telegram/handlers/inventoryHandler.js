@@ -100,6 +100,12 @@ async function inventoryHandler(ctx) {
             case 'INVENTORY_WAITING_CONFIRMATION':
                 await handleConfirmation(ctx, telegramId, user);
                 break;
+            case 'INVENTORY_WAITING_DELETE_ID':
+                await handleInventoryDeleteId(ctx, telegramId, user);
+                break;
+            case 'INVENTORY_WAITING_DELETE_CONFIRM':
+                await handleInventoryDeleteConfirm(ctx, telegramId, user);
+                break;
             default:
                 await showInventoryMenu(ctx, telegramId, user);
                 break;
@@ -679,6 +685,91 @@ async function handleConfirmation(ctx, telegramId, user) {
         message += `\n\nReply with **YES** to confirm or **NO** to cancel.`;
         await ctx.reply(message);
     }
+}
+
+// =============================================
+// DELETE INVENTORY ITEM FLOW
+// =============================================
+async function handleInventoryDeleteId(ctx, telegramId, user) {
+    const text = ctx.message?.text;
+
+    if (!text) {
+        sessionManager.setState(telegramId, 'INVENTORY_WAITING_DELETE_ID');
+        await ctx.reply(
+            `🗑️ **Delete Inventory Item**
+
+Enter the item ID to delete:`
+        );
+        return;
+    }
+
+    const itemId = parseInt(text.trim());
+    if (isNaN(itemId) || itemId <= 0) {
+        await ctx.reply('⚠️ Please enter a valid item ID.');
+        return;
+    }
+
+    const item = await inventoryRepo.findById(itemId);
+    if (!item || item.user_id !== user.id) {
+        await ctx.reply('❌ Item not found.');
+        await showInventoryMenu(ctx, telegramId, user);
+        return;
+    }
+
+    sessionManager.setData(telegramId, { itemId, item });
+    sessionManager.setState(telegramId, 'INVENTORY_WAITING_DELETE_CONFIRM');
+
+    await ctx.reply(
+        `⚠️ **Confirm Delete**
+
+Are you sure you want to delete this inventory item?
+
+📦 Item: ${item.item_name}
+📦 Quantity: ${item.quantity}
+💰 Cost Price: ₦${(item.cost_price || 0).toLocaleString()}
+💲 Selling Price: ₦${(item.selling_price || 0).toLocaleString()}
+
+Reply with **YES** to confirm or **NO** to cancel.`
+    );
+}
+
+async function handleInventoryDeleteConfirm(ctx, telegramId, user) {
+    const text = ctx.message?.text;
+    const session = sessionManager.getSession(telegramId);
+
+    if (!text) {
+        await ctx.reply('⚠️ Please reply with **YES** or **NO**.');
+        return;
+    }
+
+    const response = text.trim().toUpperCase();
+
+    if (response === 'NO') {
+        sessionManager.clearSession(telegramId);
+        await ctx.reply('❌ Delete cancelled.');
+        await showInventoryMenu(ctx, telegramId, user);
+        return;
+    }
+
+    if (response !== 'YES') {
+        await ctx.reply('⚠️ Please reply with **YES** or **NO**.');
+        return;
+    }
+
+    try {
+        const deleted = await inventoryRepo.delete(session.data.itemId);
+        if (deleted) {
+            await ctx.reply(`✅ Inventory item deleted successfully.`);
+        } else {
+            await ctx.reply(`❌ Failed to delete item.`);
+        }
+    } catch (error) {
+        logger.error('Delete inventory error:', error);
+        await ctx.reply(`❌ Failed to delete item: ${error.message}`);
+    }
+
+    sessionManager.clearSession(telegramId);
+    await showInventoryMenu(ctx, telegramId, user);
 }
 
 // =============================================

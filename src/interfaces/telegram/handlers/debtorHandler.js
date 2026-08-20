@@ -25,7 +25,6 @@ async function debtorHandler(ctx) {
 
         // ✅ Handle callback query for total owed FIRST
         if (ctx.callbackQuery) {
-            // ✅ CORRECT: Use ctx.answerCbQuery() not answerCallbackQuery
             await ctx.answerCbQuery();
             const data = ctx.callbackQuery.data;
             
@@ -61,6 +60,12 @@ async function debtorHandler(ctx) {
                 break;
             case 'DEBTOR_WAITING_CONFIRMATION':
                 await handleDebtorPaymentConfirmation(ctx, telegramId, user);
+                break;
+            case 'DEBTOR_WAITING_DELETE_ID':
+                await handleDebtorDeleteId(ctx, telegramId, user);
+                break;
+            case 'DEBTOR_WAITING_DELETE_CONFIRM':
+                await handleDebtorDeleteConfirm(ctx, telegramId, user);
                 break;
             default:
                 await showDebtorMenu(ctx, telegramId, user);
@@ -437,6 +442,90 @@ async function handleDebtorPaymentConfirmation(ctx, telegramId, user) {
 
         await ctx.reply(message);
     }
+}
+
+// =============================================
+// DELETE DEBTOR FLOW
+// =============================================
+async function handleDebtorDeleteId(ctx, telegramId, user) {
+    const text = ctx.message?.text;
+
+    if (!text) {
+        sessionManager.setState(telegramId, 'DEBTOR_WAITING_DELETE_ID');
+        await ctx.reply(
+            `🗑️ **Delete Debtor**
+
+Enter the debtor ID to delete:`
+        );
+        return;
+    }
+
+    const debtorId = parseInt(text.trim());
+    if (isNaN(debtorId) || debtorId <= 0) {
+        await ctx.reply('⚠️ Please enter a valid debtor ID.');
+        return;
+    }
+
+    const debtor = await debtorRepo.findById(debtorId);
+    if (!debtor || debtor.user_id !== user.id) {
+        await ctx.reply('❌ Debtor not found.');
+        await showDebtorMenu(ctx, telegramId, user);
+        return;
+    }
+
+    sessionManager.setData(telegramId, { debtorId, debtor });
+    sessionManager.setState(telegramId, 'DEBTOR_WAITING_DELETE_CONFIRM');
+
+    await ctx.reply(
+        `⚠️ **Confirm Delete**
+
+Are you sure you want to delete this debtor?
+
+👤 Customer: ${debtor.customer_name}
+💰 Amount: ₦${debtor.total_owed.toLocaleString()}
+🔴 Balance: ₦${debtor.balance_remaining.toLocaleString()}
+
+Reply with **YES** to confirm or **NO** to cancel.`
+    );
+}
+
+async function handleDebtorDeleteConfirm(ctx, telegramId, user) {
+    const text = ctx.message?.text;
+    const session = sessionManager.getSession(telegramId);
+
+    if (!text) {
+        await ctx.reply('⚠️ Please reply with **YES** or **NO**.');
+        return;
+    }
+
+    const response = text.trim().toUpperCase();
+
+    if (response === 'NO') {
+        sessionManager.clearSession(telegramId);
+        await ctx.reply('❌ Delete cancelled.');
+        await showDebtorMenu(ctx, telegramId, user);
+        return;
+    }
+
+    if (response !== 'YES') {
+        await ctx.reply('⚠️ Please reply with **YES** or **NO**.');
+        return;
+    }
+
+    try {
+        const deleted = await debtorRepo.delete(session.data.debtorId);
+        if (deleted) {
+            await ctx.reply(`✅ Debtor deleted successfully.`);
+        } else {
+            await ctx.reply(`❌ Failed to delete debtor.`);
+        }
+    } catch (error) {
+        logger.error('Delete debtor error:', error);
+        await ctx.reply(`❌ Failed to delete debtor: ${error.message}`);
+    }
+
+    sessionManager.clearSession(telegramId);
+    await showDebtorMenu(ctx, telegramId, user);
 }
 
 // =============================================

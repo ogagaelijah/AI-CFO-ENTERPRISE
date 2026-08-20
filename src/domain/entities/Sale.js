@@ -3,50 +3,66 @@
 class Sale {
     constructor({
         id,
+        userId,
         businessId,
-        invoiceNumber,
+        itemName,
+        quantity,
+        unitPrice,
+        totalPrice,
+        customerName,
         customerId = null,
         customerType = 'CUSTOMER', // CUSTOMER, PATIENT, CLIENT, TENANT, STUDENT
-        totalAmount,
-        discount = 0,
-        tax = 0,
         paymentStatus = 'UNPAID', // PAID, PARTIAL, UNPAID
-        transactionId = null,
-        items = [],
-        notes = '',
+        amountPaid = 0,
+        balanceRemaining,
         saleDate = new Date(),
-        dueDate = null,
         createdAt = new Date(),
         updatedAt = new Date(),
+        // 🆕 Cost tracking fields
+        unitCost = 0,
+        cogs = 0,
+        grossProfit = 0,
+        marginPercentage = 0,
     }) {
         this.id = id || null;
+        this.userId = userId;
         this.businessId = businessId;
-        this.invoiceNumber = invoiceNumber;
+        this.itemName = itemName;
+        this.quantity = quantity;
+        this.unitPrice = unitPrice;
+        this.totalPrice = totalPrice || (quantity * unitPrice);
+        this.customerName = customerName;
         this.customerId = customerId;
         this.customerType = customerType;
-        this.totalAmount = totalAmount;
-        this.discount = discount;
-        this.tax = tax;
         this.paymentStatus = paymentStatus;
-        this.transactionId = transactionId;
-        this.items = items;
-        this.notes = notes;
+        this.amountPaid = amountPaid || 0;
+        this.balanceRemaining = balanceRemaining || (this.totalPrice - this.amountPaid);
         this.saleDate = saleDate;
-        this.dueDate = dueDate;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
+        
+        // 🆕 Cost tracking
+        this.unitCost = unitCost || 0;
+        this.cogs = cogs || (quantity * unitCost);
+        this.grossProfit = grossProfit || (this.totalPrice - this.cogs);
+        this.marginPercentage = marginPercentage || 
+            (this.totalPrice > 0 ? (this.grossProfit / this.totalPrice) * 100 : 0);
     }
 
-    getSubtotal() {
-        return this.totalAmount - this.discount + this.tax;
+    // =============================================
+    // Getters for calculated fields
+    // =============================================
+
+    get subtotal() {
+        return this.totalPrice;
     }
 
-    getAmountPaid() {
-        return this.metadata?.amountPaid || 0;
+    get amountPaidValue() {
+        return this.amountPaid || 0;
     }
 
-    getBalanceRemaining() {
-        return this.totalAmount - this.getAmountPaid();
+    get balance() {
+        return this.balanceRemaining || (this.totalPrice - this.amountPaidValue);
     }
 
     isFullyPaid() {
@@ -57,48 +73,98 @@ class Sale {
         return this.paymentStatus === 'UNPAID' || this.paymentStatus === 'PARTIAL';
     }
 
+    isOverdue() {
+        // Would need dueDate field
+        return false;
+    }
+
+    // =============================================
+    // 🆕 Cost-related methods for reporting
+    // =============================================
+
+    get margin() {
+        return this.marginPercentage || 
+            (this.totalPrice > 0 ? (this.grossProfit / this.totalPrice) * 100 : 0);
+    }
+
+    get hasCostData() {
+        return this.unitCost > 0 || this.cogs > 0;
+    }
+
+    // Mark methods
     markAsPaid() {
         this.paymentStatus = 'PAID';
+        this.amountPaid = this.totalPrice;
+        this.balanceRemaining = 0;
         this.updatedAt = new Date();
         return this;
     }
 
     markAsPartial(amountPaid) {
         this.paymentStatus = 'PARTIAL';
-        this.metadata = { ...this.metadata, amountPaid };
+        this.amountPaid = amountPaid;
+        this.balanceRemaining = this.totalPrice - amountPaid;
         this.updatedAt = new Date();
         return this;
     }
 
-    isOverdue() {
-        if (!this.dueDate) return false;
-        return new Date() > new Date(this.dueDate) && this.isUnpaid();
-    }
+    // =============================================
+    // 🆕 Snapshot cost from inventory item
+    // =============================================
 
-    addItem(item) {
-        this.items.push(item);
-        this.updatedAt = new Date();
-        return this;
+    static fromInventoryItem(userId, inventoryItem, saleData) {
+        const unitCost = inventoryItem?.cost_price || 0;
+        const quantity = saleData.quantity;
+        const unitPrice = saleData.unitPrice || inventoryItem?.selling_price || 0;
+        const totalPrice = quantity * unitPrice;
+        const cogs = quantity * unitCost;
+        const grossProfit = totalPrice - cogs;
+        const marginPercentage = totalPrice > 0 ? (grossProfit / totalPrice) * 100 : 0;
+
+        return new Sale({
+            userId,
+            businessId: saleData.businessId,
+            itemName: saleData.itemName || inventoryItem?.item_name,
+            quantity,
+            unitPrice,
+            totalPrice,
+            customerName: saleData.customerName,
+            customerId: saleData.customerId,
+            customerType: saleData.customerType || 'CUSTOMER',
+            paymentStatus: saleData.paymentStatus || 'UNPAID',
+            amountPaid: saleData.amountPaid || 0,
+            saleDate: saleData.saleDate || new Date(),
+            // Cost data
+            unitCost,
+            cogs,
+            grossProfit,
+            marginPercentage,
+        });
     }
 
     toJSON() {
         return {
             id: this.id,
+            userId: this.userId,
             businessId: this.businessId,
-            invoiceNumber: this.invoiceNumber,
+            itemName: this.itemName,
+            quantity: this.quantity,
+            unitPrice: this.unitPrice,
+            totalPrice: this.totalPrice,
+            customerName: this.customerName,
             customerId: this.customerId,
             customerType: this.customerType,
-            totalAmount: this.totalAmount,
-            discount: this.discount,
-            tax: this.tax,
             paymentStatus: this.paymentStatus,
-            transactionId: this.transactionId,
-            items: this.items,
-            notes: this.notes,
+            amountPaid: this.amountPaid,
+            balanceRemaining: this.balanceRemaining,
             saleDate: this.saleDate,
-            dueDate: this.dueDate,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt,
+            // Cost data
+            unitCost: this.unitCost,
+            cogs: this.cogs,
+            grossProfit: this.grossProfit,
+            marginPercentage: this.marginPercentage,
         };
     }
 }

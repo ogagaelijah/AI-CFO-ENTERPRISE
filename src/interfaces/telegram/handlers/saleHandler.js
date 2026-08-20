@@ -105,13 +105,11 @@ async function startSaleFlow(ctx, telegramId) {
 }
 
 async function handleSaleItem(ctx, telegramId, user) {
-    // ✅ Check if this is a text message or callback
     let itemName = '';
     
     if (ctx.message && ctx.message.text) {
         itemName = ctx.message.text.trim();
     } else if (ctx.callbackQuery && ctx.callbackQuery.data) {
-        // If it's a callback, we should start the flow
         await startSaleFlow(ctx, telegramId);
         return;
     } else {
@@ -129,7 +127,6 @@ async function handleSaleItem(ctx, telegramId, user) {
     // ✅ Check if this is a pending "YES"/"NO" response
     if (session.data.pendingCheck) {
         if (itemName.toUpperCase() === 'YES') {
-            // User wants to continue without inventory
             sessionManager.setData(telegramId, {
                 ...session.data,
                 pendingCheck: false,
@@ -139,7 +136,6 @@ async function handleSaleItem(ctx, telegramId, user) {
             await ctx.reply(`Enter the **quantity** to sell:`);
             return;
         } else if (itemName.toUpperCase() === 'NO') {
-            // User wants to cancel - clear session and return to main menu
             sessionManager.clearSession(telegramId);
             const businesses = await businessRepo.findByUserId(user.id);
             const business = Array.isArray(businesses) && businesses.length > 0 ? businesses[0] : null;
@@ -161,14 +157,12 @@ async function handleSaleItem(ctx, telegramId, user) {
             `You can still record this sale, but inventory will not be updated.\n` +
             `Continue? Type **YES** or **NO**.`
         );
-        // Store the item name and set pendingCheck to true
         sessionManager.setData(telegramId, { 
             ...session.data, 
             itemName, 
             pendingCheck: true,
             skipInventory: false
         });
-        // Keep the state as SALE_WAITING_ITEM so the next response is handled correctly
         sessionManager.setState(telegramId, 'SALE_WAITING_ITEM');
         return;
     }
@@ -179,7 +173,6 @@ async function handleSaleItem(ctx, telegramId, user) {
             `Available: 0\n\n` +
             `Please add stock first using /inventory.`
         );
-        // Clear session and return to main menu
         sessionManager.clearSession(telegramId);
         const businesses = await businessRepo.findByUserId(user.id);
         const business = Array.isArray(businesses) && businesses.length > 0 ? businesses[0] : null;
@@ -188,24 +181,28 @@ async function handleSaleItem(ctx, telegramId, user) {
         return;
     }
 
+    // ✅ Store inventory item with cost data for later display
     sessionManager.setData(telegramId, {
         ...session.data,
-        itemName: inventoryItem.item_name, // Use the actual item name from DB
+        itemName: inventoryItem.item_name,
         inventoryId: inventoryItem.id,
         currentStock: inventoryItem.quantity,
+        unitCost: inventoryItem.cost_price || 0,      // 🆕 Store for display
+        sellingPrice: inventoryItem.selling_price || 0, // 🆕 Store for display
         pendingCheck: false
     });
     sessionManager.setState(telegramId, 'SALE_WAITING_QUANTITY');
 
     await ctx.reply(
         `📦 **${inventoryItem.item_name}**\n` +
-        `Available stock: **${inventoryItem.quantity}** units\n\n` +
+        `Available stock: **${inventoryItem.quantity}** units\n` +
+        `Cost price: ₦${(inventoryItem.cost_price || 0).toLocaleString()}\n` + // 🆕 Show cost
+        `Selling price: ₦${(inventoryItem.selling_price || 0).toLocaleString()}\n\n` + // 🆕 Show selling price
         `Enter the **quantity** to sell:`
     );
 }
 
 async function handleSaleQuantity(ctx, telegramId, user) {
-    // ✅ Check if this is a text message
     let text = '';
     
     if (ctx.message && ctx.message.text) {
@@ -237,15 +234,23 @@ async function handleSaleQuantity(ctx, telegramId, user) {
     sessionManager.setData(telegramId, { ...session.data, quantity });
     sessionManager.setState(telegramId, 'SALE_WAITING_PRICE');
 
+    // 🆕 Suggest selling price if available
+    const suggestedPrice = session.data.sellingPrice || 0;
+    const priceMessage = suggestedPrice > 0 
+        ? `\n💡 Suggested price: ₦${suggestedPrice.toLocaleString()}` 
+        : '';
+
     await ctx.reply(
         `📦 ${session.data.itemName}\n` +
-        `Quantity: **${quantity}**\n\n` +
+        `Quantity: **${quantity}**\n` +
+        `Cost per unit: ₦${(session.data.unitCost || 0).toLocaleString()}\n` +
+        `Total cost: ₦${(quantity * (session.data.unitCost || 0)).toLocaleString()}\n` +
+        `${priceMessage}\n\n` +
         `Enter the **unit price** (per item):`
     );
 }
 
 async function handleSalePrice(ctx, telegramId, user) {
-    // ✅ Check if this is a text message
     let text = '';
     
     if (ctx.message && ctx.message.text) {
@@ -264,21 +269,41 @@ async function handleSalePrice(ctx, telegramId, user) {
     }
 
     const total = price * session.data.quantity;
+    const totalCost = session.data.quantity * (session.data.unitCost || 0);
+    const grossProfit = total - totalCost;
+    const margin = total > 0 ? (grossProfit / total) * 100 : 0;
 
-    sessionManager.setData(telegramId, { ...session.data, unitPrice: price, totalPrice: total });
+    sessionManager.setData(telegramId, { 
+        ...session.data, 
+        unitPrice: price, 
+        totalPrice: total,
+        totalCost: totalCost,
+        grossProfit: grossProfit,
+        margin: margin
+    });
     sessionManager.setState(telegramId, 'SALE_WAITING_CUSTOMER');
+
+    // 🆕 Show profitability preview
+    let profitMessage = '';
+    if (session.data.unitCost > 0) {
+        profitMessage = 
+            `\n📊 **Profitability Preview:**\n` +
+            `   Total Cost: ₦${totalCost.toLocaleString()}\n` +
+            `   Gross Profit: ₦${grossProfit.toLocaleString()}\n` +
+            `   Margin: ${margin.toFixed(1)}%\n`;
+    }
 
     await ctx.reply(
         `📦 ${session.data.itemName}\n` +
         `Quantity: **${session.data.quantity}**\n` +
         `Unit Price: ₦${price.toLocaleString()}\n` +
-        `Total: ₦${total.toLocaleString()}\n\n` +
+        `Total: ₦${total.toLocaleString()}\n` +
+        `${profitMessage}\n` +
         `Enter the **customer name** (or type "skip"):`
     );
 }
 
 async function handleSaleCustomer(ctx, telegramId, user) {
-    // ✅ Check if this is a text message
     let text = '';
     
     if (ctx.message && ctx.message.text) {
@@ -296,7 +321,8 @@ async function handleSaleCustomer(ctx, telegramId, user) {
 
     await ctx.reply(
         `👤 Customer: ${customer || 'No customer'}\n` +
-        `💰 Total: ₦${session.data.totalPrice.toLocaleString()}\n\n` +
+        `💰 Total: ₦${session.data.totalPrice.toLocaleString()}\n` +
+        `📊 Gross Profit: ₦${(session.data.grossProfit || 0).toLocaleString()}\n\n` +
         `**Payment Status:**\n` +
         `1️⃣ PAID - Paid in full\n` +
         `2️⃣ PARTIAL - Paid partially\n` +
@@ -380,6 +406,16 @@ async function showSaleConfirmation(ctx, telegramId, user, paymentStatus, amount
         `👤 Customer: ${session.data.customer || 'N/A'}\n` +
         `💳 Payment: ${paymentStatus}\n`;
 
+    // 🆕 Show cost breakdown in confirmation
+    if (session.data.unitCost > 0) {
+        message +=
+            `\n📊 **Cost Breakdown:**\n` +
+            `   Unit Cost: ₦${session.data.unitCost.toLocaleString()}\n` +
+            `   Total COGS: ₦${(session.data.totalCost || 0).toLocaleString()}\n` +
+            `   Gross Profit: ₦${(session.data.grossProfit || 0).toLocaleString()}\n` +
+            `   Margin: ${(session.data.margin || 0).toFixed(1)}%\n`;
+    }
+
     if (paymentStatus === 'PAID') {
         message += `✅ Paid in full: ₦${amountPaid.toLocaleString()}\n`;
     } else if (paymentStatus === 'PARTIAL') {
@@ -417,7 +453,6 @@ async function handleSaleConfirmation(ctx, telegramId, user, business) {
 
     if (text === 'YES') {
         try {
-            // ✅ Get business ID
             const businessId = business ? business.id : null;
 
             const result = await recordSaleUseCase.execute({
@@ -444,6 +479,16 @@ async function handleSaleConfirmation(ctx, telegramId, user, business) {
                 `💰 Total: ₦${session.data.totalPrice.toLocaleString()}\n` +
                 `👤 Customer: ${session.data.customer || 'N/A'}\n` +
                 `💳 Payment: ${session.data.paymentStatus}\n`;
+
+            // 🆕 Show cost breakdown in success message
+            if (result.unitCost > 0) {
+                message +=
+                    `\n📊 **Profitability:**\n` +
+                    `   Unit Cost: ₦${result.unitCost.toLocaleString()}\n` +
+                    `   COGS: ₦${result.cogs.toLocaleString()}\n` +
+                    `   Gross Profit: ₦${result.grossProfit.toLocaleString()}\n` +
+                    `   Margin: ${result.marginPercentage.toFixed(1)}%\n`;
+            }
 
             if (session.data.paymentStatus === 'PAID') {
                 message += `✅ Paid in full: ₦${session.data.amountPaid.toLocaleString()}\n`;

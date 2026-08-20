@@ -58,6 +58,20 @@ class InventoryRepository extends BaseRepository {
     }
 
     /**
+     * 🆕 Find by name with fallback to partial match
+     * Use this when you want to be more flexible
+     */
+    findByNameIgnoreCaseWithFallback(userId, itemName) {
+        // Try exact match first (case-insensitive)
+        let item = this.findByNameIgnoreCase(userId, itemName);
+        if (item) return item;
+
+        // Try partial match
+        const results = this.searchByName(userId, itemName);
+        return results.length > 0 ? results[0] : null;
+    }
+
+    /**
      * Search inventory items by name (case-insensitive, partial match)
      * @param {number} userId - User ID
      * @param {string} searchTerm - Search term
@@ -136,7 +150,7 @@ class InventoryRepository extends BaseRepository {
     }
 
     // =============================================
-    // SUMMARY (UPDATED with profit)
+    // SUMMARY
     // =============================================
     getSummary(userId) {
         const result = this.db.prepare(`
@@ -178,10 +192,58 @@ class InventoryRepository extends BaseRepository {
         };
     }
 
+    /**
+     * Delete inventory item by ID
+     * @param {number} id - Inventory item ID
+     * @returns {boolean} True if deleted
+     */
     delete(id) {
         const stmt = this.db.prepare('DELETE FROM inventory WHERE id = ?');
         const result = stmt.run(id);
         return result.changes > 0;
+    }
+
+    // =============================================
+    // 🆕 NEW: Reporting helpers
+    // =============================================
+
+    /**
+     * Get all inventory items with profit calculations
+     * @param {number} userId - User ID
+     * @returns {Array} Items with profit_per_item and profit_margin
+     */
+    getItemsWithProfit(userId) {
+        return this.db.prepare(`
+            SELECT 
+                *,
+                (selling_price - cost_price) as profit_per_item,
+                CASE 
+                    WHEN selling_price > 0 THEN ((selling_price - cost_price) / selling_price) * 100 
+                    ELSE 0 
+                END as profit_margin
+            FROM inventory 
+            WHERE user_id = ?
+            ORDER BY item_name ASC
+        `).all(userId);
+    }
+
+    /**
+     * Get inventory item by ID with profit calculation
+     * @param {number} id - Inventory item ID
+     * @returns {Object|null} Item with profit_per_item and profit_margin
+     */
+    findByIdWithProfit(id) {
+        return this.db.prepare(`
+            SELECT 
+                *,
+                (selling_price - cost_price) as profit_per_item,
+                CASE 
+                    WHEN selling_price > 0 THEN ((selling_price - cost_price) / selling_price) * 100 
+                    ELSE 0 
+                END as profit_margin
+            FROM inventory 
+            WHERE id = ?
+        `).get(id);
     }
 }
 

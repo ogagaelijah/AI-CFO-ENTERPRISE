@@ -59,6 +59,15 @@ class CreditorRepository extends BaseRepository {
         ).all(userId);
     }
 
+    /**
+     * Alias for findActive - used by ReportService
+     * @param {number} userId - User ID
+     * @returns {Array} Array of active creditors
+     */
+    findActiveByUser(userId) {
+        return this.findActive(userId);
+    }
+
     getTotalOutstanding(userId) {
         const result = this.db.prepare(
             `SELECT COALESCE(SUM(balance_remaining), 0) as total_outstanding
@@ -182,6 +191,17 @@ class CreditorRepository extends BaseRepository {
             FROM creditors 
             WHERE user_id = ?
         `).get(userId);
+    }
+
+    /**
+     * Delete creditor by ID
+     * @param {number} id - Creditor ID
+     * @returns {boolean} True if deleted
+     */
+    delete(id) {
+        const stmt = this.db.prepare('DELETE FROM creditors WHERE id = ?');
+        const result = stmt.run(id);
+        return result.changes > 0;
     }
 }
 

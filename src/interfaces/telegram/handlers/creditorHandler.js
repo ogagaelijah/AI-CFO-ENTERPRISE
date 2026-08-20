@@ -61,6 +61,12 @@ async function creditorHandler(ctx) {
             case 'CREDITOR_WAITING_CONFIRMATION':
                 await handleCreditorPaymentConfirmation(ctx, telegramId, user);
                 break;
+            case 'CREDITOR_WAITING_DELETE_ID':
+                await handleCreditorDeleteId(ctx, telegramId, user);
+                break;
+            case 'CREDITOR_WAITING_DELETE_CONFIRM':
+                await handleCreditorDeleteConfirm(ctx, telegramId, user);
+                break;
             default:
                 await showCreditorMenu(ctx, telegramId, user);
                 break;
@@ -435,6 +441,90 @@ async function handleCreditorPaymentConfirmation(ctx, telegramId, user) {
 
         await ctx.reply(message);
     }
+}
+
+// =============================================
+// DELETE CREDITOR FLOW
+// =============================================
+async function handleCreditorDeleteId(ctx, telegramId, user) {
+    const text = ctx.message?.text;
+
+    if (!text) {
+        sessionManager.setState(telegramId, 'CREDITOR_WAITING_DELETE_ID');
+        await ctx.reply(
+            `🗑️ **Delete Creditor**
+
+Enter the creditor ID to delete:`
+        );
+        return;
+    }
+
+    const creditorId = parseInt(text.trim());
+    if (isNaN(creditorId) || creditorId <= 0) {
+        await ctx.reply('⚠️ Please enter a valid creditor ID.');
+        return;
+    }
+
+    const creditor = await creditorRepo.findById(creditorId);
+    if (!creditor || creditor.user_id !== user.id) {
+        await ctx.reply('❌ Creditor not found.');
+        await showCreditorMenu(ctx, telegramId, user);
+        return;
+    }
+
+    sessionManager.setData(telegramId, { creditorId, creditor });
+    sessionManager.setState(telegramId, 'CREDITOR_WAITING_DELETE_CONFIRM');
+
+    await ctx.reply(
+        `⚠️ **Confirm Delete**
+
+Are you sure you want to delete this creditor?
+
+🏢 Supplier: ${creditor.supplier_name}
+💰 Amount: ₦${creditor.total_owed.toLocaleString()}
+🔴 Balance: ₦${creditor.balance_remaining.toLocaleString()}
+
+Reply with **YES** to confirm or **NO** to cancel.`
+    );
+}
+
+async function handleCreditorDeleteConfirm(ctx, telegramId, user) {
+    const text = ctx.message?.text;
+    const session = sessionManager.getSession(telegramId);
+
+    if (!text) {
+        await ctx.reply('⚠️ Please reply with **YES** or **NO**.');
+        return;
+    }
+
+    const response = text.trim().toUpperCase();
+
+    if (response === 'NO') {
+        sessionManager.clearSession(telegramId);
+        await ctx.reply('❌ Delete cancelled.');
+        await showCreditorMenu(ctx, telegramId, user);
+        return;
+    }
+
+    if (response !== 'YES') {
+        await ctx.reply('⚠️ Please reply with **YES** or **NO**.');
+        return;
+    }
+
+    try {
+        const deleted = await creditorRepo.delete(session.data.creditorId);
+        if (deleted) {
+            await ctx.reply(`✅ Creditor deleted successfully.`);
+        } else {
+            await ctx.reply(`❌ Failed to delete creditor.`);
+        }
+    } catch (error) {
+        logger.error('Delete creditor error:', error);
+        await ctx.reply(`❌ Failed to delete creditor: ${error.message}`);
+    }
+
+    sessionManager.clearSession(telegramId);
+    await showCreditorMenu(ctx, telegramId, user);
 }
 
 // =============================================

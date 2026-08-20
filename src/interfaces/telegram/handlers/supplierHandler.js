@@ -99,6 +99,16 @@ async function supplierHandler(ctx) {
             return;
         }
 
+        if (state === 'SUPPLIER_WAITING_DELETE_ID') {
+            await handleSupplierDeleteId(ctx, businessId, telegramId);
+            return;
+        }
+
+        if (state === 'SUPPLIER_WAITING_DELETE_CONFIRM') {
+            await handleSupplierDeleteConfirm(ctx, businessId, telegramId);
+            return;
+        }
+
         await showSupplierMenu(ctx, telegramId);
 
     } catch (error) {
@@ -123,6 +133,7 @@ async function showSupplierMenu(ctx, telegramId) {
                     [{ text: '➕ Add Supplier', callback_data: 'supplier_create' }],
                     [{ text: '👤 View Supplier', callback_data: 'supplier_view' }],
                     [{ text: '📋 List All Suppliers', callback_data: 'supplier_list' }],
+                    [{ text: '🗑️ Delete', callback_data: 'supplier_delete' }],
                     [{ text: '🔙 Back to Main Menu', callback_data: 'back_main' }],
                 ],
             },
@@ -136,6 +147,7 @@ Manage your suppliers and vendors.
 • **Add Supplier** — Create a new supplier
 • **View Supplier** — View supplier details
 • **List All** — See all suppliers
+• **Delete** — Remove a supplier
 
 Select an option below:`,
             { parse_mode: 'Markdown', ...keyboard }
@@ -368,6 +380,90 @@ What would you like to do next?`,
 }
 
 // =============================================
+// DELETE SUPPLIER FLOW
+// =============================================
+async function handleSupplierDeleteId(ctx, businessId, telegramId) {
+    const text = ctx.message?.text;
+
+    if (!text) {
+        sessionManager.setState(telegramId, 'SUPPLIER_WAITING_DELETE_ID');
+        await ctx.reply(
+            `🗑️ **Delete Supplier**
+
+Enter the supplier ID to delete:`
+        );
+        return;
+    }
+
+    const supplierId = parseInt(text.trim());
+    if (isNaN(supplierId) || supplierId <= 0) {
+        await ctx.reply('⚠️ Please enter a valid supplier ID.');
+        return;
+    }
+
+    const supplier = await supplierRepo.findById(supplierId);
+    if (!supplier || supplier.businessId !== businessId) {
+        await ctx.reply('❌ Supplier not found.');
+        await showSupplierMenu(ctx, telegramId);
+        return;
+    }
+
+    sessionManager.setData(telegramId, { supplierId, supplier });
+    sessionManager.setState(telegramId, 'SUPPLIER_WAITING_DELETE_CONFIRM');
+
+    await ctx.reply(
+        `⚠️ **Confirm Delete**
+
+Are you sure you want to delete this supplier?
+
+🏢 Name: ${supplier.name}
+📞 Phone: ${supplier.phone || 'Not set'}
+📧 Email: ${supplier.email || 'Not set'}
+
+Reply with **YES** to confirm or **NO** to cancel.`
+    );
+}
+
+async function handleSupplierDeleteConfirm(ctx, businessId, telegramId) {
+    const text = ctx.message?.text;
+    const session = sessionManager.getSession(telegramId);
+
+    if (!text) {
+        await ctx.reply('⚠️ Please reply with **YES** or **NO**.');
+        return;
+    }
+
+    const response = text.trim().toUpperCase();
+
+    if (response === 'NO') {
+        sessionManager.clearSession(telegramId);
+        await ctx.reply('❌ Delete cancelled.');
+        await showSupplierMenu(ctx, telegramId);
+        return;
+    }
+
+    if (response !== 'YES') {
+        await ctx.reply('⚠️ Please reply with **YES** or **NO**.');
+        return;
+    }
+
+    try {
+        const deleted = await supplierRepo.delete(session.data.supplierId);
+        if (deleted) {
+            await ctx.reply(`✅ Supplier deleted successfully.`);
+        } else {
+            await ctx.reply(`❌ Failed to delete supplier.`);
+        }
+    } catch (error) {
+        logger.error('Delete supplier error:', error);
+        await ctx.reply(`❌ Failed to delete supplier: ${error.message}`);
+    }
+
+    sessionManager.clearSession(telegramId);
+    await showSupplierMenu(ctx, telegramId);
+}
+
+// =============================================
 // VIEW SUPPLIER (Case-Insensitive)
 // =============================================
 async function handleViewSupplier(ctx, businessId, telegramId) {
@@ -513,6 +609,17 @@ Enter the supplier's ID or name:`
             return;
         }
 
+        if (data === 'supplier_delete') {
+            sessionManager.clearSession(telegramId);
+            sessionManager.setState(telegramId, 'SUPPLIER_WAITING_DELETE_ID');
+            await ctx.reply(
+                `🗑️ **Delete Supplier**
+
+Enter the supplier ID to delete:`
+            );
+            return;
+        }
+
         if (data === 'supplier_back') {
             await showSupplierMenu(ctx, telegramId);
             return;
@@ -540,6 +647,8 @@ module.exports = {
     handleCreateSupplierEmail,
     handleCreateSupplierAddress,
     handleCreateSupplierConfirm,
+    handleSupplierDeleteId,
+    handleSupplierDeleteConfirm,
     handleViewSupplier,
     listSuppliers,
 };

@@ -33,8 +33,13 @@ async function dashboardHandler(ctx) {
             return;
         }
 
-        const businesses = await businessRepo.findByUserId(user.id);
-        const business = businesses.length > 0 ? businesses[0] : null;
+        let businesses = await businessRepo.findByUserId(user.id);
+        let business = null;
+        if (Array.isArray(businesses) && businesses.length > 0) {
+            business = businesses[0];
+        } else if (businesses && !Array.isArray(businesses)) {
+            business = businesses;
+        }
 
         if (!business) {
             await ctx.reply('⚠️ No business found. Please complete registration.');
@@ -44,23 +49,40 @@ async function dashboardHandler(ctx) {
         const industry = INDUSTRIES[business.industry];
         const industryName = industry ? `${industry.icon} ${industry.name}` : business.industry;
 
-        // Get all data
-        const salesSummary = await saleRepo.getSalesSummary(user.id);
-        const todaySales = await saleRepo.getTodaySales(user.id);
+        // ✅ Get all data using existing methods
+        const sales = await saleRepo.findByUserId(user.id);
+        const incomes = await incomeRepo.findByUserId(user.id);
+        const expenses = await expenseRepo.findByUserId(user.id);
         const inventorySummary = await inventoryRepo.getSummary(user.id);
         const debtorSummary = await debtorRepo.getSummary(user.id);
         const creditorSummary = await creditorRepo.getSummary(user.id);
-        const incomeSummary = await incomeRepo.getIncomeSummary(user.id);
-        const expenseSummary = await expenseRepo.getExpenseSummary(user.id);
 
-        // Calculate trial days remaining
+        // ✅ Calculate sales summary
+        const totalSales = sales.length;
+        const totalRevenue = sales.reduce((sum, s) => sum + s.total_price, 0);
+        const totalItemsSold = sales.reduce((sum, s) => sum + s.quantity, 0);
+
+        // ✅ Calculate today's sales
+        const today = new Date().toISOString().split('T')[0];
+        const todaySales = sales.filter(s => s.sale_date && s.sale_date.split('T')[0] === today);
+        const todayRevenue = todaySales.reduce((sum, s) => sum + s.total_price, 0);
+
+        // ✅ Calculate income summary
+        const totalIncomeEntries = incomes.length;
+        const totalIncomeAmount = incomes.reduce((sum, i) => sum + i.amount, 0);
+
+        // ✅ Calculate expense summary
+        const totalExpenseEntries = expenses.length;
+        const totalExpenseAmount = expenses.reduce((sum, e) => sum + e.amount, 0);
+
+        // ✅ Calculate trial days remaining
         const createdAt = new Date(user.createdAt);
         const trialEndDate = new Date(createdAt);
         trialEndDate.setDate(trialEndDate.getDate() + 30);
-        const today = new Date();
-        const daysRemaining = Math.ceil((trialEndDate - today) / (1000 * 60 * 60 * 24));
+        const todayDate = new Date();
+        const daysRemaining = Math.ceil((trialEndDate - todayDate) / (1000 * 60 * 60 * 24));
 
-        // Build dashboard message
+        // ✅ Build dashboard message
         let message =
             `📊 **${business.name} - Dashboard**\n` +
             `🏭 ${industryName}\n` +
@@ -68,28 +90,27 @@ async function dashboardHandler(ctx) {
             `━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
         // Today's Sales
-        const todayRevenue = todaySales.reduce((sum, s) => sum + s.total_price, 0);
         message += `💰 **Today's Sales**\n`;
         message += `📝 ${todaySales.length} transactions\n`;
         message += `💵 ₦${todayRevenue.toLocaleString()}\n\n`;
 
         // Total Sales
         message += `📈 **Lifetime Sales**\n`;
-        message += `📦 ${salesSummary.total_sales || 0} sales\n`;
-        message += `💵 ₦${(salesSummary.total_revenue || 0).toLocaleString()}\n`;
-        message += `🔢 ${salesSummary.total_items_sold || 0} items sold\n\n`;
+        message += `📦 ${totalSales} sales\n`;
+        message += `💵 ₦${totalRevenue.toLocaleString()}\n`;
+        message += `🔢 ${totalItemsSold} items sold\n\n`;
 
         // Income & Expenses
         message += `💰 **Income**\n`;
-        message += `   ${incomeSummary.total_entries || 0} entries\n`;
-        message += `   ₦${(incomeSummary.total_amount || 0).toLocaleString()}\n\n`;
+        message += `   ${totalIncomeEntries} entries\n`;
+        message += `   ₦${totalIncomeAmount.toLocaleString()}\n\n`;
 
         message += `📉 **Expenses**\n`;
-        message += `   ${expenseSummary.total_entries || 0} entries\n`;
-        message += `   ₦${(expenseSummary.total_amount || 0).toLocaleString()}\n\n`;
+        message += `   ${totalExpenseEntries} entries\n`;
+        message += `   ₦${totalExpenseAmount.toLocaleString()}\n\n`;
 
         // Inventory Summary
-        if (industry && industry.features.inventory) {
+        if (industry && industry.features && industry.features.inventory) {
             message += `📦 **Inventory Summary**\n`;
             message += `📦 ${inventorySummary.total_items || 0} items\n`;
             message += `📦 ${inventorySummary.total_quantity || 0} units\n`;
@@ -130,8 +151,13 @@ async function dashboardHandler(ctx) {
         });
 
     } catch (error) {
-        logger.error('Dashboard error:', error);
-        await ctx.reply('❌ Failed to load dashboard. Please try again.');
+        console.error('❌ Dashboard error:', error.message);
+        console.error('❌ Stack:', error.stack);
+        logger.error('Dashboard error:', {
+            message: error.message,
+            stack: error.stack
+        });
+        await ctx.reply(`❌ Failed to load dashboard: ${error.message}`);
     }
 }
 

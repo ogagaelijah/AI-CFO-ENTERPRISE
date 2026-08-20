@@ -43,17 +43,17 @@ function getMainMenuKeyboard(industry = 'RETAIL') {
     ];
 
     // =============================================
-    // SECTION 2: PROJECTS (Industry-Specific)
+    // SECTION 2: MANAGEMENT (Projects, Reports, Dashboard)
     // =============================================
-    const projects = [];
+    const management = [];
     if (hasFeature(industry, 'projects')) {
-        projects.push([
+        management.push([
             { text: '🏗️ Projects', callback_data: 'menu_projects' },
             { text: '📊 Dashboard', callback_data: 'menu_dashboard' },
             { text: '📋 Reports', callback_data: 'menu_reports' },
         ]);
     } else {
-        projects.push([
+        management.push([
             { text: '📊 Dashboard', callback_data: 'menu_dashboard' },
             { text: '📋 Reports', callback_data: 'menu_reports' },
             { text: '⚙️ Settings', callback_data: 'menu_settings' },
@@ -94,7 +94,7 @@ function getMainMenuKeyboard(industry = 'RETAIL') {
 
     // Add Management Section
     keyboard.push([{ text: '━━━ 📊 MANAGEMENT ━━━', callback_data: 'noop' }]);
-    for (const row of projects) {
+    for (const row of management) {
         keyboard.push(row);
     }
 
@@ -118,7 +118,7 @@ function getMainMenuKeyboard(industry = 'RETAIL') {
 }
 
 // =============================================
-// INVENTORY KEYBOARD
+// INVENTORY KEYBOARD (UPDATED with Delete)
 // =============================================
 function getInventoryKeyboard() {
     return {
@@ -137,6 +137,7 @@ function getInventoryKeyboard() {
                     { text: '💰 Total Value', callback_data: 'inventory_value' },
                 ],
                 [
+                    { text: '🗑️ Delete', callback_data: 'inventory_delete' },
                     { text: '🔙 Back', callback_data: 'menu_back' },
                 ],
             ],
@@ -145,7 +146,7 @@ function getInventoryKeyboard() {
 }
 
 // =============================================
-// DEBTOR KEYBOARD (UPDATED with Total Owed)
+// DEBTOR KEYBOARD (UPDATED with Delete)
 // =============================================
 function getDebtorKeyboard() {
     return {
@@ -161,6 +162,9 @@ function getDebtorKeyboard() {
                 ],
                 [
                     { text: '⚠️ Overdue', callback_data: 'debtor_overdue' },
+                    { text: '🗑️ Delete', callback_data: 'debtor_delete' },
+                ],
+                [
                     { text: '🔙 Back', callback_data: 'menu_back' },
                 ],
             ],
@@ -169,7 +173,7 @@ function getDebtorKeyboard() {
 }
 
 // =============================================
-// CREDITOR KEYBOARD
+// CREDITOR KEYBOARD (UPDATED with Delete)
 // =============================================
 function getCreditorKeyboard() {
     return {
@@ -185,6 +189,9 @@ function getCreditorKeyboard() {
                 ],
                 [
                     { text: '⚠️ Overdue', callback_data: 'creditor_overdue' },
+                    { text: '🗑️ Delete', callback_data: 'creditor_delete' },
+                ],
+                [
                     { text: '🔙 Back', callback_data: 'menu_back' },
                 ],
             ],
@@ -193,7 +200,7 @@ function getCreditorKeyboard() {
 }
 
 // =============================================
-// PURCHASE KEYBOARD
+// PURCHASE KEYBOARD (UPDATED with Delete)
 // =============================================
 function getPurchaseKeyboard() {
     return {
@@ -206,6 +213,54 @@ function getPurchaseKeyboard() {
                 [
                     { text: '📊 Summary', callback_data: 'purchase_summary' },
                     { text: '📈 Today', callback_data: 'purchase_today' },
+                ],
+                [
+                    { text: '🗑️ Delete', callback_data: 'purchase_delete' },
+                    { text: '🔙 Back', callback_data: 'menu_back' },
+                ],
+            ],
+        },
+    };
+}
+
+// =============================================
+// CUSTOMER KEYBOARD (UPDATED with Delete)
+// =============================================
+function getCustomerKeyboard() {
+    return {
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: '➕ Add', callback_data: 'customer_create' },
+                    { text: '👤 View', callback_data: 'customer_view' },
+                ],
+                [
+                    { text: '📋 List All', callback_data: 'customer_list' },
+                    { text: '📊 History', callback_data: 'customer_history' },
+                ],
+                [
+                    { text: '🗑️ Delete', callback_data: 'customer_delete' },
+                    { text: '🔙 Back', callback_data: 'menu_back' },
+                ],
+            ],
+        },
+    };
+}
+
+// =============================================
+// SUPPLIER KEYBOARD (UPDATED with Delete)
+// =============================================
+function getSupplierKeyboard() {
+    return {
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: '➕ Add', callback_data: 'supplier_create' },
+                    { text: '👤 View', callback_data: 'supplier_view' },
+                ],
+                [
+                    { text: '📋 List All', callback_data: 'supplier_list' },
+                    { text: '🗑️ Delete', callback_data: 'supplier_delete' },
                 ],
                 [
                     { text: '🔙 Back', callback_data: 'menu_back' },
@@ -262,23 +317,22 @@ function getExpenseKeyboard() {
 }
 
 // =============================================
-// REPORT KEYBOARD
+// REPORT KEYBOARD (UPDATED with All Report Types)
 // =============================================
 function getReportKeyboard() {
     return {
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: '📊 Executive', callback_data: 'report_executive' },
-                    { text: '📈 Daily', callback_data: 'report_daily' },
+                    { text: '📊 Daily Report', callback_data: 'report_daily' },
+                    { text: '📊 Weekly Report', callback_data: 'report_weekly' },
                 ],
                 [
-                    { text: '📈 Weekly', callback_data: 'report_weekly' },
-                    { text: '📈 Monthly', callback_data: 'report_monthly' },
+                    { text: '📊 Monthly Report', callback_data: 'report_monthly' },
+                    { text: '📊 Yearly Report', callback_data: 'report_yearly' },
                 ],
                 [
-                    { text: '📄 Export PDF', callback_data: 'report_pdf' },
-                    { text: '📊 Export Excel', callback_data: 'report_excel' },
+                    { text: '📈 Executive Summary', callback_data: 'report_executive' },
                 ],
                 [
                     { text: '🔙 Back', callback_data: 'menu_back' },
@@ -320,49 +374,6 @@ function getSettingsKeyboard() {
                 ],
                 [
                     { text: '📋 Subscription', callback_data: 'menu_subscription' },
-                    { text: '🔙 Back', callback_data: 'menu_back' },
-                ],
-            ],
-        },
-    };
-}
-
-// =============================================
-// CUSTOMER KEYBOARD
-// =============================================
-function getCustomerKeyboard() {
-    return {
-        reply_markup: {
-            inline_keyboard: [
-                [
-                    { text: '➕ Add', callback_data: 'customer_create' },
-                    { text: '👤 View', callback_data: 'customer_view' },
-                ],
-                [
-                    { text: '📋 List All', callback_data: 'customer_list' },
-                    { text: '📊 History', callback_data: 'customer_history' },
-                ],
-                [
-                    { text: '🔙 Back', callback_data: 'menu_back' },
-                ],
-            ],
-        },
-    };
-}
-
-// =============================================
-// SUPPLIER KEYBOARD
-// =============================================
-function getSupplierKeyboard() {
-    return {
-        reply_markup: {
-            inline_keyboard: [
-                [
-                    { text: '➕ Add', callback_data: 'supplier_create' },
-                    { text: '👤 View', callback_data: 'supplier_view' },
-                ],
-                [
-                    { text: '📋 List All', callback_data: 'supplier_list' },
                     { text: '🔙 Back', callback_data: 'menu_back' },
                 ],
             ],

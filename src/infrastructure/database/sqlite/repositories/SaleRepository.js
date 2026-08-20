@@ -12,8 +12,9 @@ class SaleRepository extends BaseRepository {
             INSERT INTO sales (
                 user_id, item_name, quantity, unit_price, total_price,
                 customer_name, customer_id, customer_type, business_id,
-                payment_status, amount_paid, balance_remaining, sale_date
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                payment_status, amount_paid, balance_remaining, sale_date,
+                unit_cost, cogs, gross_profit, margin_percentage
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         const result = stmt.run(
@@ -29,7 +30,11 @@ class SaleRepository extends BaseRepository {
             saleData.payment_status || 'UNPAID',
             saleData.amount_paid || 0,
             saleData.balance_remaining || 0,
-            saleData.sale_date || new Date().toISOString()
+            saleData.sale_date || new Date().toISOString(),
+            saleData.unit_cost || 0,
+            saleData.cogs || 0,
+            saleData.gross_profit || 0,
+            saleData.margin_percentage || 0
         );
 
         return this.findById(result.lastInsertRowid);
@@ -119,6 +124,23 @@ class SaleRepository extends BaseRepository {
             fields.push('balance_remaining = ?');
             values.push(data.balance_remaining);
         }
+        // 🆕 Cost fields
+        if (data.unit_cost !== undefined) {
+            fields.push('unit_cost = ?');
+            values.push(data.unit_cost);
+        }
+        if (data.cogs !== undefined) {
+            fields.push('cogs = ?');
+            values.push(data.cogs);
+        }
+        if (data.gross_profit !== undefined) {
+            fields.push('gross_profit = ?');
+            values.push(data.gross_profit);
+        }
+        if (data.margin_percentage !== undefined) {
+            fields.push('margin_percentage = ?');
+            values.push(data.margin_percentage);
+        }
 
         fields.push('updated_at = CURRENT_TIMESTAMP');
 
@@ -159,6 +181,49 @@ class SaleRepository extends BaseRepository {
             FROM sales 
             WHERE user_id = ?
         `).get(userId);
+    }
+
+    // =============================================
+    // 🆕 NEW: Cost-aware methods for reporting
+    // =============================================
+
+    /**
+     * Get sales with cost data for a date range
+     * Returns full sale records including cost fields
+     */
+    findWithCostByDateRange(userId, startDate, endDate) {
+        return this.db.prepare(`
+            SELECT 
+                s.*,
+                s.unit_cost,
+                s.cogs,
+                s.gross_profit,
+                s.margin_percentage
+            FROM sales s
+            WHERE s.user_id = ? 
+            AND s.sale_date >= ? 
+            AND s.sale_date <= ?
+            ORDER BY s.sale_date DESC
+        `).all(userId, startDate, endDate);
+    }
+
+    /**
+     * Get cost summary for a date range
+     */
+    getCostSummary(userId, startDate, endDate) {
+        return this.db.prepare(`
+            SELECT 
+                COALESCE(SUM(total_price), 0) as total_revenue,
+                COALESCE(SUM(cogs), 0) as total_cogs,
+                COALESCE(SUM(gross_profit), 0) as total_gross_profit,
+                COALESCE(AVG(margin_percentage), 0) as avg_margin,
+                COUNT(*) as total_sales
+            FROM sales 
+            WHERE user_id = ? 
+            AND sale_date >= ? 
+            AND sale_date <= ?
+            AND (unit_cost > 0 OR cogs > 0)
+        `).get(userId, startDate, endDate);
     }
 }
 

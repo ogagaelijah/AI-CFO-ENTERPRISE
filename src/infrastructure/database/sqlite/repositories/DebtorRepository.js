@@ -49,6 +49,15 @@ class DebtorRepository extends BaseRepository {
     }
 
     /**
+     * Alias for findActive - used by ReportService
+     * @param {number} userId - User ID
+     * @returns {Array} Array of active debtors
+     */
+    findActiveByUser(userId) {
+        return this.findActive(userId);
+    }
+
+    /**
      * Get total outstanding amount for active debtors
      * @param {number} userId - User ID
      * @returns {number} Total outstanding amount
@@ -140,6 +149,17 @@ class DebtorRepository extends BaseRepository {
             FROM debtors 
             WHERE user_id = ?
         `).get(userId);
+    }
+
+    /**
+     * Delete debtor by ID
+     * @param {number} id - Debtor ID
+     * @returns {boolean} True if deleted
+     */
+    delete(id) {
+        const stmt = this.db.prepare('DELETE FROM debtors WHERE id = ?');
+        const result = stmt.run(id);
+        return result.changes > 0;
     }
 }
 

@@ -45,11 +45,9 @@ async function customerHandler(ctx) {
             return;
         }
 
-        // ✅ FIX: Handle business lookup properly
         let businesses = await businessRepo.findByUserId(user.id);
         console.log('🔍 [customerHandler] Raw businesses:', JSON.stringify(businesses, null, 2));
 
-        // If businesses is an array, get the first one
         let business = null;
         if (Array.isArray(businesses) && businesses.length > 0) {
             business = businesses[0];
@@ -57,10 +55,8 @@ async function customerHandler(ctx) {
             business = businesses;
         }
 
-        // ✅ If no business found, try to create one or use default
         if (!business) {
             console.log('🔍 [customerHandler] No business found, attempting to create...');
-            // Try to create a default business
             try {
                 const Business = require('../../../domain/entities/Business');
                 const newBusiness = new Business({
@@ -116,6 +112,12 @@ async function customerHandler(ctx) {
             case 'CUSTOMER_HISTORY_ID':
                 await handleViewCustomerHistory(ctx, businessId, telegramId);
                 break;
+            case 'CUSTOMER_WAITING_DELETE_ID':
+                await handleCustomerDeleteId(ctx, businessId, telegramId);
+                break;
+            case 'CUSTOMER_WAITING_DELETE_CONFIRM':
+                await handleCustomerDeleteConfirm(ctx, businessId, telegramId);
+                break;
             default:
                 await showCustomerMenu(ctx, telegramId);
                 break;
@@ -144,6 +146,7 @@ async function showCustomerMenu(ctx, telegramId) {
                     [{ text: '👤 View Customer', callback_data: 'customer_view' }],
                     [{ text: '📋 List All Customers', callback_data: 'customer_list' }],
                     [{ text: '📊 Customer History', callback_data: 'customer_history' }],
+                    [{ text: '🗑️ Delete', callback_data: 'customer_delete' }],
                     [{ text: '🔙 Back to Main Menu', callback_data: 'back_main' }],
                 ],
             },
@@ -158,6 +161,7 @@ Manage your customers, patients, clients, tenants, or students.
 • **View Customer** — View customer details
 • **List All** — See all customers
 • **Customer History** — View transaction history
+• **Delete** — Remove a customer
 
 Select an option below:`,
             { parse_mode: 'Markdown', ...keyboard }
@@ -289,7 +293,6 @@ async function handleCreateCustomerConfirm(ctx, businessId, telegramId) {
 
         const data = session.data;
 
-        // Check if customer already exists (case-insensitive)
         const existingCustomers = await customerRepo.findByBusinessId(businessId, {
             search: data.name,
             limit: 1,
@@ -343,6 +346,90 @@ What would you like to do next?`,
         await ctx.reply(`❌ Failed to create customer: ${error.message}`);
         sessionManager.clearSession(telegramId);
     }
+}
+
+// =============================================
+// DELETE CUSTOMER FLOW
+// =============================================
+async function handleCustomerDeleteId(ctx, businessId, telegramId) {
+    const text = ctx.message?.text;
+
+    if (!text) {
+        sessionManager.setState(telegramId, 'CUSTOMER_WAITING_DELETE_ID');
+        await ctx.reply(
+            `🗑️ **Delete Customer**
+
+Enter the customer ID to delete:`
+        );
+        return;
+    }
+
+    const customerId = parseInt(text.trim());
+    if (isNaN(customerId) || customerId <= 0) {
+        await ctx.reply('⚠️ Please enter a valid customer ID.');
+        return;
+    }
+
+    const customer = await customerRepo.findById(customerId);
+    if (!customer || customer.businessId !== businessId) {
+        await ctx.reply('❌ Customer not found.');
+        await showCustomerMenu(ctx, telegramId);
+        return;
+    }
+
+    sessionManager.setData(telegramId, { customerId, customer });
+    sessionManager.setState(telegramId, 'CUSTOMER_WAITING_DELETE_CONFIRM');
+
+    await ctx.reply(
+        `⚠️ **Confirm Delete**
+
+Are you sure you want to delete this customer?
+
+👤 Name: ${customer.name}
+🏷️ Type: ${customer.type}
+📞 Phone: ${customer.phone || 'Not set'}
+
+Reply with **YES** to confirm or **NO** to cancel.`
+    );
+}
+
+async function handleCustomerDeleteConfirm(ctx, businessId, telegramId) {
+    const text = ctx.message?.text;
+    const session = sessionManager.getSession(telegramId);
+
+    if (!text) {
+        await ctx.reply('⚠️ Please reply with **YES** or **NO**.');
+        return;
+    }
+
+    const response = text.trim().toUpperCase();
+
+    if (response === 'NO') {
+        sessionManager.clearSession(telegramId);
+        await ctx.reply('❌ Delete cancelled.');
+        await showCustomerMenu(ctx, telegramId);
+        return;
+    }
+
+    if (response !== 'YES') {
+        await ctx.reply('⚠️ Please reply with **YES** or **NO**.');
+        return;
+    }
+
+    try {
+        const deleted = await customerRepo.delete(session.data.customerId);
+        if (deleted) {
+            await ctx.reply(`✅ Customer deleted successfully.`);
+        } else {
+            await ctx.reply(`❌ Failed to delete customer.`);
+        }
+    } catch (error) {
+        logger.error('Delete customer error:', error);
+        await ctx.reply(`❌ Failed to delete customer: ${error.message}`);
+    }
+
+    sessionManager.clearSession(telegramId);
+    await showCustomerMenu(ctx, telegramId);
 }
 
 // =============================================
@@ -594,6 +681,17 @@ Enter the customer's ID or name:`
             return;
         }
 
+        if (data === 'customer_delete') {
+            sessionManager.clearSession(telegramId);
+            sessionManager.setState(telegramId, 'CUSTOMER_WAITING_DELETE_ID');
+            await ctx.reply(
+                `🗑️ **Delete Customer**
+
+Enter the customer ID to delete:`
+            );
+            return;
+        }
+
         if (data === 'customer_back') {
             await showCustomerMenu(ctx, telegramId);
             return;
@@ -658,6 +756,8 @@ module.exports = {
     handleCreateCustomerPhone,
     handleCreateCustomerEmail,
     handleCreateCustomerConfirm,
+    handleCustomerDeleteId,
+    handleCustomerDeleteConfirm,
     handleViewCustomer,
     handleViewCustomerHistory,
     listCustomers,
