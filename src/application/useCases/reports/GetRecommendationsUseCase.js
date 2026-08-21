@@ -10,31 +10,44 @@ class GetRecommendationsUseCase {
         creditorRepository,
         inventoryRepository,
     }) {
-        this.saleRepository = saleRepository;
-        this.incomeRepository = incomeRepository;
-        this.purchaseRepository = purchaseRepository;
-        this.expenseRepository = expenseRepository;
-        this.debtorRepository = debtorRepository;
-        this.creditorRepository = creditorRepository;
-        this.inventoryRepository = inventoryRepository;
+        this.saleRepo = saleRepository;
+        this.incomeRepo = incomeRepository;
+        this.purchaseRepo = purchaseRepository;
+        this.expenseRepo = expenseRepository;
+        this.debtorRepo = debtorRepository;
+        this.creditorRepo = creditorRepository;
+        this.inventoryRepo = inventoryRepository;
     }
 
-    async execute({ businessId }) {
+    async execute({ businessId, userId }) {
         if (!businessId) {
             throw new Error('Business ID is required');
         }
 
+        if (!userId) {
+            throw new Error('User ID is required');
+        }
+
         const recommendations = [];
+
+        // Fetch data using userId (not businessId)
+        const [debtors, creditors, inventoryItems, sales, expenses, purchases] = await Promise.all([
+            this.debtorRepo.findActive(userId),
+            this.creditorRepo.findActive(userId),
+            this.inventoryRepo.findByUserId(userId),
+            this.saleRepo.findByUserId(userId),
+            this.expenseRepo.findByUserId(userId),
+            this.purchaseRepo.findByUserId(userId),
+        ]);
 
         // =============================================
         // 1. DEBTOR RECOMMENDATIONS
         // =============================================
-        const debtors = await this.debtorRepository.findByBusinessId(businessId);
-        const overdueDebtors = debtors.filter(d => d.isOverdue());
-        const totalOverdue = overdueDebtors.reduce((sum, d) => sum + d.balanceRemaining, 0);
+        const overdueDebtors = debtors.filter(d => d.status === 'OVERDUE');
+        const totalOverdue = overdueDebtors.reduce((sum, d) => sum + (d.balance_remaining || 0), 0);
         const totalOutstanding = debtors
             .filter(d => d.status !== 'PAID')
-            .reduce((sum, d) => sum + d.balanceRemaining, 0);
+            .reduce((sum, d) => sum + (d.balance_remaining || 0), 0);
 
         if (totalOverdue > 0) {
             const count = overdueDebtors.length;
@@ -46,11 +59,8 @@ class GetRecommendationsUseCase {
                 action: 'View overdue debtors',
                 data: overdueDebtors.map(d => ({
                     id: d.id,
-                    amount: d.balanceRemaining,
-                    customerId: d.customerId,
-                    daysOverdue: d.dueDate
-                        ? Math.floor((new Date() - new Date(d.dueDate)) / (1000 * 60 * 60 * 24))
-                        : 0,
+                    amount: d.balance_remaining,
+                    customerName: d.customer_name,
                 })),
             });
         }
@@ -68,22 +78,21 @@ class GetRecommendationsUseCase {
         // =============================================
         // 2. INVENTORY RECOMMENDATIONS
         // =============================================
-        const inventoryItems = await this.inventoryRepository.findByBusinessId(businessId);
-        const lowStockItems = inventoryItems.filter(item => item.isLowStock());
-        const outOfStockItems = inventoryItems.filter(item => item.isOutOfStock());
+        const lowStockItems = inventoryItems.filter(item => item.quantity <= (item.reorder_level || 5));
+        const outOfStockItems = inventoryItems.filter(item => item.quantity <= 0);
 
         if (outOfStockItems.length > 0) {
             recommendations.push({
                 category: 'inventory',
                 priority: 'high',
                 title: `${outOfStockItems.length} item${outOfStockItems.length > 1 ? 's' : ''} out of stock`,
-                description: `These items need immediate reorder to avoid lost sales.`,
-                action: 'View out of stock items',
+                description: `These items need immediate reorder to avoid lost sales: ${outOfStockItems.map(i => i.item_name).join(', ')}`,
+                action: 'View inventory',
                 data: outOfStockItems.map(item => ({
                     id: item.id,
-                    name: item.name,
+                    name: item.item_name,
                     quantity: item.quantity,
-                    reorderLevel: item.reorderLevel,
+                    reorderLevel: item.reorder_level || 5,
                 })),
             });
         }
@@ -93,13 +102,13 @@ class GetRecommendationsUseCase {
                 category: 'inventory',
                 priority: 'medium',
                 title: `${lowStockItems.length} item${lowStockItems.length > 1 ? 's' : ''} running low`,
-                description: `These items are below reorder level. Plan to restock soon.`,
+                description: `These items are below reorder level: ${lowStockItems.map(i => i.item_name).join(', ')}`,
                 action: 'View low stock items',
                 data: lowStockItems.map(item => ({
                     id: item.id,
-                    name: item.name,
+                    name: item.item_name,
                     quantity: item.quantity,
-                    reorderLevel: item.reorderLevel,
+                    reorderLevel: item.reorder_level || 5,
                 })),
             });
         }
@@ -111,14 +120,16 @@ class GetRecommendationsUseCase {
         const startDate = new Date(now);
         startDate.setMonth(now.getMonth() - 1);
         startDate.setHours(0, 0, 0, 0);
+        const startStr = startDate.toISOString().split('T')[0];
+        const endStr = now.toISOString().split('T')[0];
 
-        const sales = await this.saleRepository.findByDateRange(businessId, startDate, now);
-        const expenses = await this.expenseRepository.findByDateRange(businessId, startDate, now);
-        const purchases = await this.purchaseRepository.findByDateRange(businessId, startDate, now);
+        const recentSales = await this.saleRepo.findByDateRange(userId, startStr, endStr);
+        const recentExpenses = await this.expenseRepo.findByDateRange(userId, startStr, endStr);
+        const recentPurchases = await this.purchaseRepo.findByDateRange(userId, startStr, endStr);
 
-        const totalSales = sales.reduce((sum, s) => sum + s.totalAmount, 0);
-        const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
-        const totalPurchases = purchases.reduce((sum, p) => sum + p.totalAmount, 0);
+        const totalSales = recentSales.reduce((sum, s) => sum + (s.total_price || 0), 0);
+        const totalExpenses = recentExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+        const totalPurchases = recentPurchases.reduce((sum, p) => sum + (p.total_price || 0), 0);
         const totalCosts = totalExpenses + totalPurchases;
         const netProfit = totalSales - totalCosts;
 
@@ -148,9 +159,8 @@ class GetRecommendationsUseCase {
         // =============================================
         // 4. CREDITOR RECOMMENDATIONS
         // =============================================
-        const creditors = await this.creditorRepository.findByBusinessId(businessId);
-        const overdueCreditors = creditors.filter(c => c.isOverdue());
-        const totalCreditorOverdue = overdueCreditors.reduce((sum, c) => sum + c.balanceRemaining, 0);
+        const overdueCreditors = creditors.filter(c => c.status === 'OVERDUE');
+        const totalCreditorOverdue = overdueCreditors.reduce((sum, c) => sum + (c.balance_remaining || 0), 0);
 
         if (totalCreditorOverdue > 0) {
             recommendations.push({
@@ -161,11 +171,8 @@ class GetRecommendationsUseCase {
                 action: 'View overdue creditors',
                 data: overdueCreditors.map(c => ({
                     id: c.id,
-                    amount: c.balanceRemaining,
-                    supplierId: c.supplierId,
-                    daysOverdue: c.dueDate
-                        ? Math.floor((new Date() - new Date(c.dueDate)) / (1000 * 60 * 60 * 24))
-                        : 0,
+                    amount: c.balance_remaining,
+                    supplierName: c.supplier_name,
                 })),
             });
         }
@@ -177,22 +184,16 @@ class GetRecommendationsUseCase {
             recommendations.push({
                 category: 'sales',
                 priority: 'medium',
-                title: 'No sales recorded in the last 30 days',
-                description: 'Your business hasn\'t recorded any sales this month. Consider running promotions or reaching out to customers.',
+                title: 'No sales recorded',
+                description: 'Your business hasn\'t recorded any sales. Consider running promotions or reaching out to customers.',
                 action: 'Record a sale',
             });
         }
 
         // Check if there are items with selling price but low sales
-        const itemsWithPrice = inventoryItems.filter(item => item.sellingPrice > 0);
+        const itemsWithPrice = inventoryItems.filter(item => item.selling_price > 0);
         const itemsWithLowSales = itemsWithPrice.filter(item => {
-            // Check if item appears in recent sales
-            const itemSales = sales.filter(s => {
-                for (const saleItem of s.items || []) {
-                    if (saleItem.name === item.name) return true;
-                }
-                return false;
-            });
+            const itemSales = sales.filter(s => s.item_name === item.item_name);
             return itemSales.length === 0 && item.quantity > 0;
         });
 
@@ -200,14 +201,14 @@ class GetRecommendationsUseCase {
             recommendations.push({
                 category: 'sales',
                 priority: 'low',
-                title: `${itemsWithLowSales.length} item${itemsWithLowSales.length > 1 ? 's' : ''} with selling price but no recent sales`,
-                description: `These items haven't been sold recently. Consider reviewing their pricing or running promotions.`,
-                action: 'View inventory items',
+                title: `${itemsWithLowSales.length} item${itemsWithLowSales.length > 1 ? 's' : ''} with selling price but no sales`,
+                description: `These items haven't been sold. Consider reviewing their pricing or running promotions.`,
+                action: 'View inventory',
                 data: itemsWithLowSales.map(item => ({
                     id: item.id,
-                    name: item.name,
+                    name: item.item_name,
                     quantity: item.quantity,
-                    sellingPrice: item.sellingPrice,
+                    sellingPrice: item.selling_price,
                 })),
             });
         }

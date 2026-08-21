@@ -15,11 +15,15 @@ const { debtorHandler, listDebtors, overdueDebtors } = require('./src/interfaces
 const { creditorHandler, listCreditors, overdueCreditors } = require('./src/interfaces/telegram/handlers/creditorHandler');
 const { purchaseHandler, startPurchaseFlow, listPurchases, purchaseSummary, purchaseToday } = require('./src/interfaces/telegram/handlers/purchaseHandler');
 const { reportHandler, reportCallbackHandler } = require('./src/interfaces/telegram/handlers/reportHandler');
-const forecastHandler = require('./src/interfaces/telegram/handlers/forecastHandler');
-const recommendationHandler = require('./src/interfaces/telegram/handlers/recommendationHandler');
-const aiHandler = require('./src/interfaces/telegram/handlers/aiHandler');
-const subscriptionHandler = require('./src/interfaces/telegram/handlers/subscriptionHandler');
-// ✅ FIXED: Destructure imports for handlers that export objects
+
+// =============================================
+// FIXED: Destructure imports for handlers that export objects
+// =============================================
+const { forecastHandler } = require('./src/interfaces/telegram/handlers/forecastHandler');
+const { recommendationHandler } = require('./src/interfaces/telegram/handlers/recommendationHandler');
+const { aiHandler } = require('./src/interfaces/telegram/handlers/aiHandler');
+const { settingsHandler } = require('./src/interfaces/telegram/handlers/settingsHandler');
+const { subscriptionHandler } = require('./src/interfaces/telegram/handlers/subscriptionHandler');
 const { customerHandler } = require('./src/interfaces/telegram/handlers/customerHandler');
 const { supplierHandler } = require('./src/interfaces/telegram/handlers/supplierHandler');
 const { projectHandler } = require('./src/interfaces/telegram/handlers/projectHandler');
@@ -131,6 +135,7 @@ botInstance.command('executive', (ctx) => reportHandler(ctx, reportService));
 botInstance.command('forecast', forecastHandler);
 botInstance.command('recommendations', recommendationHandler);
 botInstance.command('ai', aiHandler);
+botInstance.command('settings', settingsHandler);
 botInstance.command('subscription', subscriptionHandler);
 botInstance.command('customers', customerHandler);
 botInstance.command('suppliers', supplierHandler);
@@ -277,10 +282,7 @@ botInstance.on('callback_query', async (ctx) => {
         }
 
         if (data === 'menu_settings') {
-            await ctx.editMessageText(
-                `⚙️ **Settings**\n\nManage your account and preferences:`,
-                { parse_mode: 'Markdown', ...getSettingsKeyboard() }
-            );
+            await settingsHandler(ctx);
             return;
         }
 

@@ -45,13 +45,16 @@ async function recommendationHandler(ctx) {
             return;
         }
 
-        const business = await businessRepo.findByUserId(user.id);
+        const businesses = await businessRepo.findByUserId(user.id);
+        const business = Array.isArray(businesses) && businesses.length > 0 ? businesses[0] : null;
+
         if (!business) {
             await ctx.reply('⚠️ Please set up your business first. Type /start');
             return;
         }
 
-        await generateRecommendations(ctx, business.id);
+        // ✅ Pass both businessId AND userId
+        await generateRecommendations(ctx, business.id, user.id);
 
     } catch (error) {
         logger.error('Recommendation handler error:', error);
@@ -59,11 +62,12 @@ async function recommendationHandler(ctx) {
     }
 }
 
-async function generateRecommendations(ctx, businessId) {
+async function generateRecommendations(ctx, businessId, userId) {
     try {
         await ctx.reply('🧠 Analyzing your business data for recommendations...');
 
-        const result = await recommendationsUseCase.execute({ businessId });
+        // ✅ Pass both businessId and userId
+        const result = await recommendationsUseCase.execute({ businessId, userId });
 
         if (!result.success || result.totalRecommendations === 0) {
             await ctx.reply(
@@ -72,13 +76,12 @@ async function generateRecommendations(ctx, businessId) {
 Your business is performing well with no critical issues.
 
 📊 **Summary:**
-• ${result.summary.high} High priority issues
-• ${result.summary.medium} Medium priority items
-• ${result.summary.low} Low priority suggestions
-• ${result.summary.info} Positive insights
+• 🔴 High: ${result.summary.high}
+• 🟡 Medium: ${result.summary.medium}
+• 🟢 Low: ${result.summary.low}
+• ℹ️ Info: ${result.summary.info}
 
-Keep up the great work! 💪`,
-                { parse_mode: 'Markdown' }
+Keep up the great work! 💪`
             );
             return;
         }
@@ -95,7 +98,7 @@ Keep up the great work! 💪`,
 
         for (const rec of result.recommendations) {
             const emoji = priorityEmojis[rec.priority] || '⚪';
-            message += `${emoji} **${rec.title}**\n`;
+            message += `${emoji} *${rec.title}*\n`;
             message += `   ${rec.description}\n`;
             message += `   📌 Action: ${rec.action}\n\n`;
         }
@@ -107,7 +110,7 @@ Keep up the great work! 💪`,
         message += `• 🟢 Low: ${result.summary.low}\n`;
         message += `• ℹ️ Info: ${result.summary.info}\n`;
 
-        await ctx.reply(message, { parse_mode: 'Markdown' });
+        await ctx.reply(message);
 
         await ctx.reply('Select an option below:', {
             reply_markup: {

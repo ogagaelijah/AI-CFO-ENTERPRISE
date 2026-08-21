@@ -37,30 +37,48 @@ async function forecastHandler(ctx) {
             return;
         }
 
-        const business = await businessRepo.findByUserId(user.id);
+        const businesses = await businessRepo.findByUserId(user.id);
+        const business = Array.isArray(businesses) && businesses.length > 0 ? businesses[0] : null;
+
         if (!business) {
             await ctx.reply('⚠️ Please set up your business first. Type /start');
             return;
         }
 
-        const state = session ? session.state : null;
+        // Handle callback queries
+        if (ctx.callbackQuery && ctx.callbackQuery.data) {
+            const data = ctx.callbackQuery.data;
+            await ctx.answerCbQuery();
 
-        if (!state || state !== 'FORECAST_MENU') {
-            await showForecastMenu(ctx, business.id);
-            return;
-        }
+            if (data === 'forecast_3' || data === 'forecast_6' || data === 'forecast_12') {
+                const months = { forecast_3: 3, forecast_6: 6, forecast_12: 12 };
+                await generateForecastReport(ctx, business.id, user.id, months[data]);
+                return;
+            }
 
-        switch (state) {
-            case 'FORECAST_MENU':
-                await handleForecastAction(ctx, business.id);
-                break;
-            default:
+            if (data === 'forecast_seasonality') {
+                await generateSeasonalityReport(ctx, business.id, user.id);
+                return;
+            }
+
+            if (data === 'forecast_again') {
                 await showForecastMenu(ctx, business.id);
-                break;
+                return;
+            }
+
+            if (data === 'back_reports') {
+                const { reportHandler } = require('./reportHandler');
+                await reportHandler(ctx);
+                return;
+            }
         }
+
+        // If no callback, show menu
+        await showForecastMenu(ctx, business.id);
 
     } catch (error) {
         logger.error('Forecast handler error:', error);
+        console.error('Forecast handler error details:', error.message, error.stack);
         await ctx.reply('❌ Something went wrong. Please try again.');
     }
 }
@@ -95,74 +113,43 @@ Select an option below:`,
     );
 }
 
-async function handleForecastAction(ctx, businessId) {
-    const data = ctx.callbackQuery?.data;
-
-    if (!data) {
-        await ctx.reply('Please use the buttons below.');
-        return;
-    }
-
-    await ctx.answerCallbackQuery();
-
-    const months = {
-        forecast_3: 3,
-        forecast_6: 6,
-        forecast_12: 12,
-    };
-
-    if (data === 'forecast_seasonality') {
-        await generateSeasonalityReport(ctx, businessId);
-        return;
-    }
-
-    if (data === 'back_reports') {
-        const { reportHandler } = require('./reportHandler');
-        await reportHandler(ctx);
-        return;
-    }
-
-    const monthsCount = months[data];
-    if (monthsCount) {
-        await generateForecastReport(ctx, businessId, monthsCount);
-    }
-}
-
-async function generateForecastReport(ctx, businessId, months) {
+async function generateForecastReport(ctx, businessId, userId, months) {
     try {
         await ctx.reply(`⏳ Generating ${months}-month forecast...`);
 
         const result = await forecastUseCase.execute({
             businessId,
+            userId,
             months,
             lookbackMonths: 12,
         });
 
         if (!result.success) {
-            await ctx.reply('❌ Could not generate forecast. Please ensure you have enough historical data.');
+            await ctx.reply(`❌ ${result.error || 'Could not generate forecast. Please ensure you have enough historical data.'}`);
             return;
         }
 
-        let message = `📈 **${months}-Month Forecast**\n\n`;
+        let message = `📈 *${months}-Month Forecast*\n\n`;
         message += `📊 Based on last ${result.summary.lookbackMonths} months of data\n\n`;
-        message += `💰 **Average Monthly Revenue:** ₦${result.summary.averageMonthlyRevenue.toLocaleString()}\n`;
-        message += `📉 **Average Monthly Costs:** ₦${result.summary.averageMonthlyCosts.toLocaleString()}\n`;
-        message += `📈 **Average Monthly Profit:** ₦${result.summary.averageMonthlyProfit.toLocaleString()}\n`;
-        message += `📊 **Revenue Trend:** ${result.summary.revenueTrend}\n\n`;
-        message += `**Projected Totals:**\n`;
+        message += `💰 *Average Monthly Revenue:* ₦${result.summary.averageMonthlyRevenue.toLocaleString()}\n`;
+        message += `📉 *Average Monthly Costs:* ₦${result.summary.averageMonthlyCosts.toLocaleString()}\n`;
+        message += `📈 *Average Monthly Profit:* ₦${result.summary.averageMonthlyProfit.toLocaleString()}\n`;
+        message += `📊 *Revenue Trend:* ${result.summary.revenueTrend}\n\n`;
+        message += `*Projected Totals:*\n`;
         message += `• Revenue: ₦${result.summary.totalProjectedRevenue.toLocaleString()}\n`;
         message += `• Profit: ₦${result.summary.totalProjectedProfit.toLocaleString()}\n\n`;
 
-        message += `**Monthly Breakdown:**\n`;
+        message += `*Monthly Breakdown:*\n`;
         for (const forecast of result.forecast) {
-            message += `• ${forecast.month}: ₦${forecast.projectedRevenue.toLocaleString()} (${forecast.confidence} confidence)\n`;
+            const confidenceEmoji = forecast.confidence === 'high' ? '🟢' : forecast.confidence === 'medium' ? '🟡' : '🔴';
+            message += `• ${forecast.month}: ₦${forecast.projectedRevenue.toLocaleString()} ${confidenceEmoji}\n`;
         }
 
-        await ctx.reply(message, { parse_mode: 'Markdown' });
+        await ctx.reply(message);
 
         // Show seasonality if available
         if (result.seasonality && result.seasonality.length > 0) {
-            let seasonalityMessage = `📊 **Seasonality Patterns**\n\n`;
+            let seasonalityMessage = `📊 *Seasonality Patterns*\n\n`;
             for (const s of result.seasonality) {
                 seasonalityMessage += `• ${s.month}: ₦${s.averageRevenue.toLocaleString()}\n`;
             }
@@ -180,16 +167,18 @@ async function generateForecastReport(ctx, businessId, months) {
 
     } catch (error) {
         logger.error('Generate forecast error:', error);
+        console.error('Generate forecast error details:', error.message, error.stack);
         await ctx.reply(`❌ Failed to generate forecast: ${error.message}`);
     }
 }
 
-async function generateSeasonalityReport(ctx, businessId) {
+async function generateSeasonalityReport(ctx, businessId, userId) {
     try {
         await ctx.reply('⏳ Analyzing seasonal patterns...');
 
         const result = await forecastUseCase.execute({
             businessId,
+            userId,
             months: 3,
             lookbackMonths: 12,
         });
@@ -199,7 +188,7 @@ async function generateSeasonalityReport(ctx, businessId) {
             return;
         }
 
-        let message = `📊 **Seasonality Analysis**\n\n`;
+        let message = `📊 *Seasonality Analysis*\n\n`;
         message += `Monthly revenue patterns over the last year:\n\n`;
 
         // Find best and worst months
@@ -213,13 +202,13 @@ async function generateSeasonalityReport(ctx, businessId) {
             message += `${isBest}${isWorst}• ${s.month}: ₦${s.averageRevenue.toLocaleString()}\n`;
         }
 
-        message += `\n**Insights:**\n`;
+        message += `\n*Insights:*\n`;
         message += `• Best month: ${best.month} (₦${best.averageRevenue.toLocaleString()})\n`;
         message += `• Worst month: ${worst.month} (₦${worst.averageRevenue.toLocaleString()})\n`;
         const diff = ((best.averageRevenue - worst.averageRevenue) / worst.averageRevenue * 100);
         message += `• ${best.month} is ${diff.toFixed(0)}% higher than ${worst.month}\n`;
 
-        await ctx.reply(message, { parse_mode: 'Markdown' });
+        await ctx.reply(message);
 
         await ctx.reply('Select an option below:', {
             reply_markup: {
@@ -232,19 +221,9 @@ async function generateSeasonalityReport(ctx, businessId) {
 
     } catch (error) {
         logger.error('Seasonality analysis error:', error);
+        console.error('Seasonality analysis error details:', error.message, error.stack);
         await ctx.reply(`❌ Failed to analyze seasonality: ${error.message}`);
     }
-}
-
-async function handleButtonClick(ctx, businessId) {
-    const data = ctx.callbackQuery?.data;
-
-    if (data === 'forecast_again') {
-        await showForecastMenu(ctx, businessId);
-        return;
-    }
-
-    await handleForecastAction(ctx, businessId);
 }
 
 module.exports = {
