@@ -242,11 +242,19 @@ botInstance.on('callback_query', async (ctx) => {
         // =============================================
         // BACK TO MAIN MENU
         // =============================================
-        if (data === 'menu_back') {
+        if (data === 'menu_back' || data === 'back_main') {
             await ctx.editMessageText(
                 `📊 **Main Menu**\n\nSelect an option below:`,
                 { parse_mode: 'Markdown', ...getMainMenuKeyboard(industry) }
             );
+            return;
+        }
+
+        // =============================================
+        // SETTINGS ACTIONS
+        // =============================================
+        if (data === 'settings_profile' || data === 'settings_business' || data === 'settings_back') {
+            await settingsHandler(ctx);
             return;
         }
 
@@ -621,7 +629,14 @@ botInstance.on('callback_query', async (ctx) => {
         // =============================================
         // SUBSCRIPTION ACTIONS
         // =============================================
-        if (data === 'subscription_upgrade' || data === 'subscription_features' || data === 'subscription_cancel' || data === 'back_subscription' || data === 'upgrade_pro' || data === 'upgrade_business' || data === 'cancel_confirm') {
+        if (data === 'subscription_view' ||
+            data === 'subscription_upgrade' || 
+            data === 'subscription_features' || 
+            data === 'subscription_cancel' || 
+            data === 'back_subscription' || 
+            data === 'upgrade_pro' || 
+            data === 'upgrade_business' || 
+            data === 'cancel_confirm') {
             await subscriptionHandler(ctx);
             return;
         }
@@ -796,6 +811,7 @@ bot.launch().then(() => {
     console.log('🏗️ Project module loaded');
     console.log('🗑️ Delete functionality added to all modules');
     console.log('📊 Report Service loaded (Daily/Weekly/Monthly/Yearly/Executive)');
+    console.log('⚙️ Settings module loaded');
     console.log('=====================================');
 }).catch((error) => {
     console.error('❌ Failed to launch bot:', error);
