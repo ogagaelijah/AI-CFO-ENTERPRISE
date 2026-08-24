@@ -2,10 +2,12 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 import { Moon, Sun, User, Mail, Phone, Lock, Building2, ChevronRight, Eye, EyeOff, CheckCircle } from 'lucide-react';
 
 const Register = () => {
   const { theme, toggleTheme } = useTheme();
+  const { register } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -57,15 +59,22 @@ const Register = () => {
 
     setIsLoading(true);
     try {
-      // 🔄 MOCK MODE — Simulate API call
-      console.log('📝 Register data:', formData);
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      
-      // ✅ Always succeed for testing
+      // Map form data to API expected format
+      const userData = {
+        fullName: formData.fullName,
+        email: formData.email,
+        phone: formData.phone,
+        password: formData.password,
+        businessName: formData.businessName,
+        industry: formData.industry,
+      };
+      await register(userData);
       setIsSuccess(true);
     } catch (error) {
       console.error('Registration error:', error);
-      setErrors({ submit: 'Registration failed. Please try again.' });
+      setErrors({
+        submit: error.response?.data?.message || 'Registration failed. Please try again.',
+      });
     } finally {
       setIsLoading(false);
     }

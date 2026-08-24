@@ -416,7 +416,6 @@ botInstance.on('callback_query', async (ctx) => {
             await inventoryValue(ctx);
             return;
         }
-        // ✅ NEW: Inventory Delete
         if (data === 'inventory_delete') {
             sessionManager.clearSession(telegramId);
             sessionManager.setState(telegramId, 'INVENTORY_WAITING_DELETE_ID');
@@ -427,7 +426,7 @@ botInstance.on('callback_query', async (ctx) => {
         }
 
         // =============================================
-        // DEBTOR ACTIONS (UPDATED with Total Owed & Delete)
+        // DEBTOR ACTIONS
         // =============================================
         if (data === 'debtor_add') {
             sessionManager.createSession(telegramId, 'DEBTOR_WAITING_NAME', {});
@@ -469,7 +468,6 @@ botInstance.on('callback_query', async (ctx) => {
             await overdueDebtors(ctx);
             return;
         }
-        // ✅ NEW: Debtor Delete
         if (data === 'debtor_delete') {
             sessionManager.clearSession(telegramId);
             sessionManager.setState(telegramId, 'DEBTOR_WAITING_DELETE_ID');
@@ -480,7 +478,7 @@ botInstance.on('callback_query', async (ctx) => {
         }
 
         // =============================================
-        // CREDITOR ACTIONS (UPDATED with Total Owed & Delete)
+        // CREDITOR ACTIONS
         // =============================================
         if (data === 'creditor_add') {
             sessionManager.createSession(telegramId, 'CREDITOR_WAITING_NAME', {});
@@ -523,7 +521,6 @@ botInstance.on('callback_query', async (ctx) => {
             await overdueCreditors(ctx);
             return;
         }
-        // ✅ NEW: Creditor Delete
         if (data === 'creditor_delete') {
             sessionManager.clearSession(telegramId);
             sessionManager.setState(telegramId, 'CREDITOR_WAITING_DELETE_ID');
@@ -534,7 +531,7 @@ botInstance.on('callback_query', async (ctx) => {
         }
 
         // =============================================
-        // PURCHASE ACTIONS (UPDATED with Delete)
+        // PURCHASE ACTIONS
         // =============================================
         if (data === 'purchase_add') {
             await startPurchaseFlow(ctx, telegramId);
@@ -552,7 +549,6 @@ botInstance.on('callback_query', async (ctx) => {
             await purchaseToday(ctx);
             return;
         }
-        // ✅ NEW: Purchase Delete
         if (data === 'purchase_delete') {
             sessionManager.clearSession(telegramId);
             sessionManager.setState(telegramId, 'PURCHASE_WAITING_DELETE_ID');
@@ -642,7 +638,7 @@ botInstance.on('callback_query', async (ctx) => {
         }
 
         // =============================================
-        // CUSTOMER ACTIONS (UPDATED with Delete)
+        // CUSTOMER ACTIONS
         // =============================================
         if (data === 'customer_create' || data === 'customer_view' || data === 'customer_list' || data === 'customer_history' || data === 'customer_back') {
             await customerHandler(ctx);
@@ -652,7 +648,6 @@ botInstance.on('callback_query', async (ctx) => {
             await customerHandler(ctx);
             return;
         }
-        // ✅ NEW: Customer Delete
         if (data === 'customer_delete') {
             sessionManager.clearSession(telegramId);
             sessionManager.setState(telegramId, 'CUSTOMER_WAITING_DELETE_ID');
@@ -663,13 +658,12 @@ botInstance.on('callback_query', async (ctx) => {
         }
 
         // =============================================
-        // SUPPLIER ACTIONS (UPDATED with Delete)
+        // SUPPLIER ACTIONS
         // =============================================
         if (data === 'supplier_create' || data === 'supplier_view' || data === 'supplier_list' || data === 'supplier_back') {
             await supplierHandler(ctx);
             return;
         }
-        // ✅ NEW: Supplier Delete
         if (data === 'supplier_delete') {
             sessionManager.clearSession(telegramId);
             sessionManager.setState(telegramId, 'SUPPLIER_WAITING_DELETE_ID');
@@ -794,7 +788,21 @@ botInstance.catch((err, ctx) => {
 });
 
 // =============================================
-// LAUNCH BOT
+// START HTTP API SERVER (for website) 
+// =============================================
+console.log('📡 Starting HTTP Server...');
+try {
+    // Load the server and keep it running
+    const httpServer = require('./src/interfaces/http/server');
+    console.log('🌐 HTTP API Server started');
+    console.log('✅ HTTP Server is listening on http://localhost:5000');
+} catch (error) {
+    console.error('❌ HTTP API Server failed to start:', error.message);
+    console.error('Stack trace:', error.stack);
+}
+
+// =============================================
+// LAUNCH TELEGRAM BOT
 // =============================================
 bot.launch().then(() => {
     console.log('✅ Bot is running!');
@@ -814,10 +822,21 @@ bot.launch().then(() => {
     console.log('⚙️ Settings module loaded');
     console.log('=====================================');
 }).catch((error) => {
-    console.error('❌ Failed to launch bot:', error);
-    process.exit(1);
+    console.warn('⚠️ Failed to launch Telegram bot:', error.message);
+    console.log('📡 HTTP Server is still running on http://localhost:5000');
+    // Don't exit — keep HTTP server running for the website
 });
 
-// Graceful shutdown
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+// =============================================
+// GRACEFUL SHUTDOWN
+// =============================================
+process.once('SIGINT', () => {
+    console.log('\n🛑 Shutting down gracefully...');
+    bot.stop('SIGINT');
+    process.exit(0);
+});
+process.once('SIGTERM', () => {
+    console.log('\n🛑 Shutting down gracefully...');
+    bot.stop('SIGTERM');
+    process.exit(0);
+});

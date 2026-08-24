@@ -9,17 +9,16 @@ export const AuthProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-  // Check if user is already logged in on mount
   useEffect(() => {
     const checkAuth = async () => {
       try {
         const response = await authApi.getCurrentUser();
-        if (response.data) {
-          setUser(response.data);
+        if (response.data?.user) {
+          console.log('🔍 Auth check user:', response.data.user); // Debug log
+          setUser(response.data.user);
           setIsAuthenticated(true);
         }
       } catch (error) {
-        // Not authenticated — do nothing
         console.log('Not authenticated');
       } finally {
         setIsLoading(false);
@@ -30,12 +29,18 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (userData) => {
     const response = await authApi.register(userData);
+    console.log('🔍 Register response:', response.data); // Debug log
+    if (response.data?.user) {
+      setUser(response.data.user);
+      setIsAuthenticated(true);
+    }
     return response.data;
   };
 
   const login = async (credentials) => {
     const response = await authApi.login(credentials);
-    if (response.data.user) {
+    console.log('🔍 Login response user:', response.data?.user); // Debug log
+    if (response.data?.user) {
       setUser(response.data.user);
       setIsAuthenticated(true);
     }

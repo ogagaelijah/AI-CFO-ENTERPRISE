@@ -2,10 +2,12 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 import { Moon, Sun, Mail, Lock, ChevronRight, Eye, EyeOff } from 'lucide-react';
 
 const Login = () => {
   const { theme, toggleTheme } = useTheme();
+  const { login } = useAuth();
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -38,15 +40,13 @@ const Login = () => {
 
     setIsLoading(true);
     try {
-      // 🔄 MOCK MODE — Simulate API call
-      console.log('🔐 Login attempt:', formData);
-      await new Promise((resolve) => setTimeout(resolve, 1200));
-      
-      // ✅ Always succeed for testing
+      await login(formData);
       navigate('/dashboard');
     } catch (error) {
       console.error('Login error:', error);
-      setErrors({ submit: 'Invalid email or password' });
+      setErrors({
+        submit: error.response?.data?.message || 'Invalid email or password',
+      });
     } finally {
       setIsLoading(false);
     }
