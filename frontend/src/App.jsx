@@ -7,6 +7,11 @@ import Landing from './pages/Landing';
 import Register from './pages/Register';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import AdminDashboard from './pages/AdminDashboard';
+import Reports from './pages/Reports';
+import Settings from './pages/Settings';
+import Subscription from './pages/Subscription';
+import PaymentSuccess from './pages/PaymentSuccess';
 
 function App() {
   return (
@@ -14,9 +19,13 @@ function App() {
       <AuthProvider>
         <BrowserRouter>
           <Routes>
+            {/* Public Routes */}
             <Route path="/" element={<Landing />} />
             <Route path="/register" element={<Register />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/payment/success" element={<PaymentSuccess />} />
+
+            {/* Protected Routes - Regular Users */}
             <Route
               path="/dashboard"
               element={
@@ -26,13 +35,50 @@ function App() {
               }
             />
             <Route
-              path="/admin"
+              path="/reports"
               element={
                 <ProtectedRoute>
-                  <div>Admin Dashboard</div>
+                  <Reports />
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/settings"
+              element={
+                <ProtectedRoute>
+                  <Settings />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/subscription"
+              element={
+                <ProtectedRoute>
+                  <Subscription />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Protected Routes - Admin Only */}
+            <Route
+              path="/admin"
+              element={
+                <ProtectedRoute requireAdmin={true}>
+                  <AdminDashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/*"
+              element={
+                <ProtectedRoute requireAdmin={true}>
+                  <AdminDashboard />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Fallback Route */}
+            <Route path="*" element={<Landing />} />
           </Routes>
         </BrowserRouter>
       </AuthProvider>

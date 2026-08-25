@@ -1,6 +1,7 @@
 // frontend/src/context/AuthContext.jsx
 import { createContext, useContext, useState, useEffect } from 'react';
 import { authApi } from '../services/api';
+import api from '../services/api';
 
 const AuthContext = createContext();
 
@@ -14,8 +15,22 @@ export const AuthProvider = ({ children }) => {
       try {
         const response = await authApi.getCurrentUser();
         if (response.data?.user) {
-          console.log('🔍 Auth check user:', response.data.user); // Debug log
-          setUser(response.data.user);
+          const userData = response.data.user;
+          
+          // Fetch subscription plan
+          try {
+            const subResponse = await api.get('/subscription/current');
+            if (subResponse.data?.plan) {
+              userData.plan = subResponse.data.plan;
+            } else {
+              userData.plan = 'free';
+            }
+          } catch (subError) {
+            console.log('No active subscription, defaulting to free');
+            userData.plan = 'free';
+          }
+          
+          setUser(userData);
           setIsAuthenticated(true);
         }
       } catch (error) {
@@ -29,9 +44,10 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (userData) => {
     const response = await authApi.register(userData);
-    console.log('🔍 Register response:', response.data); // Debug log
     if (response.data?.user) {
-      setUser(response.data.user);
+      const user = response.data.user;
+      user.plan = 'free';
+      setUser(user);
       setIsAuthenticated(true);
     }
     return response.data;
@@ -39,9 +55,22 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (credentials) => {
     const response = await authApi.login(credentials);
-    console.log('🔍 Login response user:', response.data?.user); // Debug log
     if (response.data?.user) {
-      setUser(response.data.user);
+      const user = response.data.user;
+      
+      // Fetch subscription plan
+      try {
+        const subResponse = await api.get('/subscription/current');
+        if (subResponse.data?.plan) {
+          user.plan = subResponse.data.plan;
+        } else {
+          user.plan = 'free';
+        }
+      } catch (subError) {
+        user.plan = 'free';
+      }
+      
+      setUser(user);
       setIsAuthenticated(true);
     }
     return response.data;

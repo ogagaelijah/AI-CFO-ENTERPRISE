@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
-import { Menu, X, LogOut, Home, Bell, Sun, Moon } from 'lucide-react';
+import { Menu, X, LogOut, Home, Bell, Sun, Moon, Settings } from 'lucide-react';
 import { INDUSTRY_CONFIGS, COMMON_NAV_ITEMS, STAT_COLORS } from '../config/industryConfig';
 import { useDashboardData } from '../hooks/useDashboardData';
 
@@ -39,10 +39,20 @@ const Dashboard = () => {
 
   const { stats, isLoading } = useDashboardData(userIndustry);
 
+  // Build navItems with Reports pointing to /reports and Settings pointing to /settings
   const navItems = [
     { icon: Home, label: 'Dashboard', href: '/dashboard', active: true },
     ...(industryConfig.sidebar || []),
-    ...COMMON_NAV_ITEMS,
+    // Override Reports and Settings to use React Router links
+    ...COMMON_NAV_ITEMS.map(item => {
+      if (item.label === 'Reports') {
+        return { ...item, href: '/reports' };
+      }
+      if (item.label === 'Settings') {
+        return { ...item, href: '/settings' };
+      }
+      return item;
+    }),
   ];
 
   const handleLogout = () => {
@@ -73,9 +83,9 @@ const Dashboard = () => {
         </div>
         <nav className="flex-1 space-y-0.5 overflow-y-auto">
           {navItems.map((item, index) => (
-            <a
+            <Link
               key={index}
-              href={item.href}
+              to={item.href}
               className={`flex items-center space-x-3 px-4 py-2.5 rounded-lg transition ${
                 item.active
                   ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-gold-400 font-medium'
@@ -84,7 +94,7 @@ const Dashboard = () => {
             >
               <item.icon className="w-5 h-5" />
               <span className="text-sm">{item.label}</span>
-            </a>
+            </Link>
           ))}
         </nav>
         <div className="border-t border-gray-200 dark:border-slate-700 pt-4 mt-4">
@@ -116,6 +126,19 @@ const Dashboard = () => {
               <h1 className="text-xl font-bold text-gray-900 dark:text-white hidden md:block">Dashboard</h1>
             </div>
             <div className="flex items-center space-x-2">
+              {/* Plan Badge */}
+              <div className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-medium border ${
+                user?.plan === 'pro' 
+                  ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-gold-400 border-primary-200 dark:border-primary-800' 
+                  : user?.plan === 'business' 
+                    ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 border-purple-200 dark:border-purple-800' 
+                    : 'bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-gray-300 border-gray-200 dark:border-slate-600'
+              }`}>
+                {user?.plan === 'pro' && '⭐ Pro'}
+                {user?.plan === 'business' && '🏢 Business'}
+                {(!user?.plan || user?.plan === 'free') && '📋 Free'}
+              </div>
+
               <div className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${industryConfig.bgColor} ${industryConfig.iconColor} border ${industryConfig.borderColor}`}>
                 <IndustryIcon className="w-3.5 h-3.5" />
                 <span>{industryConfig.label}</span>
@@ -160,9 +183,9 @@ const Dashboard = () => {
               </div>
               <nav className="space-y-0.5">
                 {navItems.map((item, index) => (
-                  <a
+                  <Link
                     key={index}
-                    href={item.href}
+                    to={item.href}
                     className={`flex items-center space-x-3 px-4 py-2.5 rounded-lg transition ${
                       item.active
                         ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-gold-400 font-medium'
@@ -172,7 +195,7 @@ const Dashboard = () => {
                   >
                     <item.icon className="w-5 h-5" />
                     <span className="text-sm">{item.label}</span>
-                  </a>
+                  </Link>
                 ))}
               </nav>
               <div className="border-t border-gray-200 dark:border-slate-700 pt-4 mt-4">

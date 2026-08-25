@@ -9,7 +9,7 @@ const PORT = process.env.HTTP_PORT || 5000;
 
 // Middleware
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
   credentials: true,
 }));
 app.use(express.json({ limit: '10mb' }));
@@ -19,10 +19,16 @@ app.use(cookieParser());
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const businessRoutes = require('./routes/businessRoutes');
+const reportRoutes = require('./routes/reportRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
+const subscriptionRoutes = require('./routes/subscriptionRoutes');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/business', businessRoutes);
+app.use('/api/reports', reportRoutes);
+app.use('/api/payment', paymentRoutes);
+app.use('/api/subscription', subscriptionRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -34,7 +40,7 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// 404 handler - FIXED: removed wildcard '*'
+// 404 handler
 app.use((req, res) => {
   res.status(404).json({
     success: false,

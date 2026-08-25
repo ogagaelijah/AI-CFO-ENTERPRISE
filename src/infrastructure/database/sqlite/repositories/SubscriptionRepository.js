@@ -8,11 +8,14 @@ class SubscriptionRepository extends BaseRepository {
     }
 
     create(subscriptionData) {
+        // Get default features based on plan
+        const features = subscriptionData.features || this._getDefaultFeatures(subscriptionData.planId || 'free');
+
         const stmt = this.db.prepare(`
             INSERT INTO subscriptions (
                 business_id, plan_id, status, start_date, end_date,
-                trial_end_date, features, metadata
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                trial_end_date, features
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
         `);
 
         const result = stmt.run(
@@ -22,11 +25,49 @@ class SubscriptionRepository extends BaseRepository {
             subscriptionData.startDate ? subscriptionData.startDate.toISOString() : new Date().toISOString(),
             subscriptionData.endDate ? subscriptionData.endDate.toISOString() : null,
             subscriptionData.trialEndDate ? subscriptionData.trialEndDate.toISOString() : null,
-            JSON.stringify(subscriptionData.features || {}),
-            JSON.stringify(subscriptionData.metadata || {})
+            JSON.stringify(features)
         );
 
         return this.findById(result.lastInsertRowid);
+    }
+
+    _getDefaultFeatures(planId) {
+        const features = {
+            'free': {
+                sales: true,
+                inventory: true,
+                debtors: true,
+                creditors: true,
+                reports: true,
+                forecasting: false,
+                ai_insights: false,
+                multi_user: false,
+                support: false,
+            },
+            'pro': {
+                sales: true,
+                inventory: true,
+                debtors: true,
+                creditors: true,
+                reports: true,
+                forecasting: true,
+                ai_insights: true,
+                multi_user: false,
+                support: true,
+            },
+            'business': {
+                sales: true,
+                inventory: true,
+                debtors: true,
+                creditors: true,
+                reports: true,
+                forecasting: true,
+                ai_insights: true,
+                multi_user: true,
+                support: true,
+            },
+        };
+        return features[planId] || features['free'];
     }
 
     findById(id) {
@@ -159,10 +200,6 @@ class SubscriptionRepository extends BaseRepository {
             fields.push('features = ?');
             values.push(JSON.stringify(data.features));
         }
-        if (data.metadata !== undefined) {
-            fields.push('metadata = ?');
-            values.push(JSON.stringify(data.metadata));
-        }
 
         fields.push('updated_at = CURRENT_TIMESTAMP');
 
@@ -209,8 +246,7 @@ class SubscriptionRepository extends BaseRepository {
     }
 
     _hydrate(row) {
-        const Subscription = require('../../../domain/entities/Subscription');
-        return new Subscription({
+        return {
             id: row.id,
             businessId: row.business_id,
             planId: row.plan_id,
@@ -219,10 +255,9 @@ class SubscriptionRepository extends BaseRepository {
             endDate: row.end_date ? new Date(row.end_date) : null,
             trialEndDate: row.trial_end_date ? new Date(row.trial_end_date) : null,
             features: row.features ? JSON.parse(row.features) : {},
-            metadata: row.metadata ? JSON.parse(row.metadata) : {},
             createdAt: new Date(row.created_at),
             updatedAt: new Date(row.updated_at),
-        });
+        };
     }
 }
 
