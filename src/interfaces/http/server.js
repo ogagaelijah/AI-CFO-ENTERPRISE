@@ -22,6 +22,8 @@ const businessRoutes = require('./routes/businessRoutes');
 const reportRoutes = require('./routes/reportRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const subscriptionRoutes = require('./routes/subscriptionRoutes');
+const salesRoutes = require('./routes/salesRoutes');
+const inventoryRoutes = require('./routes/inventoryRoutes'); // ✅ ADDED
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -29,6 +31,8 @@ app.use('/api/business', businessRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/payment', paymentRoutes);
 app.use('/api/subscription', subscriptionRoutes);
+app.use('/api/sales', salesRoutes);
+app.use('/api/inventory', inventoryRoutes); // ✅ ADDED
 
 // Health check
 app.get('/api/health', (req, res) => {

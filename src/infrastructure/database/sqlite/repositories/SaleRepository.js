@@ -7,6 +7,15 @@ class SaleRepository extends BaseRepository {
         super('sales');
     }
 
+    // ✅ Helper to parse items from JSON
+    _hydrate(row) {
+        if (!row) return null;
+        return {
+            ...row,
+            items: row.items ? JSON.parse(row.items) : []
+        };
+    }
+
     create(saleData) {
         const stmt = this.db.prepare(`
             INSERT INTO sales (
@@ -19,10 +28,10 @@ class SaleRepository extends BaseRepository {
 
         const result = stmt.run(
             saleData.user_id,
-            saleData.item_name,
-            saleData.quantity,
-            saleData.unit_price,
-            saleData.total_price,
+            saleData.item_name || null,
+            saleData.quantity || 0,
+            saleData.unit_price || 0,
+            saleData.total_price || 0,
             saleData.customer_name || null,
             saleData.customer_id || null,
             saleData.customer_type || 'CUSTOMER',
@@ -41,47 +50,53 @@ class SaleRepository extends BaseRepository {
     }
 
     findById(id) {
-        return this.db.prepare('SELECT * FROM sales WHERE id = ?').get(id);
+        const row = this.db.prepare('SELECT * FROM sales WHERE id = ?').get(id);
+        return this._hydrate(row);
     }
 
     findByUserId(userId) {
-        return this.db.prepare(
+        const rows = this.db.prepare(
             'SELECT * FROM sales WHERE user_id = ? ORDER BY sale_date DESC'
         ).all(userId);
+        return rows.map(row => this._hydrate(row));
     }
 
     findByBusinessId(businessId) {
-        return this.db.prepare(
+        const rows = this.db.prepare(
             'SELECT * FROM sales WHERE business_id = ? ORDER BY sale_date DESC'
         ).all(businessId);
+        return rows.map(row => this._hydrate(row));
     }
 
     findByDateRange(userId, startDate, endDate) {
-        return this.db.prepare(`
+        const rows = this.db.prepare(`
             SELECT * FROM sales 
             WHERE user_id = ? 
             AND sale_date >= ? 
             AND sale_date <= ?
             ORDER BY sale_date DESC
         `).all(userId, startDate, endDate);
+        return rows.map(row => this._hydrate(row));
     }
 
     findByCustomerName(userId, customerName) {
-        return this.db.prepare(`
+        const rows = this.db.prepare(`
             SELECT * FROM sales 
             WHERE user_id = ? 
             AND customer_name LIKE ?
             ORDER BY sale_date DESC
         `).all(userId, `%${customerName}%`);
+        return rows.map(row => this._hydrate(row));
     }
 
     findByCustomerId(businessId, customerId) {
-        return this.db.prepare(`
+        const rows = this.db.prepare(`
             SELECT * FROM sales 
             WHERE business_id = ? 
             AND customer_id = ?
             ORDER BY sale_date DESC
         `).all(businessId, customerId);
+        return rows.map(row => this._hydrate(row));
     }
 
     update(id, data) {
@@ -124,7 +139,6 @@ class SaleRepository extends BaseRepository {
             fields.push('balance_remaining = ?');
             values.push(data.balance_remaining);
         }
-        // 🆕 Cost fields
         if (data.unit_cost !== undefined) {
             fields.push('unit_cost = ?');
             values.push(data.unit_cost);
@@ -183,16 +197,8 @@ class SaleRepository extends BaseRepository {
         `).get(userId);
     }
 
-    // =============================================
-    // 🆕 NEW: Cost-aware methods for reporting
-    // =============================================
-
-    /**
-     * Get sales with cost data for a date range
-     * Returns full sale records including cost fields
-     */
     findWithCostByDateRange(userId, startDate, endDate) {
-        return this.db.prepare(`
+        const rows = this.db.prepare(`
             SELECT 
                 s.*,
                 s.unit_cost,
@@ -205,11 +211,9 @@ class SaleRepository extends BaseRepository {
             AND s.sale_date <= ?
             ORDER BY s.sale_date DESC
         `).all(userId, startDate, endDate);
+        return rows.map(row => this._hydrate(row));
     }
 
-    /**
-     * Get cost summary for a date range
-     */
     getCostSummary(userId, startDate, endDate) {
         return this.db.prepare(`
             SELECT 
@@ -224,6 +228,59 @@ class SaleRepository extends BaseRepository {
             AND sale_date <= ?
             AND (unit_cost > 0 OR cogs > 0)
         `).get(userId, startDate, endDate);
+    }
+
+    findByBusinessIdWithFilters(businessId, filters = {}) {
+        let sql = 'SELECT * FROM sales WHERE business_id = ?';
+        const params = [businessId];
+        
+        if (filters.startDate && filters.endDate) {
+            sql += ' AND sale_date >= ? AND sale_date <= ?';
+            params.push(filters.startDate, filters.endDate);
+        }
+        
+        if (filters.paymentStatus) {
+            sql += ' AND payment_status = ?';
+            params.push(filters.paymentStatus);
+        }
+        
+        sql += ' ORDER BY sale_date DESC, id DESC';
+        
+        if (filters.limit) {
+            sql += ' LIMIT ?';
+            params.push(filters.limit);
+            if (filters.offset) {
+                sql += ' OFFSET ?';
+                params.push(filters.offset);
+            }
+        }
+        
+        const rows = this.db.prepare(sql).all(...params);
+        return rows.map(row => this._hydrate(row));
+    }
+
+    getStats(businessId) {
+        const stmt = this.db.prepare(`
+            SELECT 
+                COUNT(*) as total_sales,
+                COALESCE(SUM(total_price), 0) as total_revenue,
+                COALESCE(SUM(CASE WHEN payment_status = 'PAID' THEN total_price ELSE 0 END), 0) as total_paid,
+                COALESCE(SUM(CASE WHEN payment_status IN ('UNPAID', 'PARTIAL') THEN balance_remaining ELSE 0 END), 0) as total_outstanding,
+                COALESCE(SUM(gross_profit), 0) as total_profit,
+                COALESCE(AVG(margin_percentage), 0) as avg_margin,
+                COUNT(DISTINCT customer_name) as unique_customers
+            FROM sales 
+            WHERE business_id = ?
+        `);
+        return stmt.get(businessId) || {
+            total_sales: 0,
+            total_revenue: 0,
+            total_paid: 0,
+            total_outstanding: 0,
+            total_profit: 0,
+            avg_margin: 0,
+            unique_customers: 0
+        };
     }
 }
 

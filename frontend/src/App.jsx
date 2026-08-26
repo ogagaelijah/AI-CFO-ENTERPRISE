@@ -12,6 +12,8 @@ import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import Subscription from './pages/Subscription';
 import PaymentSuccess from './pages/PaymentSuccess';
+import Sales from './pages/Sales';
+import Inventory from './pages/Inventory'; // ✅ ADDED
 
 function App() {
   return (
@@ -55,6 +57,24 @@ function App() {
               element={
                 <ProtectedRoute>
                   <Subscription />
+                </ProtectedRoute>
+              }
+            />
+            {/* Sales Route */}
+            <Route
+              path="/sales"
+              element={
+                <ProtectedRoute>
+                  <Sales />
+                </ProtectedRoute>
+              }
+            />
+            {/* ✅ ADDED: Inventory Route */}
+            <Route
+              path="/inventory"
+              element={
+                <ProtectedRoute>
+                  <Inventory />
                 </ProtectedRoute>
               }
             />

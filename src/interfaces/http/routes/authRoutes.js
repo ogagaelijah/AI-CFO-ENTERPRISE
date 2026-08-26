@@ -88,7 +88,8 @@ router.post('/register', async (req, res) => {
         fullName: user.fullName,
         email: user.email,
         phoneNumber: user.phoneNumber,
-        industry: business.industry, // ✅ ADDED: industry in user object
+        industry: business.industry,
+        businessId: business.id, // ✅ ADDED: businessId in user object
       },
       business: {
         id: business.id,
@@ -160,7 +161,8 @@ router.post('/login', async (req, res) => {
         fullName: user.fullName,
         email: user.email,
         phoneNumber: user.phoneNumber,
-        industry: business ? business.industry : null, // ✅ ADDED: industry in user object
+        industry: business ? business.industry : null,
+        businessId: business ? business.id : null, // ✅ ADDED: businessId in user object
       },
       business: business ? {
         id: business.id,
@@ -206,7 +208,8 @@ router.get('/me', async (req, res) => {
         fullName: user.fullName,
         email: user.email,
         phoneNumber: user.phoneNumber,
-        industry: business ? business.industry : null, // ✅ ADDED: industry in user object
+        industry: business ? business.industry : null,
+        businessId: business ? business.id : null, // ✅ ADDED: businessId in user object
       },
       business: business ? {
         id: business.id,

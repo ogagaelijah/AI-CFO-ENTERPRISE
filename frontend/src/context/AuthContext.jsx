@@ -17,6 +17,11 @@ export const AuthProvider = ({ children }) => {
         if (response.data?.user) {
           const userData = response.data.user;
           
+          // ✅ Extract businessId from business object
+          if (response.data.business?.id) {
+            userData.businessId = response.data.business.id;
+          }
+          
           // Fetch subscription plan
           try {
             const subResponse = await api.get('/subscription/current');
@@ -46,6 +51,12 @@ export const AuthProvider = ({ children }) => {
     const response = await authApi.register(userData);
     if (response.data?.user) {
       const user = response.data.user;
+      
+      // ✅ Extract businessId from business object
+      if (response.data.business?.id) {
+        user.businessId = response.data.business.id;
+      }
+      
       user.plan = 'free';
       setUser(user);
       setIsAuthenticated(true);
@@ -57,6 +68,11 @@ export const AuthProvider = ({ children }) => {
     const response = await authApi.login(credentials);
     if (response.data?.user) {
       const user = response.data.user;
+      
+      // ✅ Extract businessId from business object
+      if (response.data.business?.id) {
+        user.businessId = response.data.business.id;
+      }
       
       // Fetch subscription plan
       try {
