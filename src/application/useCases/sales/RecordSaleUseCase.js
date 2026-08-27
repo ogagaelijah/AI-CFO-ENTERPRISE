@@ -30,7 +30,6 @@ class RecordSaleUseCase {
         totalProfit = 0,
         notes = '',
     }) {
-        // ✅ If items array has multiple items, handle as multi-item sale
         if (items && items.length > 1) {
             return this._executeMultiItem({
                 userId,
@@ -50,7 +49,6 @@ class RecordSaleUseCase {
             });
         }
 
-        // ✅ Single item sale (original logic)
         return this._executeSingleItem({
             userId,
             businessId,
@@ -66,10 +64,11 @@ class RecordSaleUseCase {
             inventoryId: items.length === 1 ? items[0].inventoryId : inventoryId,
             saleDate,
             items: items,
+            notes,
         });
     }
 
-    // ✅ Multi-item execution
+    // ✅ Multi-item execution - Inventory ONLY reduces AFTER successful save
     async _executeMultiItem({
         userId,
         businessId,
@@ -125,34 +124,33 @@ class RecordSaleUseCase {
             }
         }
 
-        // Process each item
         const processedItems = [];
-        let totalCostValue = totalCost || 0;
-        let totalRevenueValue = totalRevenue || 0;
-        let totalProfitValue = totalProfit || 0;
+        let totalCostValue = 0;
+        let totalRevenueValue = 0;
+        let totalProfitValue = 0;
         let totalQuantity = 0;
         let totalCogs = 0;
+        const inventoryItemsToReduce = [];
 
         for (const item of items) {
             const qty = item.quantity || 1;
-            const sellPrice = item.sellingPrice || item.unitPrice || 0;
             const costPrice = item.costPrice || 0;
-            const itemTotal = qty * sellPrice;
-            const itemCost = qty * costPrice;
-            const itemProfit = itemTotal - itemCost;
+            const sellPrice = item.sellingPrice || item.unitPrice || 0;
+            const itemTotalCost = qty * costPrice;
+            const itemTotalRevenue = qty * sellPrice;
+            const itemProfit = itemTotalRevenue - itemTotalCost;
 
             totalQuantity += qty;
-            totalCostValue += itemCost;
-            totalRevenueValue += itemTotal;
+            totalCostValue += itemTotalCost;
+            totalRevenueValue += itemTotalRevenue;
             totalProfitValue += itemProfit;
-            totalCogs += itemCost;
+            totalCogs += itemTotalCost;
 
-            // Get inventory item for stock reduction
-            let inventoryItem = null;
             let finalInventoryId = item.inventoryId || null;
             let finalItemName = item.name;
 
             if (!skipInventory) {
+                let inventoryItem = null;
                 if (item.inventoryId) {
                     inventoryItem = await this.inventoryRepository.findById(item.inventoryId);
                 } else if (item.name) {
@@ -163,9 +161,12 @@ class RecordSaleUseCase {
                     }
                 }
 
-                // Reduce stock
+                // ✅ ONLY check stock, DON'T reduce yet
                 if (finalInventoryId && inventoryItem) {
-                    await this.inventoryRepository.reduceStock(finalInventoryId, qty);
+                    if (inventoryItem.quantity < qty) {
+                        throw new Error(`Insufficient stock for "${finalItemName}". Available: ${inventoryItem.quantity}, Requested: ${qty}`);
+                    }
+                    inventoryItemsToReduce.push({ id: finalInventoryId, quantity: qty });
                 }
             }
 
@@ -175,22 +176,20 @@ class RecordSaleUseCase {
                 costPrice: costPrice,
                 sellingPrice: sellPrice,
                 inventoryId: finalInventoryId,
-                total: itemTotal,
+                total: itemTotalRevenue,
                 profit: itemProfit,
             });
         }
 
-        // Create single sale with all items
         const marginPercentage = totalRevenueValue > 0 ? (totalProfitValue / totalRevenueValue) * 100 : 0;
-        const avgUnitPrice = totalQuantity > 0 ? totalRevenueValue / totalQuantity : 0;
-        const avgUnitCost = totalQuantity > 0 ? totalCogs / totalQuantity : 0;
+        const itemNames = processedItems.map(i => i.name).join(', ');
 
         const sale = new Sale({
             userId,
             businessId,
-            itemName: processedItems.map(i => i.name).join(', '),
+            itemName: itemNames,
             quantity: totalQuantity,
-            unitPrice: avgUnitPrice,
+            unitPrice: totalRevenueValue / totalQuantity,
             totalPrice: totalRevenueValue,
             customerName,
             customerId: finalCustomerId,
@@ -199,8 +198,8 @@ class RecordSaleUseCase {
             amountPaid: amountPaid || (paymentStatus === 'PAID' ? totalRevenueValue : 0),
             balanceRemaining: paymentStatus === 'PAID' ? 0 : totalRevenueValue - (amountPaid || 0),
             saleDate,
-            unitCost: avgUnitCost,
-            cogs: totalCogs,
+            unitCost: totalCostValue / totalQuantity,
+            cogs: totalCostValue,
             grossProfit: totalProfitValue,
             marginPercentage: marginPercentage,
         });
@@ -235,18 +234,30 @@ class RecordSaleUseCase {
 
         console.log('📊 Saving multi-item sale:', dbReadyData);
 
+        // ✅ STEP 1: Save sale FIRST
         const savedSale = await this.saleRepository.create(dbReadyData);
 
-        // Create debtor if unpaid/partial
+        // ✅ STEP 2: ONLY after sale is saved, reduce inventory
+        if (!skipInventory) {
+            for (const inv of inventoryItemsToReduce) {
+                await this.inventoryRepository.reduceStock(inv.id, inv.quantity);
+            }
+        }
+
+        // ✅ STEP 3: Create debtor if unpaid/partial - FIXED: amount_paid for PARTIAL
         const balanceRemaining = paymentStatus === 'PAID' ? 0 : totalRevenueValue - (amountPaid || 0);
         if (paymentStatus !== 'PAID' && customerName && balanceRemaining > 0) {
             const existingDebtors = await this.debtorRepository.findByCustomerName(userId, customerName);
             const existingDebtor = existingDebtors.find(d => d.balance_remaining > 0);
 
+            // ✅ Calculate amount paid correctly for PARTIAL payments
+            const paidAmount = paymentStatus === 'PARTIAL' ? (amountPaid || 0) : 0;
+
             if (existingDebtor) {
                 await this.debtorRepository.update(existingDebtor.id, {
                     total_owed: existingDebtor.total_owed + balanceRemaining,
                     balance_remaining: existingDebtor.balance_remaining + balanceRemaining,
+                    amount_paid: (existingDebtor.amount_paid || 0) + paidAmount,
                     status: 'ACTIVE',
                 });
             } else {
@@ -256,7 +267,11 @@ class RecordSaleUseCase {
                     customer_id: finalCustomerId,
                     total_owed: balanceRemaining,
                     balance_remaining: balanceRemaining,
+                    amount_paid: paidAmount, // ✅ Sets amount_paid for partial payments
                     status: 'ACTIVE',
+                    reference_type: 'SALE',
+                    reference_id: savedSale.id,
+                    notes: notes || '',
                 });
             }
         }
@@ -273,7 +288,7 @@ class RecordSaleUseCase {
         };
     }
 
-    // ✅ Single item execution
+    // ✅ Single item execution - Inventory ONLY reduces AFTER successful save
     async _executeSingleItem({
         userId,
         businessId,
@@ -289,8 +304,8 @@ class RecordSaleUseCase {
         inventoryId,
         saleDate,
         items = [],
+        notes = '',
     }) {
-        // Validate input
         if (quantity <= 0) throw new Error('Quantity must be greater than 0');
         if (unitPrice < 0) throw new Error('Unit price cannot be negative');
         if (paymentStatus === 'PAID' && amountPaid <= 0) {
@@ -300,7 +315,6 @@ class RecordSaleUseCase {
         const totalPrice = quantity * unitPrice;
         const balanceRemaining = paymentStatus === 'PAID' ? 0 : totalPrice - amountPaid;
 
-        // Get cost data from inventory
         let unitCost = 0;
         let cogs = 0;
         let grossProfit = 0;
@@ -308,9 +322,10 @@ class RecordSaleUseCase {
         let finalInventoryId = inventoryId;
         let finalItemName = itemName;
 
-        if (!skipInventory) {
-            let inventoryItem = null;
+        let inventoryItem = null;
 
+        // ✅ Check stock but DON'T reduce yet
+        if (!skipInventory) {
             if (inventoryId) {
                 inventoryItem = await this.inventoryRepository.findById(inventoryId);
             }
@@ -324,6 +339,9 @@ class RecordSaleUseCase {
             }
 
             if (inventoryItem) {
+                if (inventoryItem.quantity < quantity) {
+                    throw new Error(`Insufficient stock for "${finalItemName}". Available: ${inventoryItem.quantity}, Requested: ${quantity}`);
+                }
                 unitCost = inventoryItem.cost_price || 0;
                 cogs = quantity * unitCost;
                 grossProfit = totalPrice - cogs;
@@ -367,7 +385,6 @@ class RecordSaleUseCase {
             }
         }
 
-        // Create Sale entity
         const sale = new Sale({
             userId,
             businessId,
@@ -393,7 +410,6 @@ class RecordSaleUseCase {
             ? saleData.saleDate.toISOString() 
             : new Date().toISOString();
 
-        // Build items array for storage
         const itemsArray = items && items.length > 0 ? items : [{
             name: finalItemName,
             quantity: quantity,
@@ -424,27 +440,32 @@ class RecordSaleUseCase {
             margin_percentage: saleData.marginPercentage || 0,
             items: JSON.stringify(itemsArray),
             invoice_no: `INV-${Date.now().toString().slice(-8)}`,
-            notes: '',
+            notes: notes || '',
         };
 
         console.log('📊 Saving single-item sale:', dbReadyData);
 
+        // ✅ STEP 1: Save sale FIRST
         const savedSale = await this.saleRepository.create(dbReadyData);
 
-        // Update inventory
-        if (!skipInventory && finalInventoryId) {
+        // ✅ STEP 2: ONLY after sale is saved, reduce inventory
+        if (!skipInventory && finalInventoryId && inventoryItem) {
             await this.inventoryRepository.reduceStock(finalInventoryId, quantity);
         }
 
-        // Create debtor
+        // ✅ STEP 3: Create debtor if unpaid/partial - FIXED: amount_paid for PARTIAL
         if (paymentStatus !== 'PAID' && customerName && balanceRemaining > 0) {
             const existingDebtors = await this.debtorRepository.findByCustomerName(userId, customerName);
             const existingDebtor = existingDebtors.find(d => d.balance_remaining > 0);
+
+            // ✅ Calculate amount paid correctly for PARTIAL payments
+            const paidAmount = paymentStatus === 'PARTIAL' ? (amountPaid || 0) : 0;
 
             if (existingDebtor) {
                 await this.debtorRepository.update(existingDebtor.id, {
                     total_owed: existingDebtor.total_owed + balanceRemaining,
                     balance_remaining: existingDebtor.balance_remaining + balanceRemaining,
+                    amount_paid: (existingDebtor.amount_paid || 0) + paidAmount,
                     status: 'ACTIVE',
                 });
             } else {
@@ -454,7 +475,11 @@ class RecordSaleUseCase {
                     customer_id: finalCustomerId,
                     total_owed: balanceRemaining,
                     balance_remaining: balanceRemaining,
+                    amount_paid: paidAmount, // ✅ Sets amount_paid for partial payments
                     status: 'ACTIVE',
+                    reference_type: 'SALE',
+                    reference_id: savedSale.id,
+                    notes: notes || '',
                 });
             }
         }

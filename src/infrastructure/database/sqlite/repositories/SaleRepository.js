@@ -7,12 +7,20 @@ class SaleRepository extends BaseRepository {
         super('sales');
     }
 
-    // ✅ Helper to parse items from JSON
     _hydrate(row) {
         if (!row) return null;
+        let items = [];
+        if (row.items) {
+            try {
+                items = typeof row.items === 'string' ? JSON.parse(row.items) : row.items;
+            } catch (e) {
+                console.warn('⚠️ Could not parse items:', e);
+                items = [];
+            }
+        }
         return {
             ...row,
-            items: row.items ? JSON.parse(row.items) : []
+            items: items
         };
     }
 
@@ -22,8 +30,9 @@ class SaleRepository extends BaseRepository {
                 user_id, item_name, quantity, unit_price, total_price,
                 customer_name, customer_id, customer_type, business_id,
                 payment_status, amount_paid, balance_remaining, sale_date,
-                unit_cost, cogs, gross_profit, margin_percentage
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                unit_cost, cogs, gross_profit, margin_percentage,
+                items, invoice_no, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         const result = stmt.run(
@@ -43,7 +52,10 @@ class SaleRepository extends BaseRepository {
             saleData.unit_cost || 0,
             saleData.cogs || 0,
             saleData.gross_profit || 0,
-            saleData.margin_percentage || 0
+            saleData.margin_percentage || 0,
+            saleData.items || null,
+            saleData.invoice_no || null,
+            saleData.notes || null
         );
 
         return this.findById(result.lastInsertRowid);
@@ -154,6 +166,18 @@ class SaleRepository extends BaseRepository {
         if (data.margin_percentage !== undefined) {
             fields.push('margin_percentage = ?');
             values.push(data.margin_percentage);
+        }
+        if (data.items !== undefined) {
+            fields.push('items = ?');
+            values.push(JSON.stringify(data.items));
+        }
+        if (data.invoice_no !== undefined) {
+            fields.push('invoice_no = ?');
+            values.push(data.invoice_no);
+        }
+        if (data.notes !== undefined) {
+            fields.push('notes = ?');
+            values.push(data.notes);
         }
 
         fields.push('updated_at = CURRENT_TIMESTAMP');

@@ -5,28 +5,52 @@ class AddStockUseCase {
         this.inventoryRepository = inventoryRepository;
     }
 
-    async execute({ userId, itemName, quantity, costPrice, sellingPrice }) {
-        // Check if item exists
-        const existing = await this.inventoryRepository.findByName(userId, itemName);
+    async execute({
+        userId,
+        itemName,
+        quantity,
+        costPrice,
+        sellingPrice,
+        reorderLevel = 5,
+    }) {
+        // Validate input
+        if (!itemName || itemName.length < 2) {
+            throw new Error('Item name must be at least 2 characters');
+        }
+        if (quantity <= 0) {
+            throw new Error('Quantity must be greater than 0');
+        }
+        if (costPrice < 0) {
+            throw new Error('Cost price cannot be negative');
+        }
+        if (sellingPrice < 0) {
+            throw new Error('Selling price cannot be negative');
+        }
+
+        // ✅ Check if item already exists
+        const existing = await this.inventoryRepository.findByNameIgnoreCase(userId, itemName);
 
         if (existing) {
-            // Update existing item
             const newQuantity = existing.quantity + quantity;
-            return await this.inventoryRepository.update(existing.id, {
+            const updated = await this.inventoryRepository.update(existing.id, {
                 quantity: newQuantity,
-                cost_price: costPrice || existing.cost_price,
-                selling_price: sellingPrice || existing.selling_price,
+                cost_price: costPrice,
+                selling_price: sellingPrice,
+                reorder_level: reorderLevel || existing.reorder_level,
             });
-        } else {
-            // Create new item
-            return await this.inventoryRepository.create({
-                user_id: userId,
-                item_name: itemName,
-                quantity: quantity,
-                cost_price: costPrice || 0,
-                selling_price: sellingPrice || 0,
-            });
+            return updated;
         }
+
+        const inventoryData = {
+            user_id: userId,
+            item_name: itemName,
+            quantity: quantity,
+            cost_price: costPrice,
+            selling_price: sellingPrice,
+            reorder_level: reorderLevel || 5,
+        };
+
+        return await this.inventoryRepository.create(inventoryData);
     }
 }
 

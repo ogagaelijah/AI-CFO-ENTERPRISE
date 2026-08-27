@@ -33,54 +33,33 @@ class InventoryRepository extends BaseRepository {
         ).all(userId);
     }
 
-    /**
-     * Find inventory item by exact name (case-sensitive)
-     * @param {number} userId - User ID
-     * @param {string} itemName - Item name (exact match)
-     * @returns {Object|null} Inventory item or null
-     */
+    // ✅ PERMANENT: Case-sensitive exact match
     findByName(userId, itemName) {
         return this.db.prepare(
             'SELECT * FROM inventory WHERE user_id = ? AND item_name = ?'
         ).get(userId, itemName);
     }
 
-    /**
-     * Find inventory item by name (case-insensitive)
-     * @param {number} userId - User ID
-     * @param {string} itemName - Item name (case-insensitive)
-     * @returns {Object|null} Inventory item or null
-     */
+    // ✅ PERMANENT: Case-insensitive exact match
     findByNameIgnoreCase(userId, itemName) {
         return this.db.prepare(
             'SELECT * FROM inventory WHERE user_id = ? AND LOWER(item_name) = LOWER(?)'
         ).get(userId, itemName);
     }
 
-    /**
-     * 🆕 Find by name with fallback to partial match
-     * Use this when you want to be more flexible
-     */
-    findByNameIgnoreCaseWithFallback(userId, itemName) {
-        // Try exact match first (case-insensitive)
-        let item = this.findByNameIgnoreCase(userId, itemName);
-        if (item) return item;
-
-        // Try partial match
-        const results = this.searchByName(userId, itemName);
-        return results.length > 0 ? results[0] : null;
-    }
-
-    /**
-     * Search inventory items by name (case-insensitive, partial match)
-     * @param {number} userId - User ID
-     * @param {string} searchTerm - Search term
-     * @returns {Array} Array of matching inventory items
-     */
+    // ✅ PERMANENT: Case-insensitive partial search
     searchByName(userId, searchTerm) {
         return this.db.prepare(
             'SELECT * FROM inventory WHERE user_id = ? AND LOWER(item_name) LIKE LOWER(?) ORDER BY item_name ASC'
         ).all(userId, `%${searchTerm}%`);
+    }
+
+    // ✅ Find with fallback (case-insensitive first, then partial)
+    findByNameWithFallback(userId, itemName) {
+        let item = this.findByNameIgnoreCase(userId, itemName);
+        if (item) return item;
+        const results = this.searchByName(userId, itemName);
+        return results.length > 0 ? results[0] : null;
     }
 
     findLowStock(userId, threshold = 5) {
@@ -149,9 +128,6 @@ class InventoryRepository extends BaseRepository {
         return this.update(inventoryId, { quantity: item.quantity - quantity });
     }
 
-    // =============================================
-    // SUMMARY
-    // =============================================
     getSummary(userId) {
         const result = this.db.prepare(`
             SELECT 
@@ -192,26 +168,12 @@ class InventoryRepository extends BaseRepository {
         };
     }
 
-    /**
-     * Delete inventory item by ID
-     * @param {number} id - Inventory item ID
-     * @returns {boolean} True if deleted
-     */
     delete(id) {
         const stmt = this.db.prepare('DELETE FROM inventory WHERE id = ?');
         const result = stmt.run(id);
         return result.changes > 0;
     }
 
-    // =============================================
-    // 🆕 NEW: Reporting helpers
-    // =============================================
-
-    /**
-     * Get all inventory items with profit calculations
-     * @param {number} userId - User ID
-     * @returns {Array} Items with profit_per_item and profit_margin
-     */
     getItemsWithProfit(userId) {
         return this.db.prepare(`
             SELECT 
@@ -227,11 +189,6 @@ class InventoryRepository extends BaseRepository {
         `).all(userId);
     }
 
-    /**
-     * Get inventory item by ID with profit calculation
-     * @param {number} id - Inventory item ID
-     * @returns {Object|null} Item with profit_per_item and profit_margin
-     */
     findByIdWithProfit(id) {
         return this.db.prepare(`
             SELECT 

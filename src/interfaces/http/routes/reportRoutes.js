@@ -1,7 +1,7 @@
 // src/interfaces/http/routes/reportRoutes.js
 const express = require('express');
 const router = express.Router();
-const ReportService = require('../../../application/services/ReportService');
+const ReportService = require('../../../application/services/reportService');
 const SaleRepository = require('../../../infrastructure/database/sqlite/repositories/SaleRepository');
 const IncomeRepository = require('../../../infrastructure/database/sqlite/repositories/IncomeRepository');
 const ExpenseRepository = require('../../../infrastructure/database/sqlite/repositories/ExpenseRepository');

@@ -13,7 +13,9 @@ import Settings from './pages/Settings';
 import Subscription from './pages/Subscription';
 import PaymentSuccess from './pages/PaymentSuccess';
 import Sales from './pages/Sales';
-import Inventory from './pages/Inventory'; // ✅ ADDED
+import Inventory from './pages/Inventory';
+import Debtors from './pages/Debtors';
+import Income from './pages/Income'; // ✅ ADDED
 
 function App() {
   return (
@@ -69,12 +71,30 @@ function App() {
                 </ProtectedRoute>
               }
             />
-            {/* ✅ ADDED: Inventory Route */}
+            {/* Inventory Route */}
             <Route
               path="/inventory"
               element={
                 <ProtectedRoute>
                   <Inventory />
+                </ProtectedRoute>
+              }
+            />
+            {/* Debtors Route */}
+            <Route
+              path="/debtors"
+              element={
+                <ProtectedRoute>
+                  <Debtors />
+                </ProtectedRoute>
+              }
+            />
+            {/* ✅ ADDED: Income Route */}
+            <Route
+              path="/income"
+              element={
+                <ProtectedRoute>
+                  <Income />
                 </ProtectedRoute>
               }
             />

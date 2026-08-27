@@ -1,7 +1,7 @@
 // src/interfaces/http/server.js
 const express = require('express');
 const cors = require('cors');
-const cookieParser = require('cookie-parser');
+const cookieParser = require('cookie-parser'); // ✅ Fixed: cookie-parser (with dash)
 require('dotenv').config();
 
 const app = express();
@@ -23,7 +23,9 @@ const reportRoutes = require('./routes/reportRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const subscriptionRoutes = require('./routes/subscriptionRoutes');
 const salesRoutes = require('./routes/salesRoutes');
-const inventoryRoutes = require('./routes/inventoryRoutes'); // ✅ ADDED
+const inventoryRoutes = require('./routes/inventoryRoutes');
+const debtorRoutes = require('./routes/debtorRoutes');
+const incomeRoutes = require('./routes/incomeRoutes'); // ✅ ADDED
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -32,7 +34,9 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/payment', paymentRoutes);
 app.use('/api/subscription', subscriptionRoutes);
 app.use('/api/sales', salesRoutes);
-app.use('/api/inventory', inventoryRoutes); // ✅ ADDED
+app.use('/api/inventory', inventoryRoutes);
+app.use('/api/debtors', debtorRoutes);
+app.use('/api/income', incomeRoutes); // ✅ ADDED
 
 // Health check
 app.get('/api/health', (req, res) => {

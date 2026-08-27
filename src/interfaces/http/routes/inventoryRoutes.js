@@ -9,13 +9,13 @@ const GetLowStockAlertUseCase = require('../../../application/useCases/inventory
 const GetInventoryValueUseCase = require('../../../application/useCases/inventory/GetInventoryValueUseCase');
 const { authMiddleware } = require('../middleware/authMiddleware');
 
-// Initialize repository
+// ✅ Initialize repository
 const inventoryRepo = new InventoryRepository();
 
-// Initialize use cases
-const addStockUseCase = new AddStockUseCase({ inventoryRepository: inventoryRepo });
-const adjustStockUseCase = new AdjustStockUseCase({ inventoryRepository: inventoryRepo });
-const releaseStockUseCase = new ReleaseStockUseCase({ inventoryRepository: inventoryRepo });
+// ✅ Initialize use cases - PASS DIRECTLY (not as object)
+const addStockUseCase = new AddStockUseCase(inventoryRepo);
+const adjustStockUseCase = new AdjustStockUseCase(inventoryRepo);
+const releaseStockUseCase = new ReleaseStockUseCase(inventoryRepo);
 const getLowStockAlertUseCase = new GetLowStockAlertUseCase({ inventoryRepository: inventoryRepo });
 const getInventoryValueUseCase = new GetInventoryValueUseCase({ inventoryRepository: inventoryRepo });
 
@@ -39,10 +39,7 @@ router.get('/', async (req, res) => {
             items = await inventoryRepo.findByUserId(userId);
         }
 
-        // Get summary
         const summary = await inventoryRepo.getSummary(userId);
-
-        // Calculate margin
         const margin = summary.total_cost_value > 0 
             ? ((summary.total_profit / summary.total_cost_value) * 100) 
             : 0;
@@ -112,6 +109,9 @@ router.post('/', async (req, res) => {
         const userId = req.user.id;
         const { itemName, quantity, costPrice, sellingPrice, reorderLevel = 5 } = req.body;
 
+        console.log('📦 Adding inventory - User:', userId);
+        console.log('📦 Item data:', { itemName, quantity, costPrice, sellingPrice });
+
         // Validate
         if (!itemName || itemName.length < 2) {
             return res.status(400).json({
@@ -141,8 +141,10 @@ router.post('/', async (req, res) => {
             });
         }
 
-        // Check if item already exists
+        // ✅ Check if item already exists using the repository directly
         const existing = await inventoryRepo.findByNameIgnoreCase(userId, itemName);
+        console.log('📦 Existing item:', existing);
+
         if (existing) {
             return res.status(400).json({
                 success: false,
@@ -151,7 +153,7 @@ router.post('/', async (req, res) => {
             });
         }
 
-        // Execute use case
+        // ✅ Execute use case
         const result = await addStockUseCase.execute({
             userId,
             itemName,
@@ -169,6 +171,7 @@ router.post('/', async (req, res) => {
 
     } catch (error) {
         console.error('❌ Error adding inventory:', error);
+        console.error('❌ Stack:', error.stack);
         res.status(500).json({
             success: false,
             message: error.message || 'Failed to add inventory item'
@@ -185,7 +188,6 @@ router.put('/:id', async (req, res) => {
         const userId = req.user.id;
         const { itemName, costPrice, sellingPrice, reorderLevel } = req.body;
 
-        // Check if item exists
         const existing = await inventoryRepo.findById(id);
         if (!existing) {
             return res.status(404).json({
@@ -201,7 +203,6 @@ router.put('/:id', async (req, res) => {
             });
         }
 
-        // Build update data
         const updateData = {};
         if (itemName !== undefined) updateData.item_name = itemName;
         if (costPrice !== undefined) updateData.cost_price = costPrice;
@@ -234,7 +235,6 @@ router.patch('/:id/stock', async (req, res) => {
         const userId = req.user.id;
         const { action, quantity } = req.body;
 
-        // Validate
         if (!['add', 'remove', 'set'].includes(action)) {
             return res.status(400).json({
                 success: false,
@@ -249,7 +249,6 @@ router.patch('/:id/stock', async (req, res) => {
             });
         }
 
-        // Check if item exists
         const existing = await inventoryRepo.findById(id);
         if (!existing) {
             return res.status(404).json({
@@ -301,7 +300,6 @@ router.delete('/:id', async (req, res) => {
         const { id } = req.params;
         const userId = req.user.id;
 
-        // Check if item exists
         const existing = await inventoryRepo.findById(id);
         if (!existing) {
             return res.status(404).json({
@@ -397,7 +395,6 @@ router.get('/value', async (req, res) => {
     try {
         const userId = req.user.id;
 
-        // Use the existing use case
         const result = await getInventoryValueUseCase.execute({ businessId: userId });
 
         res.json({

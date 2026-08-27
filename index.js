@@ -828,6 +828,30 @@ bot.launch().then(() => {
 });
 
 // =============================================
+// OVERDUE NOTIFICATION JOB (Web Users Only)
+// =============================================
+
+// Only run if not in test mode
+if (process.env.NODE_ENV !== 'test') {
+    const cron = require('node-cron');
+    const { runOverdueNotification } = require('./src/jobs/overdueNotificationJob');
+
+    // Run once on startup (with 30 second delay to let everything initialize)
+    setTimeout(() => {
+        console.log('🔄 Running initial overdue notification check for web users...');
+        runOverdueNotification();
+    }, 30000);
+
+    // Run every 6 hours
+    cron.schedule('0 */6 * * *', () => {
+        console.log('🔄 Running 6-hour overdue notification check for web users...');
+        runOverdueNotification();
+    });
+
+    console.log('📅 Overdue notification job scheduled (every 6 hours)');
+}
+
+// =============================================
 // GRACEFUL SHUTDOWN
 // =============================================
 process.once('SIGINT', () => {
