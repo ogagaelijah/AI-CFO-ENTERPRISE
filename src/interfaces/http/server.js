@@ -29,6 +29,8 @@ const incomeRoutes = require('./routes/incomeRoutes');
 const expenseRoutes = require('./routes/expenseRoutes');
 const purchaseRoutes = require('./routes/purchaseRoutes');
 const creditorRoutes = require('./routes/creditorRoutes'); // ✅ ADDED
+const supplierRoutes = require('./routes/supplierRoutes'); // ✅ ADDED
+const customerRoutes = require('./routes/customerRoutes'); // ✅ ADDED
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -43,6 +45,8 @@ app.use('/api/income', incomeRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/purchases', purchaseRoutes);
 app.use('/api/creditors', creditorRoutes); // ✅ ADDED
+app.use('/api/suppliers', supplierRoutes); // ✅ ADDED
+app.use('/api/customers', customerRoutes); // ✅ ADDED
 
 // Health check
 app.get('/api/health', (req, res) => {

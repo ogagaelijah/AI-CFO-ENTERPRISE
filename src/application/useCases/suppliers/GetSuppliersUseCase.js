@@ -30,7 +30,6 @@ class GetSuppliersUseCase {
             );
         }
 
-        // ✅ Ensure suppliers is always an array
         if (!suppliers) {
             suppliers = [];
         }

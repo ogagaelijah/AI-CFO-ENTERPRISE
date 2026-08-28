@@ -9,6 +9,8 @@ const EditPurchaseModal = ({ isOpen, purchase, onSubmit, onClose, error, setErro
     unitCost: 0,
     sellingPrice: 0,
     supplierName: '',
+    supplierPhone: '',
+    supplierEmail: '',
     paymentStatus: 'UNPAID',
     purchaseDate: new Date().toISOString().split('T')[0],
     notes: '',
@@ -22,6 +24,8 @@ const EditPurchaseModal = ({ isOpen, purchase, onSubmit, onClose, error, setErro
         unitCost: purchase.unit_cost || 0,
         sellingPrice: purchase.selling_price || 0,
         supplierName: purchase.supplier_name || '',
+        supplierPhone: purchase.supplier_phone || '',
+        supplierEmail: purchase.supplier_email || '',
         paymentStatus: purchase.payment_status || 'UNPAID',
         purchaseDate: purchase.purchase_date || new Date().toISOString().split('T')[0],
         notes: purchase.notes || '',
@@ -141,6 +145,33 @@ const EditPurchaseModal = ({ isOpen, purchase, onSubmit, onClose, error, setErro
               className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               placeholder="Enter supplier name"
             />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Supplier Phone
+              </label>
+              <input
+                type="tel"
+                value={form.supplierPhone}
+                onChange={(e) => setForm({ ...form, supplierPhone: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                placeholder="Enter supplier phone"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Supplier Email
+              </label>
+              <input
+                type="email"
+                value={form.supplierEmail}
+                onChange={(e) => setForm({ ...form, supplierEmail: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                placeholder="Enter supplier email"
+              />
+            </div>
           </div>
 
           <div>

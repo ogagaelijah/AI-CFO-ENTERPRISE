@@ -155,6 +155,8 @@ router.post('/', async (req, res) => {
 
         const {
             supplierName,
+            supplierPhone,
+            supplierEmail,
             itemName,
             quantity,
             unitCost,
@@ -246,6 +248,8 @@ router.post('/', async (req, res) => {
             userId,
             businessId,
             supplierName,
+            supplierPhone,
+            supplierEmail,
             itemName,
             quantity,
             unitCost,

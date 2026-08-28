@@ -5,7 +5,7 @@ const UserRepository = require('../../../infrastructure/database/sqlite/reposito
 const BusinessRepository = require('../../../infrastructure/database/sqlite/repositories/BusinessRepository');
 const SupplierRepository = require('../../../infrastructure/database/sqlite/repositories/SupplierRepository');
 const CreateSupplierUseCase = require('../../../application/useCases/suppliers/CreateSupplierUseCase');
-const GetSuppliersUseCase = require('../../../application/useCases/suppliers/GetSuppliersUseCase');
+const GetSuppliersUseCase = require('../../../application/useCases/suppliers/GetSupplierUseCase');
 const { getMainMenuKeyboard, getSupplierKeyboard } = require('../keyboards/dashboardKeyboard');
 const logger = require('../../../shared/utils/logger');
 

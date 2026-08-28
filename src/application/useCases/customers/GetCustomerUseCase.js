@@ -10,19 +10,24 @@ class GetCustomerUseCase {
             throw new Error('Customer ID is required');
         }
 
+        if (!businessId) {
+            throw new Error('Business ID is required');
+        }
+
         const customer = await this.customerRepository.findById(customerId);
+        
         if (!customer) {
             throw new Error('Customer not found');
         }
 
-        // Verify business ownership
+        // Verify customer belongs to this business
         if (customer.businessId !== businessId) {
-            throw new Error('Access denied: Customer does not belong to this business');
+            throw new Error('Access denied');
         }
 
         return {
             success: true,
-            customer: customer.toJSON(),
+            customer: customer.toJSON ? customer.toJSON() : customer,
         };
     }
 }

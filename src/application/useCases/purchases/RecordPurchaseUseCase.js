@@ -21,6 +21,8 @@ class RecordPurchaseUseCase {
         userId,
         businessId,
         supplierName,
+        supplierPhone = null,
+        supplierEmail = null,
         items = [],
         itemName,
         quantity,
@@ -127,6 +129,8 @@ class RecordPurchaseUseCase {
                     const supplierData = {
                         businessId: businessId,
                         name: supplierName,
+                        phone: supplierPhone || null,
+                        email: supplierEmail || null,
                     };
                     supplier = await this.supplierRepository.create(supplierData);
                     console.log(`✅ Created new supplier: ${supplierName} (ID: ${supplier.id})`);
@@ -164,23 +168,52 @@ class RecordPurchaseUseCase {
             balance_remaining: balanceRemaining,
             due_date: dueDate,
             purchase_date: purchaseDate instanceof Date ? purchaseDate.toISOString() : purchaseDate,
-            items: JSON.stringify(processedItems), // ✅ Store full items array
+            items: JSON.stringify(processedItems),
             notes: notes || '',
         });
+
+        // ✅ UPDATE SUPPLIER METADATA WITH PURCHASE TOTALS
+        if (finalSupplierId) {
+            try {
+                const supplier = await this.supplierRepository.findById(finalSupplierId);
+                if (supplier) {
+                    const currentMetadata = supplier.metadata || {};
+                    const purchaseCount = (currentMetadata.purchaseCount || 0) + 1;
+                    const totalPurchaseAmount = (currentMetadata.totalPurchaseAmount || 0) + finalTotalCost;
+                    
+                    await this.supplierRepository.update(finalSupplierId, {
+                        metadata: {
+                            ...currentMetadata,
+                            purchaseCount: purchaseCount,
+                            totalPurchaseAmount: totalPurchaseAmount,
+                            lastPurchaseDate: new Date().toISOString(),
+                        }
+                    });
+                    console.log(`✅ Updated supplier ${finalSupplierName} metadata: ${purchaseCount} purchases, ₦${totalPurchaseAmount}`);
+                }
+            } catch (error) {
+                console.error('❌ Failed to update supplier metadata:', error.message);
+            }
+        }
 
         // ✅ Process each item for inventory
         let inventoryUpdates = [];
         for (const item of processedItems) {
             try {
                 const InventoryItem = require('../../../domain/entities/InventoryItem');
-                let inventoryItem = await this.inventoryRepository.findByNameIgnoreCase(userId, item.name);
+                let inventoryItemData = await this.inventoryRepository.findByNameIgnoreCase(userId, item.name);
+                let inventoryItem;
+                let previousQuantity = 0;
+                let previousCostPrice = 0;
+                let previousSellingPrice = 0;
                 
-                if (!inventoryItem) {
+                if (!inventoryItemData) {
+                    // ✅ Create new inventory item
                     const newItem = new InventoryItem({
                         userId: userId,
                         name: item.name,
                         category: 'Purchased Goods',
-                        quantity: 0,
+                        quantity: item.quantity,
                         costPrice: item.unitCost,
                         sellingPrice: item.sellingPrice,
                         reorderLevel: 5,
@@ -188,46 +221,95 @@ class RecordPurchaseUseCase {
                     
                     const savedData = await this.inventoryRepository.create(newItem.toJSON());
                     inventoryItem = new InventoryItem(savedData);
-                    console.log(`✅ Created new inventory item: ${item.name}`);
+                    previousQuantity = 0;
+                    previousCostPrice = 0;
+                    previousSellingPrice = 0;
+                    console.log(`✅ Created new inventory item: ${item.name} (Qty: ${item.quantity}, Cost: ₦${item.unitCost}, Sell: ₦${item.sellingPrice})`);
+                } else {
+                    // ✅ Store previous values
+                    previousQuantity = inventoryItemData.quantity || 0;
+                    previousCostPrice = inventoryItemData.costPrice || 0;
+                    previousSellingPrice = inventoryItemData.sellingPrice || 0;
+                    
+                    // ✅ FIX: If previous cost is 0, treat as new item (use new cost)
+                    const effectivePreviousCost = previousCostPrice > 0 ? previousCostPrice : 0;
+                    const effectivePreviousSell = previousSellingPrice > 0 ? previousSellingPrice : 0;
+                    
+                    // ✅ Instantiate as InventoryItem entity
+                    inventoryItem = new InventoryItem(inventoryItemData);
+                    console.log(`✅ Found existing inventory item: ${item.name} (Qty: ${previousQuantity}, Cost: ₦${previousCostPrice}, Sell: ₦${previousSellingPrice})`);
+
+                    // ✅ Calculate new quantity
+                    const newQuantity = previousQuantity + item.quantity;
+                    
+                    // ✅ Calculate weighted average cost (WAC)
+                    // If previous cost is 0, use new cost as base
+                    const totalCostValue = (previousQuantity * effectivePreviousCost) + (item.quantity * item.unitCost);
+                    const totalQtyValue = previousQuantity + item.quantity;
+                    const newCostPrice = totalQtyValue > 0 ? totalCostValue / totalQtyValue : item.unitCost;
+                    
+                    // ✅ Set selling price to the HIGHEST between old and new
+                    const newSellingPrice = Math.max(effectivePreviousSell, item.sellingPrice);
+                    
+                    // ✅ Update the entity
+                    inventoryItem.quantity = newQuantity;
+                    inventoryItem.costPrice = newCostPrice;
+                    inventoryItem.sellingPrice = newSellingPrice;
+                    inventoryItem.updatedAt = new Date();
+                    
+                    console.log(`📊 WAC: (${previousQuantity} × ₦${effectivePreviousCost}) + (${item.quantity} × ₦${item.unitCost}) = ₦${totalCostValue} / ${totalQtyValue} = ₦${newCostPrice}`);
+                    console.log(`📈 Selling price: ₦${previousSellingPrice} → ₦${newSellingPrice} (Highest)`);
+                    
+                    // ✅ Save ONCE
+                    await this.inventoryRepository.update(inventoryItem.id, inventoryItem);
+                    console.log(`✅ Inventory updated: ${item.name} (${previousQuantity} → ${newQuantity})`);
                 }
 
-                const previousQuantity = inventoryItem.quantity || 0;
-                
-                inventoryItem.addStock(item.quantity);
-
-                const totalCostValue = (inventoryItem.quantity * inventoryItem.costPrice) + (item.quantity * item.unitCost);
-                const totalQty = inventoryItem.quantity;
-                inventoryItem.costPrice = totalQty > 0 ? totalCostValue / totalQty : item.unitCost;
-                inventoryItem.sellingPrice = item.sellingPrice;
-                
-                await this.inventoryRepository.update(inventoryItem.id, inventoryItem);
-                console.log(`✅ Inventory updated: ${item.name} (+${item.quantity})`);
-
+                // ✅ Create inventory transaction record (skip if table doesn't exist)
                 if (this.inventoryTransactionRepository) {
-                    const InventoryTransaction = require('../../../domain/entities/InventoryTransaction');
-                    const invTransaction = new InventoryTransaction({
-                        inventoryItemId: inventoryItem.id,
-                        businessId: businessId,
-                        type: 'IN',
-                        quantity: item.quantity,
-                        previousQuantity: previousQuantity,
-                        newQuantity: inventoryItem.quantity,
-                        referenceType: 'PURCHASE',
-                        referenceId: purchase.id,
-                        reason: `Purchase of ${item.name}`,
-                        notes: notes,
-                    });
-                    await this.inventoryTransactionRepository.create(invTransaction);
+                    try {
+                        const InventoryTransaction = require('../../../domain/entities/InventoryTransaction');
+                        const invTransaction = new InventoryTransaction({
+                            inventoryItemId: inventoryItem.id,
+                            businessId: businessId,
+                            type: 'IN',
+                            quantity: item.quantity,
+                            previousQuantity: previousQuantity,
+                            newQuantity: inventoryItem.quantity,
+                            referenceType: 'PURCHASE',
+                            referenceId: purchase.id,
+                            reason: `Purchase of ${item.name}`,
+                            notes: notes,
+                            metadata: {},
+                        });
+                        await this.inventoryTransactionRepository.create(invTransaction);
+                    } catch (txError) {
+                        // If inventory_transactions table doesn't exist, log but continue
+                        console.warn(`⚠️ Inventory transaction not recorded:`, txError.message);
+                    }
                 }
+
+                // ✅ Calculate potential profit for this item
+                const inventoryValue = inventoryItem.quantity * inventoryItem.costPrice;
+                const potentialRevenue = inventoryItem.quantity * inventoryItem.sellingPrice;
+                const potentialProfit = potentialRevenue - inventoryValue;
 
                 inventoryUpdates.push({
                     name: item.name,
                     previousQuantity,
                     newQuantity: inventoryItem.quantity,
+                    newCostPrice: inventoryItem.costPrice,
+                    newSellingPrice: inventoryItem.sellingPrice,
+                    inventoryValue: inventoryValue,
+                    potentialRevenue: potentialRevenue,
+                    potentialProfit: potentialProfit,
                 });
+
+                console.log(`📊 ${item.name}: Inventory Value: ₦${inventoryValue}, Potential Revenue: ₦${potentialRevenue}, Potential Profit: ₦${potentialProfit}`);
 
             } catch (error) {
                 console.error(`❌ Inventory update error for ${item.name}:`, error.message);
+                console.error('❌ Error stack:', error.stack);
             }
         }
 
@@ -257,7 +339,7 @@ class RecordPurchaseUseCase {
             }
         }
 
-        // ✅ Calculate total profit
+        // ✅ Calculate total profit (for this purchase only)
         let totalProfit = 0;
         for (const item of processedItems) {
             totalProfit += (item.sellingPrice - item.unitCost) * item.quantity;

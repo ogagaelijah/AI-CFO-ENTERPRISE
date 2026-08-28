@@ -19,6 +19,8 @@ import Income from './pages/Income';
 import Expenses from './pages/Expenses';
 import Purchases from './pages/Purchases';
 import Creditors from './pages/Creditors'; // ✅ ADDED
+import Suppliers from './pages/Suppliers'; // ✅ ADDED
+import Customers from './pages/Customers'; // ✅ ADDED
 
 function App() {
   return (
@@ -125,6 +127,24 @@ function App() {
               element={
                 <ProtectedRoute>
                   <Creditors />
+                </ProtectedRoute>
+              }
+            />
+            {/* ✅ ADDED: Suppliers Route */}
+            <Route
+              path="/suppliers"
+              element={
+                <ProtectedRoute>
+                  <Suppliers />
+                </ProtectedRoute>
+              }
+            />
+            {/* ✅ ADDED: Customers Route */}
+            <Route
+              path="/customers"
+              element={
+                <ProtectedRoute>
+                  <Customers />
                 </ProtectedRoute>
               }
             />
