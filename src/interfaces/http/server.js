@@ -25,7 +25,10 @@ const subscriptionRoutes = require('./routes/subscriptionRoutes');
 const salesRoutes = require('./routes/salesRoutes');
 const inventoryRoutes = require('./routes/inventoryRoutes');
 const debtorRoutes = require('./routes/debtorRoutes');
-const incomeRoutes = require('./routes/incomeRoutes'); // ✅ ADDED
+const incomeRoutes = require('./routes/incomeRoutes');
+const expenseRoutes = require('./routes/expenseRoutes');
+const purchaseRoutes = require('./routes/purchaseRoutes');
+const creditorRoutes = require('./routes/creditorRoutes'); // ✅ ADDED
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -36,7 +39,10 @@ app.use('/api/subscription', subscriptionRoutes);
 app.use('/api/sales', salesRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/debtors', debtorRoutes);
-app.use('/api/income', incomeRoutes); // ✅ ADDED
+app.use('/api/income', incomeRoutes);
+app.use('/api/expenses', expenseRoutes);
+app.use('/api/purchases', purchaseRoutes);
+app.use('/api/creditors', creditorRoutes); // ✅ ADDED
 
 // Health check
 app.get('/api/health', (req, res) => {

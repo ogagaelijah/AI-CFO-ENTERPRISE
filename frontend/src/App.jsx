@@ -15,7 +15,10 @@ import PaymentSuccess from './pages/PaymentSuccess';
 import Sales from './pages/Sales';
 import Inventory from './pages/Inventory';
 import Debtors from './pages/Debtors';
-import Income from './pages/Income'; // ✅ ADDED
+import Income from './pages/Income';
+import Expenses from './pages/Expenses';
+import Purchases from './pages/Purchases';
+import Creditors from './pages/Creditors'; // ✅ ADDED
 
 function App() {
   return (
@@ -89,12 +92,39 @@ function App() {
                 </ProtectedRoute>
               }
             />
-            {/* ✅ ADDED: Income Route */}
+            {/* Income Route */}
             <Route
               path="/income"
               element={
                 <ProtectedRoute>
                   <Income />
+                </ProtectedRoute>
+              }
+            />
+            {/* Expenses Route */}
+            <Route
+              path="/expenses"
+              element={
+                <ProtectedRoute>
+                  <Expenses />
+                </ProtectedRoute>
+              }
+            />
+            {/* Purchases Route */}
+            <Route
+              path="/purchases"
+              element={
+                <ProtectedRoute>
+                  <Purchases />
+                </ProtectedRoute>
+              }
+            />
+            {/* ✅ ADDED: Creditors Route */}
+            <Route
+              path="/creditors"
+              element={
+                <ProtectedRoute>
+                  <Creditors />
                 </ProtectedRoute>
               }
             />

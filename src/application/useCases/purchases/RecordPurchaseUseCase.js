@@ -21,6 +21,7 @@ class RecordPurchaseUseCase {
         userId,
         businessId,
         supplierName,
+        items = [],
         itemName,
         quantity,
         unitCost,
@@ -40,27 +41,69 @@ class RecordPurchaseUseCase {
             throw new Error('Business ID is required');
         }
 
-        if (!itemName) {
-            throw new Error('Item name is required');
+        // ✅ Process items - support both formats
+        let processedItems = [];
+        let totalPurchaseCost = 0;
+        let totalQuantity = 0;
+
+        // If items array is provided (multi-item from frontend)
+        if (items && items.length > 0) {
+            for (const item of items) {
+                if (!item.name || !item.name.trim()) {
+                    throw new Error('All items must have a name');
+                }
+                const qty = parseInt(item.quantity) || 1;
+                const cost = parseFloat(item.unitCost) || 0;
+                const sell = parseFloat(item.sellingPrice) || 0;
+                
+                if (qty <= 0) {
+                    throw new Error(`Quantity for "${item.name}" must be greater than 0`);
+                }
+                if (cost <= 0) {
+                    throw new Error(`Unit cost for "${item.name}" must be greater than 0`);
+                }
+                if (sell <= 0) {
+                    throw new Error(`Selling price for "${item.name}" must be greater than 0`);
+                }
+                
+                processedItems.push({
+                    name: item.name.trim(),
+                    quantity: qty,
+                    unitCost: cost,
+                    sellingPrice: sell,
+                });
+                
+                totalPurchaseCost += qty * cost;
+                totalQuantity += qty;
+            }
+        } 
+        // Legacy single item format
+        else if (itemName) {
+            if (!quantity || quantity <= 0) {
+                throw new Error('Quantity must be greater than zero');
+            }
+            if (!unitCost || unitCost <= 0) {
+                throw new Error('Unit cost must be greater than zero');
+            }
+            if (!sellingPrice || sellingPrice <= 0) {
+                throw new Error('Selling price must be greater than zero');
+            }
+            
+            processedItems = [{
+                name: itemName,
+                quantity: parseInt(quantity),
+                unitCost: parseFloat(unitCost),
+                sellingPrice: parseFloat(sellingPrice),
+            }];
+            
+            totalPurchaseCost = quantity * unitCost;
+            totalQuantity = quantity;
+        } 
+        else {
+            throw new Error('At least one item is required');
         }
 
-        if (!quantity || quantity <= 0) {
-            throw new Error('Quantity must be greater than zero');
-        }
-
-        if (!unitCost || unitCost <= 0) {
-            throw new Error('Unit cost must be greater than zero');
-        }
-
-        if (!sellingPrice || sellingPrice <= 0) {
-            throw new Error('Selling price must be greater than zero');
-        }
-
-        const calculatedTotal = quantity * unitCost;
-        const finalTotal = totalCost || calculatedTotal;
-        const profitPerUnit = sellingPrice - unitCost;
-        const totalProfit = profitPerUnit * quantity;
-        const profitMargin = unitCost > 0 ? ((profitPerUnit / unitCost) * 100).toFixed(1) : 0;
+        const finalTotalCost = totalCost || totalPurchaseCost;
 
         // ✅ Find or create supplier
         let finalSupplierId = null;
@@ -101,67 +144,64 @@ class RecordPurchaseUseCase {
         }
 
         const balanceRemaining = paymentStatus === 'PAID' ? 0 : 
-                                 paymentStatus === 'PARTIAL' ? finalTotal - amountPaid : 
-                                 finalTotal;
+                                 paymentStatus === 'PARTIAL' ? finalTotalCost - amountPaid : 
+                                 finalTotalCost;
 
-        // ✅ Create purchase
+        // ✅ Create ONE purchase record with items as JSON
+        const itemNames = processedItems.map(i => i.name).join(', ');
+
         const purchase = await this.purchaseRepository.create({
             user_id: userId,
             business_id: businessId,
             supplier_id: finalSupplierId,
             supplier_name: finalSupplierName,
-            item_name: itemName,
-            quantity: quantity,
-            unit_cost: unitCost,
-            total_cost: finalTotal,
+            item_name: itemNames,
+            quantity: totalQuantity,
+            unit_cost: totalPurchaseCost / totalQuantity,
+            total_cost: finalTotalCost,
             payment_status: paymentStatus,
-            amount_paid: paymentStatus === 'PAID' ? finalTotal : (amountPaid || 0),
+            amount_paid: paymentStatus === 'PAID' ? finalTotalCost : (amountPaid || 0),
             balance_remaining: balanceRemaining,
             due_date: dueDate,
             purchase_date: purchaseDate instanceof Date ? purchaseDate.toISOString() : purchaseDate,
+            items: JSON.stringify(processedItems), // ✅ Store full items array
+            notes: notes || '',
         });
 
-        // ✅ Update inventory with selling price
-        if (this.inventoryRepository) {
+        // ✅ Process each item for inventory
+        let inventoryUpdates = [];
+        for (const item of processedItems) {
             try {
                 const InventoryItem = require('../../../domain/entities/InventoryItem');
-                let inventoryItem = await this.inventoryRepository.findByNameIgnoreCase(userId, itemName);
+                let inventoryItem = await this.inventoryRepository.findByNameIgnoreCase(userId, item.name);
                 
                 if (!inventoryItem) {
-                    // ✅ Create new inventory item with selling price
                     const newItem = new InventoryItem({
                         userId: userId,
-                        name: itemName,
+                        name: item.name,
                         category: 'Purchased Goods',
                         quantity: 0,
-                        costPrice: unitCost,
-                        sellingPrice: sellingPrice,  // ✅ Add selling price
+                        costPrice: item.unitCost,
+                        sellingPrice: item.sellingPrice,
                         reorderLevel: 5,
                     });
                     
                     const savedData = await this.inventoryRepository.create(newItem.toJSON());
                     inventoryItem = new InventoryItem(savedData);
-                    console.log(`✅ Created new inventory item: ${itemName} with selling price ₦${sellingPrice}`);
-                } else {
-                    console.log(`✅ Found existing inventory item: ${itemName} (ID: ${inventoryItem.id})`);
+                    console.log(`✅ Created new inventory item: ${item.name}`);
                 }
 
                 const previousQuantity = inventoryItem.quantity || 0;
                 
-                // ✅ Add stock
-                inventoryItem.addStock(quantity);
+                inventoryItem.addStock(item.quantity);
 
-                // ✅ Update cost price (weighted average)
-                const totalCostValue = (inventoryItem.quantity * inventoryItem.costPrice) + (quantity * unitCost);
-                const totalQuantity = inventoryItem.quantity;
-                inventoryItem.costPrice = totalQuantity > 0 ? totalCostValue / totalQuantity : unitCost;
-                
-                // ✅ Update selling price (use the latest selling price)
-                inventoryItem.sellingPrice = sellingPrice;
+                const totalCostValue = (inventoryItem.quantity * inventoryItem.costPrice) + (item.quantity * item.unitCost);
+                const totalQty = inventoryItem.quantity;
+                inventoryItem.costPrice = totalQty > 0 ? totalCostValue / totalQty : item.unitCost;
+                inventoryItem.sellingPrice = item.sellingPrice;
                 
                 await this.inventoryRepository.update(inventoryItem.id, inventoryItem);
-                console.log(`✅ Inventory updated: ${itemName} (+${quantity}, new total: ${inventoryItem.quantity})`);
-                console.log(`✅ Cost Price: ₦${inventoryItem.costPrice}, Selling Price: ₦${inventoryItem.sellingPrice}`);
+                console.log(`✅ Inventory updated: ${item.name} (+${item.quantity})`);
 
                 if (this.inventoryTransactionRepository) {
                     const InventoryTransaction = require('../../../domain/entities/InventoryTransaction');
@@ -169,19 +209,25 @@ class RecordPurchaseUseCase {
                         inventoryItemId: inventoryItem.id,
                         businessId: businessId,
                         type: 'IN',
-                        quantity: quantity,
+                        quantity: item.quantity,
                         previousQuantity: previousQuantity,
                         newQuantity: inventoryItem.quantity,
                         referenceType: 'PURCHASE',
                         referenceId: purchase.id,
-                        reason: `Purchase of ${itemName}`,
+                        reason: `Purchase of ${item.name}`,
                         notes: notes,
                     });
                     await this.inventoryTransactionRepository.create(invTransaction);
                 }
+
+                inventoryUpdates.push({
+                    name: item.name,
+                    previousQuantity,
+                    newQuantity: inventoryItem.quantity,
+                });
+
             } catch (error) {
-                console.error('❌ Inventory update error:', error.message);
-                console.error('Stack:', error.stack);
+                console.error(`❌ Inventory update error for ${item.name}:`, error.message);
             }
         }
 
@@ -194,8 +240,8 @@ class RecordPurchaseUseCase {
                     business_id: businessId,
                     supplier_id: finalSupplierId,
                     supplier_name: finalSupplierName,
-                    total_owed: finalTotal,
-                    amount_paid: paymentStatus === 'PAID' ? finalTotal : (amountPaid || 0),
+                    total_owed: finalTotalCost,
+                    amount_paid: paymentStatus === 'PAID' ? finalTotalCost : (amountPaid || 0),
                     balance_remaining: balanceRemaining,
                     status: 'ACTIVE',
                     due_date: dueDate,
@@ -205,10 +251,16 @@ class RecordPurchaseUseCase {
 
                 await this.creditorRepository.create(creditor);
                 creditorCreated = true;
-                console.log(`✅ Creditor created for supplier: ${finalSupplierName} (${balanceRemaining})`);
+                console.log(`✅ Creditor created for supplier: ${finalSupplierName}`);
             } catch (error) {
                 console.error('Creditor creation error:', error.message);
             }
+        }
+
+        // ✅ Calculate total profit
+        let totalProfit = 0;
+        for (const item of processedItems) {
+            totalProfit += (item.sellingPrice - item.unitCost) * item.quantity;
         }
 
         return {
@@ -219,9 +271,9 @@ class RecordPurchaseUseCase {
             supplierCreated: finalSupplierId !== null,
             balanceRemaining: balanceRemaining,
             creditorCreated: creditorCreated,
-            profitPerUnit: profitPerUnit,
             totalProfit: totalProfit,
-            profitMargin: profitMargin,
+            items: processedItems,
+            inventoryUpdates: inventoryUpdates,
             message: 'Purchase recorded successfully',
         };
     }

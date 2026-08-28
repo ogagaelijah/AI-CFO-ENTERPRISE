@@ -7,104 +7,118 @@ class PurchaseRepository extends BaseRepository {
         super('purchases');
     }
 
-    create(purchaseData) {
-        // ✅ Ensure all values are properly converted to SQLite-compatible types
-        const userId = purchaseData.user_id !== undefined && purchaseData.user_id !== null ? purchaseData.user_id : null;
-        const businessId = purchaseData.business_id !== undefined && purchaseData.business_id !== null ? purchaseData.business_id : null;
-        const supplierId = purchaseData.supplier_id !== undefined && purchaseData.supplier_id !== null ? purchaseData.supplier_id : null;
-        const supplierName = purchaseData.supplier_name || null;
-        const itemName = purchaseData.item_name || null;
-        const quantity = purchaseData.quantity || 0;
-        const unitCost = purchaseData.unit_cost || 0;
-        const totalCost = purchaseData.total_cost || 0;
-        const paymentStatus = purchaseData.payment_status || 'UNPAID';
-        const amountPaid = purchaseData.amount_paid || 0;
-        const balanceRemaining = purchaseData.balance_remaining || 0;
-        const dueDate = purchaseData.due_date || null;
-        const purchaseDate = purchaseData.purchase_date || new Date().toISOString();
+    // ✅ Helper to parse items from JSON
+    _hydrate(row) {
+        if (!row) return null;
+        let items = [];
+        if (row.items) {
+            try {
+                items = typeof row.items === 'string' ? JSON.parse(row.items) : row.items;
+            } catch (e) {
+                console.warn('⚠️ Could not parse items:', e);
+                items = [];
+            }
+        }
+        return {
+            ...row,
+            items: items
+        };
+    }
 
+    create(purchaseData) {
         const stmt = this.db.prepare(`
             INSERT INTO purchases (
                 user_id, business_id, supplier_id, supplier_name, item_name, 
                 quantity, unit_cost, total_cost, payment_status, 
-                amount_paid, balance_remaining, due_date, purchase_date
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                amount_paid, balance_remaining, due_date, purchase_date,
+                items, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         const result = stmt.run(
-            userId,
-            businessId,
-            supplierId,
-            supplierName,
-            itemName,
-            quantity,
-            unitCost,
-            totalCost,
-            paymentStatus,
-            amountPaid,
-            balanceRemaining,
-            dueDate,
-            purchaseDate
+            purchaseData.user_id,
+            purchaseData.business_id || null,
+            purchaseData.supplier_id || null,
+            purchaseData.supplier_name || null,
+            purchaseData.item_name || null,
+            purchaseData.quantity || 0,
+            purchaseData.unit_cost || 0,
+            purchaseData.total_cost || 0,
+            purchaseData.payment_status || 'UNPAID',
+            purchaseData.amount_paid || 0,
+            purchaseData.balance_remaining || 0,
+            purchaseData.due_date || null,
+            purchaseData.purchase_date || new Date().toISOString(),
+            purchaseData.items || null,
+            purchaseData.notes || null
         );
 
         return this.findById(result.lastInsertRowid);
     }
 
     findById(id) {
-        return this.db.prepare('SELECT * FROM purchases WHERE id = ?').get(id);
+        const row = this.db.prepare('SELECT * FROM purchases WHERE id = ?').get(id);
+        return this._hydrate(row);
     }
 
     findByUserId(userId) {
-        return this.db.prepare(
+        const rows = this.db.prepare(
             'SELECT * FROM purchases WHERE user_id = ? ORDER BY purchase_date DESC'
         ).all(userId);
+        return rows.map(row => this._hydrate(row));
     }
 
     findByBusinessId(businessId) {
-        return this.db.prepare(
+        const rows = this.db.prepare(
             'SELECT * FROM purchases WHERE business_id = ? ORDER BY purchase_date DESC'
         ).all(businessId);
+        return rows.map(row => this._hydrate(row));
     }
 
     findByDateRange(userId, startDate, endDate) {
-        return this.db.prepare(`
+        const rows = this.db.prepare(`
             SELECT * FROM purchases 
             WHERE user_id = ? AND DATE(purchase_date) BETWEEN ? AND ? 
             ORDER BY purchase_date DESC
         `).all(userId, startDate, endDate);
+        return rows.map(row => this._hydrate(row));
     }
 
     findByItemName(userId, itemName) {
-        return this.db.prepare(`
+        const rows = this.db.prepare(`
             SELECT * FROM purchases 
             WHERE user_id = ? AND item_name LIKE ? 
             ORDER BY purchase_date DESC
         `).all(userId, `%${itemName}%`);
+        return rows.map(row => this._hydrate(row));
     }
 
     findBySupplier(userId, supplierName) {
-        return this.db.prepare(`
+        const rows = this.db.prepare(`
             SELECT * FROM purchases 
             WHERE user_id = ? AND supplier_name LIKE ? 
             ORDER BY purchase_date DESC
         `).all(userId, `%${supplierName}%`);
+        return rows.map(row => this._hydrate(row));
     }
 
     findBySupplierId(userId, supplierId) {
-        return this.db.prepare(`
+        const rows = this.db.prepare(`
             SELECT * FROM purchases 
             WHERE user_id = ? AND supplier_id = ? 
             ORDER BY purchase_date DESC
         `).all(userId, supplierId);
+        return rows.map(row => this._hydrate(row));
     }
 
     getTodayPurchases(userId) {
         const today = new Date().toISOString().split('T')[0];
-        return this.db.prepare(`
+        const rows = this.db.prepare(`
             SELECT * FROM purchases 
             WHERE user_id = ? AND DATE(purchase_date) = ? 
             ORDER BY purchase_date DESC
         `).all(userId, today);
+        return rows.map(row => this._hydrate(row));
     }
 
     update(id, data) {
@@ -150,6 +164,14 @@ class PurchaseRepository extends BaseRepository {
         if (data.due_date !== undefined) {
             fields.push('due_date = ?');
             values.push(data.due_date);
+        }
+        if (data.items !== undefined) {
+            fields.push('items = ?');
+            values.push(JSON.stringify(data.items));
+        }
+        if (data.notes !== undefined) {
+            fields.push('notes = ?');
+            values.push(data.notes);
         }
 
         fields.push('updated_at = CURRENT_TIMESTAMP');
