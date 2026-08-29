@@ -1,4 +1,5 @@
 // frontend/src/components/Income/IncomeTable.jsx
+
 import { Eye, Edit, Trash2 } from 'lucide-react';
 
 const IncomeTable = ({ incomes, onView, onEdit, onDelete }) => {
@@ -27,7 +28,7 @@ const IncomeTable = ({ incomes, onView, onEdit, onDelete }) => {
             <tr>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Source</th>
               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Amount</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Category</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Description</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Date</th>
               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
             </tr>
@@ -38,16 +39,13 @@ const IncomeTable = ({ incomes, onView, onEdit, onDelete }) => {
                 <td className="px-4 py-3">
                   <div>
                     <p className="text-sm font-medium text-gray-900 dark:text-white">{income.source}</p>
-                    {income.description && (
-                      <p className="text-xs text-gray-500 dark:text-gray-400">{income.description}</p>
-                    )}
                   </div>
                 </td>
                 <td className="px-4 py-3 text-right text-sm font-medium text-green-600 dark:text-green-400">
                   ₦{(income.amount || 0).toLocaleString()}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
-                  {income.category || 'Other'}
+                  {income.description || 'N/A'}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
                   {formatDate(income.date)}

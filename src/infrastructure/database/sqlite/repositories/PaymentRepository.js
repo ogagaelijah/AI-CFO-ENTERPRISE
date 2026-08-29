@@ -1,6 +1,7 @@
 // src/infrastructure/database/sqlite/repositories/PaymentRepository.js
 
 const BaseRepository = require('./BaseRepository');
+const Payment = require('../../../../domain/entities/Payment');
 
 class PaymentRepository extends BaseRepository {
     constructor(db = null) {
@@ -26,7 +27,7 @@ class PaymentRepository extends BaseRepository {
             paymentData.referenceType || null,
             paymentData.referenceId || null,
             paymentData.paymentDate ? paymentData.paymentDate.toISOString() : new Date().toISOString(),
-            paymentData.paymentMethod || null,
+            paymentData.paymentMethod || 'CASH',
             paymentData.referenceNumber || null,
             paymentData.notes || '',
             JSON.stringify(paymentData.metadata || {})
@@ -50,6 +51,54 @@ class PaymentRepository extends BaseRepository {
     findByBusinessId(businessId, options = {}) {
         let query = 'SELECT * FROM payments WHERE business_id = ?';
         const params = [businessId];
+
+        if (options.type) {
+            query += ' AND payment_type = ?';
+            params.push(options.type);
+        }
+
+        if (options.referenceType) {
+            query += ' AND reference_type = ?';
+            params.push(options.referenceType);
+        }
+
+        if (options.referenceId) {
+            query += ' AND reference_id = ?';
+            params.push(options.referenceId);
+        }
+
+        if (options.startDate) {
+            query += ' AND payment_date >= ?';
+            params.push(options.startDate.toISOString());
+        }
+
+        if (options.endDate) {
+            query += ' AND payment_date <= ?';
+            params.push(options.endDate.toISOString());
+        }
+
+        query += ' ORDER BY payment_date DESC';
+
+        if (options.limit) {
+            query += ' LIMIT ?';
+            params.push(options.limit);
+        }
+
+        if (options.offset) {
+            query += ' OFFSET ?';
+            params.push(options.offset);
+        }
+
+        const results = this.db.prepare(query).all(...params);
+        return results.map(r => this._hydrate(r));
+    }
+
+    /**
+     * Find payments by user ID
+     */
+    findByUserId(userId, options = {}) {
+        let query = 'SELECT * FROM payments WHERE user_id = ?';
+        const params = [userId];
 
         if (options.type) {
             query += ' AND payment_type = ?';
@@ -132,6 +181,31 @@ class PaymentRepository extends BaseRepository {
                 offset: filters.offset,
             }
         );
+    }
+
+    /**
+     * Get payment summary
+     */
+    getSummary(businessId) {
+        const result = this.db.prepare(`
+            SELECT 
+                COUNT(*) as total_payments,
+                COALESCE(SUM(CASE WHEN payment_type = 'IN' THEN amount ELSE 0 END), 0) as total_in,
+                COALESCE(SUM(CASE WHEN payment_type = 'OUT' THEN amount ELSE 0 END), 0) as total_out,
+                COUNT(CASE WHEN payment_type = 'IN' THEN 1 END) as count_in,
+                COUNT(CASE WHEN payment_type = 'OUT' THEN 1 END) as count_out
+            FROM payments 
+            WHERE business_id = ?
+        `).get(businessId);
+
+        return {
+            total_payments: result?.total_payments || 0,
+            total_in: result?.total_in || 0,
+            total_out: result?.total_out || 0,
+            count_in: result?.count_in || 0,
+            count_out: result?.count_out || 0,
+            net_flow: (result?.total_in || 0) - (result?.total_out || 0),
+        };
     }
 
     /**
@@ -244,10 +318,10 @@ class PaymentRepository extends BaseRepository {
     }
 
     /**
-     * Hydrate database row to object (no entity dependency for testing)
+     * Hydrate database row to Payment entity
      */
     _hydrate(row) {
-        return {
+        return new Payment({
             id: row.id,
             businessId: row.business_id,
             userId: row.user_id,
@@ -262,7 +336,7 @@ class PaymentRepository extends BaseRepository {
             metadata: row.metadata ? JSON.parse(row.metadata) : {},
             createdAt: new Date(row.created_at),
             updatedAt: new Date(row.updated_at),
-        };
+        });
     }
 }
 

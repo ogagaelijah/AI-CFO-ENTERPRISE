@@ -1,82 +1,77 @@
 // src/application/useCases/inventory/AdjustStockUseCase.js
 
+/**
+ * Adjust Stock Use Case
+ *
+ * Manually adjusts inventory stock levels.
+ * Used for: stock count corrections, damaged goods, returns, etc.
+ *
+ * IMPORTANT: This is for MANUAL adjustments only.
+ * Automatic stock changes (Purchase → IN, Sale → OUT) are handled by the Transaction Engine.
+ */
 class AdjustStockUseCase {
-    constructor({
-        inventoryRepository,
-        inventoryTransactionRepository,
-    }) {
+    constructor({ inventoryRepository }) {
         this.inventoryRepository = inventoryRepository;
-        this.inventoryTransactionRepository = inventoryTransactionRepository;
     }
 
     async execute({
-        businessId,
+        userId,
         inventoryItemId,
-        newQuantity,
-        reason = 'Manual adjustment',
+        adjustment, // Positive = add stock, Negative = remove stock
+        reason = '',
         notes = '',
     }) {
-        if (!businessId) {
-            throw new Error('Business ID is required');
+        // Validate
+        if (!userId) {
+            throw new Error('User ID is required');
         }
 
         if (!inventoryItemId) {
             throw new Error('Inventory item ID is required');
         }
 
-        if (newQuantity === undefined || newQuantity === null) {
-            throw new Error('New quantity is required');
+        if (adjustment === undefined || adjustment === null) {
+            throw new Error('Adjustment amount is required');
         }
+
+        if (adjustment === 0) {
+            throw new Error('Adjustment cannot be zero');
+        }
+
+        // Check if item exists
+        const existingItem = await this.inventoryRepository.findById(inventoryItemId);
+        if (!existingItem) {
+            throw new Error(`Inventory item with ID ${inventoryItemId} not found`);
+        }
+
+        // Verify ownership
+        if (existingItem.user_id !== userId) {
+            throw new Error('Access denied');
+        }
+
+        // Calculate new quantity
+        const currentQuantity = existingItem.quantity || 0;
+        const newQuantity = currentQuantity + adjustment;
 
         if (newQuantity < 0) {
-            throw new Error('Quantity cannot be negative');
+            throw new Error(
+                `Cannot adjust stock. Current quantity: ${currentQuantity}, ` +
+                `Adjustment: ${adjustment} would result in negative stock.`
+            );
         }
 
-        // Get inventory item
-        const item = await this.inventoryRepository.findById(inventoryItemId);
-        if (!item) {
-            throw new Error('Inventory item not found');
-        }
-
-        // Verify business ownership
-        if (item.businessId !== businessId) {
-            throw new Error('Access denied: Item does not belong to this business');
-        }
-
-        // Record previous quantity
-        const previousQuantity = item.quantity;
-        const quantityChange = newQuantity - previousQuantity;
-
-        // Update quantity
-        item.setQuantity(newQuantity);
-        await this.inventoryRepository.update(item.id, item);
-
-        // Record inventory transaction
-        const InventoryTransaction = require('../../../domain/entities/InventoryTransaction');
-        const transaction = new InventoryTransaction({
-            inventoryItemId: item.id,
-            businessId,
-            type: 'ADJUSTMENT',
-            quantity: quantityChange,
-            previousQuantity,
-            newQuantity: item.quantity,
-            referenceType: 'ADJUSTMENT',
-            referenceId: null,
-            reason,
-            notes,
+        // Update inventory
+        const updatedItem = await this.inventoryRepository.update(inventoryItemId, {
+            quantity: newQuantity,
         });
-
-        await this.inventoryTransactionRepository.create(transaction);
 
         return {
             success: true,
-            item: item.toJSON(),
-            previousQuantity,
-            newQuantity: item.quantity,
-            quantityChange,
-            isLowStock: item.isLowStock(),
-            isOutOfStock: item.isOutOfStock(),
-            message: `Adjusted from ${previousQuantity} to ${newQuantity} units`,
+            inventoryItem: updatedItem,
+            previousQuantity: currentQuantity,
+            newQuantity: newQuantity,
+            adjustment: adjustment,
+            message: `Stock adjusted by ${adjustment} (${adjustment > 0 ? 'added' : 'removed'})`,
         };
     }
 }

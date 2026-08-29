@@ -1,10 +1,11 @@
 // frontend/src/components/Expenses/EditExpenseModal.jsx
+
 import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 
 const EditExpenseModal = ({ isOpen, expense, onSubmit, onClose, error, setError }) => {
   const [form, setForm] = useState({
-    category: 'Other',
+    category: 'OTHER',
     amount: 0,
     description: '',
     date: new Date().toISOString().split('T')[0],
@@ -13,7 +14,7 @@ const EditExpenseModal = ({ isOpen, expense, onSubmit, onClose, error, setError 
   useEffect(() => {
     if (expense) {
       setForm({
-        category: expense.category || 'Other',
+        category: expense.category || 'OTHER',
         amount: expense.amount || 0,
         description: expense.description || '',
         date: expense.date || new Date().toISOString().split('T')[0],
@@ -56,17 +57,15 @@ const EditExpenseModal = ({ isOpen, expense, onSubmit, onClose, error, setError 
               value={form.category}
               onChange={(e) => setForm({ ...form, category: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              required
             >
-              <option value="Other">Other</option>
-              <option value="Rent">Rent</option>
-              <option value="Salaries">Salaries</option>
-              <option value="Utilities">Utilities</option>
-              <option value="Transport">Transport</option>
-              <option value="Marketing">Marketing</option>
-              <option value="Insurance">Insurance</option>
-              <option value="Taxes">Taxes</option>
-              <option value="Supplies">Supplies</option>
-              <option value="Maintenance">Maintenance</option>
+              <option value="SALARY">Salary</option>
+              <option value="RENT">Rent</option>
+              <option value="TRANSPORT">Transport</option>
+              <option value="UTILITIES">Utilities</option>
+              <option value="MARKETING">Marketing</option>
+              <option value="INSURANCE">Insurance</option>
+              <option value="OTHER">Other</option>
             </select>
           </div>
 

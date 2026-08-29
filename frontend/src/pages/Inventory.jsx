@@ -2,15 +2,18 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
-import { Plus, Search, RefreshCw, X, CheckCircle, AlertCircle } from 'lucide-react';
-import SummaryCards from '../components/Inventory/SummaryCards';
+import { Plus, RefreshCw } from 'lucide-react';
+import InventorySummary from '../components/Inventory/InventorySummary';
 import InventoryTable from '../components/Inventory/InventoryTable';
-import AddItemModal from '../components/Inventory/AddItemModal';
+import AddStockModal from '../components/Inventory/AddStockModal';
+import EditItemModal from '../components/Inventory/EditItemModal';
+import AdjustStockModal from '../components/Inventory/AdjustStockModal';
 import ConfirmModal from '../components/Inventory/ConfirmModal';
+import LowStockAlert from '../components/Inventory/LowStockAlert';
 
 const Inventory = () => {
   const { user } = useAuth();
-  const [items, setItems] = useState([]);
+  const [inventory, setInventory] = useState([]);
   const [summary, setSummary] = useState({
     total_items: 0,
     total_quantity: 0,
@@ -18,217 +21,149 @@ const Inventory = () => {
     total_selling_value: 0,
     total_profit: 0,
     low_stock_count: 0,
-    margin: 0,
   });
-  const [isLoading, setIsLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  
-  // Modals
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [showAdjustModal, setShowAdjustModal] = useState(false);
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [selectedItem, setSelectedItem] = useState(null);
-  const [confirmData, setConfirmData] = useState(null);
-  
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  // Forms
-  const [addForm, setAddForm] = useState({
-    itemName: '',
-    quantity: 1,
-    costPrice: 0,
-    sellingPrice: 0,
-    reorderLevel: 5,
-  });
-  const [adjustForm, setAdjustForm] = useState({
-    action: 'add',
-    quantity: 1,
-  });
-
-  // Fetch inventory
-  useEffect(() => {
-    fetchInventory();
-  }, []);
+  // Modal states
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showAdjustModal, setShowAdjustModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [deleteConfirmData, setDeleteConfirmData] = useState(null);
 
   const fetchInventory = async () => {
     try {
-      setIsLoading(true);
-      const response = await api.get('/inventory');
+      setLoading(true);
+      setError('');
+      const response = await api.get('/inventory', {
+        params: { userId: user?.id },
+      });
+
       if (response.data?.success) {
-        setItems(response.data.data.items || []);
-        setSummary(response.data.data.summary || {
-          total_items: 0,
-          total_quantity: 0,
-          total_cost_value: 0,
-          total_selling_value: 0,
-          total_profit: 0,
-          low_stock_count: 0,
-          margin: 0,
+        const items = response.data.data || [];
+        setInventory(items);
+
+        const summaryData = response.data.summary || {};
+        setSummary({
+          total_items: summaryData.total_items || 0,
+          total_quantity: summaryData.total_quantity || 0,
+          total_cost_value: summaryData.total_cost_value || 0,
+          total_selling_value: summaryData.total_selling_value || 0,
+          total_profit: summaryData.total_profit || 0,
+          low_stock_count: summaryData.low_stock_count || 0,
         });
       }
     } catch (error) {
       console.error('Error fetching inventory:', error);
-      setError('Failed to load inventory');
+      setError(error.response?.data?.message || 'Failed to load inventory');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  // ✅ Step 1: Validate and show confirmation
-  const handleAddItemSubmit = (e) => {
-    e.preventDefault();
-    setError('');
-    setSuccess('');
+  useEffect(() => {
+    fetchInventory();
+  }, []);
 
-    if (!addForm.itemName.trim()) {
-      setError('Item name is required');
-      return;
-    }
-
-    if (addForm.quantity <= 0) {
-      setError('Quantity must be greater than 0');
-      return;
-    }
-
-    if (addForm.costPrice < 0) {
-      setError('Cost price cannot be negative');
-      return;
-    }
-
-    if (addForm.sellingPrice < 0) {
-      setError('Selling price cannot be negative');
-      return;
-    }
-
-    // ✅ Close add modal and show confirmation
-    setShowAddModal(false);
-    setConfirmData({ ...addForm });
-    setShowConfirmModal(true);
-  };
-
-  // ✅ Step 2: Confirm and save
-  const handleConfirmAdd = async () => {
-    setError('');
-    setSuccess('');
-    setShowConfirmModal(false);
-
+  const handleAddStock = async (data) => {
     try {
       const response = await api.post('/inventory', {
-        itemName: confirmData.itemName.trim(),
-        quantity: parseInt(confirmData.quantity),
-        costPrice: parseFloat(confirmData.costPrice),
-        sellingPrice: parseFloat(confirmData.sellingPrice),
-        reorderLevel: parseInt(confirmData.reorderLevel) || 5,
+        ...data,
+        userId: user?.id,
       });
 
       if (response.data?.success) {
-        setSuccess('✅ Item added successfully!');
-        setAddForm({ itemName: '', quantity: 1, costPrice: 0, sellingPrice: 0, reorderLevel: 5 });
-        setConfirmData(null);
-        fetchInventory();
+        setShowAddModal(false);
+        setSuccess('✅ Stock added successfully!');
+        await fetchInventory();
+      } else {
+        setError(response.data?.message || 'Failed to add stock');
       }
     } catch (error) {
-      setError(error.response?.data?.message || 'Failed to add item');
-      setShowAddModal(true);
+      console.error('Error adding stock:', error);
+      setError(error.response?.data?.message || 'Failed to add stock');
     }
   };
 
-  // Edit item
-  const handleEditItem = async (e) => {
-    e.preventDefault();
-    setError('');
-    setSuccess('');
-
+  const handleEditItem = async (id, data) => {
     try {
-      const response = await api.put(`/inventory/${selectedItem.id}`, {
-        itemName: selectedItem.item_name,
-        costPrice: parseFloat(selectedItem.cost_price),
-        sellingPrice: parseFloat(selectedItem.selling_price),
-        reorderLevel: parseInt(selectedItem.reorder_level) || 5,
+      const response = await api.put(`/inventory/${id}`, {
+        ...data,
+        userId: user?.id,
       });
 
       if (response.data?.success) {
-        setSuccess('✅ Item updated successfully!');
         setShowEditModal(false);
         setSelectedItem(null);
-        fetchInventory();
+        setSuccess('✅ Item updated successfully!');
+        await fetchInventory();
+      } else {
+        setError(response.data?.message || 'Failed to update item');
       }
     } catch (error) {
+      console.error('Error updating item:', error);
       setError(error.response?.data?.message || 'Failed to update item');
     }
   };
 
-  // Adjust stock
-  const handleAdjustStock = async (e) => {
-    e.preventDefault();
-    setError('');
-    setSuccess('');
-
+  const handleAdjustStock = async (id, data) => {
     try {
-      const response = await api.patch(`/inventory/${selectedItem.id}/stock`, {
-        action: adjustForm.action,
-        quantity: parseInt(adjustForm.quantity),
+      const response = await api.patch(`/inventory/${id}/stock`, {
+        ...data,
+        userId: user?.id,
       });
 
       if (response.data?.success) {
-        setSuccess('✅ Stock adjusted successfully!');
         setShowAdjustModal(false);
         setSelectedItem(null);
-        setAdjustForm({ action: 'add', quantity: 1 });
-        fetchInventory();
+        setSuccess('✅ Stock adjusted successfully!');
+        await fetchInventory();
+      } else {
+        setError(response.data?.message || 'Failed to adjust stock');
       }
     } catch (error) {
+      console.error('Error adjusting stock:', error);
       setError(error.response?.data?.message || 'Failed to adjust stock');
     }
   };
 
-  // Delete item
-  const handleDeleteItem = async (id) => {
-    if (!confirm('Are you sure you want to delete this item?')) return;
-
+  const handleDeleteItem = async () => {
+    if (!selectedItem) return;
     try {
-      const response = await api.delete(`/inventory/${id}`);
+      const response = await api.delete(`/inventory/${selectedItem.id}`, {
+        params: { userId: user?.id },
+      });
+
       if (response.data?.success) {
+        setShowDeleteModal(false);
+        setSelectedItem(null);
+        setDeleteConfirmData(null);
         setSuccess('✅ Item deleted successfully!');
-        fetchInventory();
+        await fetchInventory();
+      } else {
+        setError(response.data?.message || 'Failed to delete item');
       }
     } catch (error) {
+      console.error('Error deleting item:', error);
       setError(error.response?.data?.message || 'Failed to delete item');
     }
   };
 
-  // Search
-  const handleSearch = async () => {
-    if (!searchTerm.trim()) {
-      fetchInventory();
-      return;
-    }
-
-    try {
-      setIsLoading(true);
-      const response = await api.get(`/inventory?search=${encodeURIComponent(searchTerm)}`);
-      if (response.data?.success) {
-        setItems(response.data.data.items || []);
-        setSummary(response.data.data.summary || {
-          total_items: 0,
-          total_quantity: 0,
-          total_cost_value: 0,
-          total_selling_value: 0,
-          total_profit: 0,
-          low_stock_count: 0,
-          margin: 0,
-        });
-      }
-    } catch (error) {
-      setError('Failed to search inventory');
-    } finally {
-      setIsLoading(false);
-    }
+  const openDeleteModal = (item) => {
+    setSelectedItem(item);
+    setDeleteConfirmData({
+      itemName: item.item_name,
+      quantity: item.quantity,
+      costPrice: item.cost_price,
+      sellingPrice: item.selling_price,
+    });
+    setShowDeleteModal(true);
   };
 
-  if (isLoading) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
@@ -244,274 +179,101 @@ const Inventory = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Inventory</h1>
-        <button
-          onClick={() => {
-            setShowAddModal(true);
-            setError('');
-            setSuccess('');
-          }}
-          className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
-        >
-          <Plus className="w-5 h-5" />
-          <span>Add Item</span>
-        </button>
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={fetchInventory}
+            className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
+            title="Refresh"
+          >
+            <RefreshCw className="w-5 h-5" />
+          </button>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
+          >
+            <Plus className="w-5 h-5" />
+            <span>Add Stock</span>
+          </button>
+        </div>
       </div>
 
       {/* Error/Success */}
       {error && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg flex items-center space-x-2">
-          <AlertCircle className="w-5 h-5 flex-shrink-0" />
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg flex items-center justify-between">
           <span>{error}</span>
-          <button onClick={() => setError('')} className="ml-auto text-red-500 hover:text-red-700">
-            <X className="w-4 h-4" />
-          </button>
+          <button onClick={() => setError('')} className="text-red-500 hover:text-red-700">✕</button>
         </div>
       )}
       {success && (
-        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-400 px-4 py-3 rounded-lg flex items-center space-x-2">
-          <CheckCircle className="w-5 h-5 flex-shrink-0" />
+        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-400 px-4 py-3 rounded-lg flex items-center justify-between">
           <span>{success}</span>
-          <button onClick={() => setSuccess('')} className="ml-auto text-green-500 hover:text-green-700">
-            <X className="w-4 h-4" />
-          </button>
+          <button onClick={() => setSuccess('')} className="text-green-500 hover:text-green-700">✕</button>
         </div>
       )}
 
-      {/* Summary Cards */}
-      <SummaryCards summary={summary} />
+      {/* Low Stock Alert */}
+      {summary.low_stock_count > 0 && (
+        <LowStockAlert count={summary.low_stock_count} />
+      )}
 
-      {/* Search */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="flex-1 flex space-x-2">
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-            placeholder="Search inventory..."
-            className="flex-1 px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-          />
-          <button
-            onClick={handleSearch}
-            className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
-          >
-            <Search className="w-5 h-5" />
-          </button>
-          <button
-            onClick={() => {
-              setSearchTerm('');
-              fetchInventory();
-            }}
-            className="px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition"
-          >
-            <RefreshCw className="w-5 h-5" />
-          </button>
-        </div>
-      </div>
+      {/* Summary Cards */}
+      <InventorySummary summary={summary} />
 
       {/* Inventory Table */}
       <InventoryTable
-        items={items}
-        onAdjust={(item) => {
-          setSelectedItem(item);
-          setShowAdjustModal(true);
-          setAdjustForm({ action: 'add', quantity: 1 });
-        }}
+        items={inventory}
         onEdit={(item) => {
           setSelectedItem(item);
           setShowEditModal(true);
         }}
-        onDelete={handleDeleteItem}
+        onAdjust={(item) => {
+          setSelectedItem(item);
+          setShowAdjustModal(true);
+        }}
+        onDelete={openDeleteModal}
       />
 
-      {/* Confirm Modal */}
+      {/* Modals */}
+      <AddStockModal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onSubmit={handleAddStock}
+      />
+
+      <EditItemModal
+        isOpen={showEditModal}
+        item={selectedItem}
+        onClose={() => {
+          setShowEditModal(false);
+          setSelectedItem(null);
+        }}
+        onSubmit={handleEditItem}
+      />
+
+      <AdjustStockModal
+        isOpen={showAdjustModal}
+        item={selectedItem}
+        onClose={() => {
+          setShowAdjustModal(false);
+          setSelectedItem(null);
+        }}
+        onSubmit={handleAdjustStock}
+      />
+
       <ConfirmModal
-        isOpen={showConfirmModal}
-        data={confirmData}
-        onConfirm={handleConfirmAdd}
+        isOpen={showDeleteModal}
+        data={deleteConfirmData}
+        title="Delete Inventory Item"
+        message={`Are you sure you want to delete "${selectedItem?.item_name}"?`}
+        confirmLabel="Delete"
+        confirmColor="red"
+        onConfirm={handleDeleteItem}
         onCancel={() => {
-          setShowConfirmModal(false);
-          setConfirmData(null);
-          setShowAddModal(true);
+          setShowDeleteModal(false);
+          setSelectedItem(null);
+          setDeleteConfirmData(null);
         }}
       />
-
-      {/* Add Item Modal */}
-      <AddItemModal
-        isOpen={showAddModal}
-        form={addForm}
-        setForm={setAddForm}
-        onSubmit={handleAddItemSubmit}
-        onClose={() => setShowAddModal(false)}
-        error={error}
-      />
-
-      {/* Edit Item Modal */}
-      {showEditModal && selectedItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-slate-700 sticky top-0 bg-white dark:bg-slate-800 z-10">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Edit Item</h2>
-              <button
-                onClick={() => { setShowEditModal(false); setSelectedItem(null); }}
-                className="p-1 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition"
-              >
-                <X className="w-6 h-6 text-gray-500 dark:text-gray-400" />
-              </button>
-            </div>
-
-            <form onSubmit={handleEditItem} className="p-4 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Item Name
-                </label>
-                <input
-                  type="text"
-                  value={selectedItem.item_name || ''}
-                  onChange={(e) => setSelectedItem({ ...selectedItem, item_name: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  required
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Cost Price (₦)
-                  </label>
-                  <input
-                    type="number"
-                    value={selectedItem.cost_price || 0}
-                    onChange={(e) => setSelectedItem({ ...selectedItem, cost_price: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    min="0"
-                    step="0.01"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Selling Price (₦)
-                  </label>
-                  <input
-                    type="number"
-                    value={selectedItem.selling_price || 0}
-                    onChange={(e) => setSelectedItem({ ...selectedItem, selling_price: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    min="0"
-                    step="0.01"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Reorder Level
-                </label>
-                <input
-                  type="number"
-                  value={selectedItem.reorder_level || 5}
-                  onChange={(e) => setSelectedItem({ ...selectedItem, reorder_level: parseInt(e.target.value) || 5 })}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  min="1"
-                />
-              </div>
-
-              <div className="flex space-x-3 pt-4 border-t border-gray-200 dark:border-slate-700">
-                <button
-                  type="button"
-                  onClick={() => { setShowEditModal(false); setSelectedItem(null); }}
-                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
-                >
-                  Update Item
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Adjust Stock Modal */}
-      {showAdjustModal && selectedItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-slate-700 sticky top-0 bg-white dark:bg-slate-800 z-10">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Adjust Stock</h2>
-              <button
-                onClick={() => { setShowAdjustModal(false); setSelectedItem(null); }}
-                className="p-1 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition"
-              >
-                <X className="w-6 h-6 text-gray-500 dark:text-gray-400" />
-              </button>
-            </div>
-
-            <div className="p-4">
-              <div className="mb-4">
-                <p className="text-sm text-gray-600 dark:text-gray-300">
-                  <span className="font-medium">Item:</span> {selectedItem.item_name}
-                </p>
-                <p className="text-sm text-gray-600 dark:text-gray-300">
-                  <span className="font-medium">Current Stock:</span> {selectedItem.quantity} units
-                </p>
-              </div>
-
-              <form onSubmit={handleAdjustStock} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Action
-                  </label>
-                  <select
-                    value={adjustForm.action}
-                    onChange={(e) => setAdjustForm({ ...adjustForm, action: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  >
-                    <option value="add">Add Stock (+)</option>
-                    <option value="remove">Remove Stock (-)</option>
-                    <option value="set">Set Exact Quantity</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Quantity
-                  </label>
-                  <input
-                    type="number"
-                    value={adjustForm.quantity}
-                    onChange={(e) => setAdjustForm({ ...adjustForm, quantity: parseInt(e.target.value) || 1 })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    min="1"
-                    required
-                  />
-                </div>
-
-                <div className="flex space-x-3 pt-4 border-t border-gray-200 dark:border-slate-700">
-                  <button
-                    type="button"
-                    onClick={() => { setShowAdjustModal(false); setSelectedItem(null); }}
-                    className="flex-1 px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
-                  >
-                    Adjust Stock
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

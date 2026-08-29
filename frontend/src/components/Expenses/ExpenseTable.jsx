@@ -1,4 +1,5 @@
 // frontend/src/components/Expenses/ExpenseTable.jsx
+
 import { Eye, Edit, Trash2 } from 'lucide-react';
 
 const ExpenseTable = ({ expenses, onView, onEdit, onDelete }) => {

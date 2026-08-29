@@ -1,4 +1,5 @@
 // src/interfaces/http/routes/expenseRoutes.js
+
 const express = require('express');
 const router = express.Router();
 const ExpenseRepository = require('../../../infrastructure/database/sqlite/repositories/ExpenseRepository');
@@ -10,17 +11,28 @@ const recordExpenseUseCase = new RecordExpenseUseCase(expenseRepo);
 
 router.use(authMiddleware);
 
+// =============================================
 // GET /api/expenses - Get all expenses
+// =============================================
 router.get('/', async (req, res) => {
     try {
         const userId = req.user.id;
-        const { startDate, endDate, category } = req.query;
+        const { startDate, endDate, category, limit, offset } = req.query;
 
         let expenses;
         if (startDate && endDate) {
             expenses = await expenseRepo.findByDateRange(userId, startDate, endDate);
         } else if (category) {
             expenses = await expenseRepo.findByCategory(userId, category);
+        } else if (limit || offset) {
+            expenses = await expenseRepo.findByFilters({
+                businessId: userId,
+                category,
+                startDate,
+                endDate,
+                limit: parseInt(limit) || 50,
+                offset: parseInt(offset) || 0,
+            });
         } else {
             expenses = await expenseRepo.findByUserId(userId);
         }
@@ -36,8 +48,6 @@ router.get('/', async (req, res) => {
                     total_amount: 0,
                     average_amount: 0,
                     categories_used: 0,
-                    total_paid: 0,
-                    total_outstanding: 0,
                 }
             }
         });
@@ -51,7 +61,9 @@ router.get('/', async (req, res) => {
     }
 });
 
+// =============================================
 // GET /api/expenses/today - Get today's expenses
+// =============================================
 router.get('/today', async (req, res) => {
     try {
         const userId = req.user.id;
@@ -76,7 +88,9 @@ router.get('/today', async (req, res) => {
     }
 });
 
+// =============================================
 // GET /api/expenses/summary - Get expense summary
+// =============================================
 router.get('/summary', async (req, res) => {
     try {
         const userId = req.user.id;
@@ -96,8 +110,6 @@ router.get('/summary', async (req, res) => {
                 total_amount: 0,
                 average_amount: 0,
                 categories_used: 0,
-                total_paid: 0,
-                total_outstanding: 0,
             }
         });
 
@@ -110,18 +122,20 @@ router.get('/summary', async (req, res) => {
     }
 });
 
+// =============================================
 // POST /api/expenses - Record new expense
+// =============================================
 router.post('/', async (req, res) => {
     try {
         const userId = req.user.id;
-        const { category, amount, description, paymentStatus, date, dueDate } = req.body;
+        const { category, amount, description, date } = req.body;
 
         console.log('📉 Recording expense:', { userId, category, amount });
 
-        if (!category || category.length < 2) {
+        if (!category) {
             return res.status(400).json({
                 success: false,
-                message: 'Category must be at least 2 characters'
+                message: 'Category is required'
             });
         }
 
@@ -137,9 +151,7 @@ router.post('/', async (req, res) => {
             category,
             amount,
             description: description || '',
-            paymentStatus: paymentStatus || 'PAID',
             date: date || new Date(),
-            dueDate: dueDate || null,
         });
 
         res.status(201).json({
@@ -157,7 +169,9 @@ router.post('/', async (req, res) => {
     }
 });
 
+// =============================================
 // GET /api/expenses/:id - Get single expense
+// =============================================
 router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
@@ -193,12 +207,14 @@ router.get('/:id', async (req, res) => {
     }
 });
 
+// =============================================
 // PUT /api/expenses/:id - Update expense
+// =============================================
 router.put('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
-        const { category, amount, description, paymentStatus, date, dueDate } = req.body;
+        const { category, amount, description, date } = req.body;
 
         const existing = await expenseRepo.findById(parseInt(id));
         if (!existing) {
@@ -219,9 +235,7 @@ router.put('/:id', async (req, res) => {
         if (category !== undefined) updateData.category = category;
         if (amount !== undefined) updateData.amount = amount;
         if (description !== undefined) updateData.description = description;
-        if (paymentStatus !== undefined) updateData.payment_status = paymentStatus;
         if (date !== undefined) updateData.date = date;
-        if (dueDate !== undefined) updateData.due_date = dueDate;
 
         const updated = await expenseRepo.update(parseInt(id), updateData);
 
@@ -240,7 +254,9 @@ router.put('/:id', async (req, res) => {
     }
 });
 
+// =============================================
 // DELETE /api/expenses/:id - Delete expense
+// =============================================
 router.delete('/:id', async (req, res) => {
     try {
         const { id } = req.params;

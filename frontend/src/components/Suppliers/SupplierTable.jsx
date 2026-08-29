@@ -1,6 +1,6 @@
 // frontend/src/components/Suppliers/SupplierTable.jsx
 
-import { Eye, Edit2, Trash2 } from 'lucide-react';
+import { Eye, Edit2, Trash2, CreditCard } from 'lucide-react';
 
 const SupplierTable = ({ suppliers, onView, onEdit, onDelete }) => {
   if (!suppliers || suppliers.length === 0) {
@@ -30,6 +30,9 @@ const SupplierTable = ({ suppliers, onView, onEdit, onDelete }) => {
                 Email
               </th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-600 dark:text-gray-300">
+                Tax ID
+              </th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-600 dark:text-gray-300">
                 Total Purchases
               </th>
               <th className="px-4 py-3 text-right text-sm font-medium text-gray-600 dark:text-gray-300">
@@ -51,6 +54,9 @@ const SupplierTable = ({ suppliers, onView, onEdit, onDelete }) => {
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
                   {supplier.email || '-'}
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+                  {supplier.taxId || '-'}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
                   ₦{(supplier.metadata?.totalPurchaseAmount || 0).toLocaleString()}

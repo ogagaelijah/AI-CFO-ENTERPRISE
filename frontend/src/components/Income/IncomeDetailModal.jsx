@@ -1,4 +1,5 @@
 // frontend/src/components/Income/IncomeDetailModal.jsx
+
 import { X } from 'lucide-react';
 
 const IncomeDetailModal = ({ isOpen, income, isLoading, onClose }) => {
@@ -41,10 +42,6 @@ const IncomeDetailModal = ({ isOpen, income, isLoading, onClose }) => {
               <div>
                 <p className="text-xs text-gray-500 dark:text-gray-400">Amount</p>
                 <p className="font-bold text-green-600 dark:text-green-400">₦{(income?.amount || 0).toLocaleString()}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">Category</p>
-                <p className="font-medium text-gray-900 dark:text-white">{income?.category || 'Other'}</p>
               </div>
               <div>
                 <p className="text-xs text-gray-500 dark:text-gray-400">Date</p>

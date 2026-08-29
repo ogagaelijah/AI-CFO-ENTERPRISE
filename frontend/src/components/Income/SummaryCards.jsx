@@ -1,11 +1,12 @@
 // frontend/src/components/Income/SummaryCards.jsx
-import { TrendingUp, Calendar, DollarSign, Tag } from 'lucide-react';
+
+import { TrendingUp, DollarSign, Tag, Calendar } from 'lucide-react';
 
 const SummaryCards = ({ summary }) => {
   const cards = [
     { key: 'total_entries', label: 'Total Entries', icon: TrendingUp, value: summary?.total_entries || 0 },
     { key: 'total_amount', label: 'Total Income', icon: DollarSign, value: `₦${(summary?.total_amount || 0).toLocaleString()}`, textColor: 'text-green-600 dark:text-green-400' },
-    { key: 'categories_used', label: 'Categories', icon: Tag, value: summary?.categories_used || 0 },
+    { key: 'sources_used', label: 'Sources', icon: Tag, value: summary?.sources_used || 0 },
     { key: 'average_amount', label: 'Average', icon: Calendar, value: `₦${(summary?.average_amount || 0).toLocaleString()}` },
   ];
 

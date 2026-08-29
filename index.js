@@ -41,6 +41,7 @@ const ExecutiveReportService = require('./src/application/services/reports/Execu
 const SaleRepository = require('./src/infrastructure/database/sqlite/repositories/SaleRepository');
 const PurchaseRepository = require('./src/infrastructure/database/sqlite/repositories/PurchaseRepository');
 const CustomerRepository = require('./src/infrastructure/database/sqlite/repositories/CustomerRepository');
+const PaymentRepository = require('./src/infrastructure/database/sqlite/repositories/PaymentRepository');
 
 const { 
     getMainMenuKeyboard, 
@@ -91,6 +92,7 @@ const creditorRepo = new CreditorRepository();
 const saleRepo = new SaleRepository();
 const purchaseRepo = new PurchaseRepository();
 const customerRepo = new CustomerRepository();
+const paymentRepo = new PaymentRepository();
 
 // P&L Service
 const profitLossService = new ProfitLossService({

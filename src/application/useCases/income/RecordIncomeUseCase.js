@@ -9,16 +9,15 @@ class RecordIncomeUseCase {
         userId,
         source,
         amount,
-        category,
         description = '',
-        paymentStatus = 'PAID',
         date = new Date(),
-        dueDate = null,
     }) {
         // Validate
-        if (!source || source.length < 2) {
-            throw new Error('Source must be at least 2 characters');
+        const validSources = ['COMMISSION', 'INTEREST', 'RENT', 'GRANT', 'GIFT', 'DIVIDEND', 'OTHER'];
+        if (!source || !validSources.includes(source)) {
+            throw new Error(`Source must be one of: ${validSources.join(', ')}`);
         }
+
         if (!amount || amount <= 0) {
             throw new Error('Amount must be greater than 0');
         }
@@ -27,11 +26,8 @@ class RecordIncomeUseCase {
             user_id: userId,
             source: source,
             amount: amount,
-            category: category || 'Other',
             description: description || null,
-            payment_status: paymentStatus,
             date: date instanceof Date ? date.toISOString().split('T')[0] : date,
-            due_date: dueDate,
         };
 
         return await this.incomeRepository.create(incomeData);

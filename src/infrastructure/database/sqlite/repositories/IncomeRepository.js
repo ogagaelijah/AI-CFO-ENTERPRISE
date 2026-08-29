@@ -3,44 +3,23 @@
 const BaseRepository = require('./BaseRepository');
 
 class IncomeRepository extends BaseRepository {
-    constructor() {
-        super('income');
+    constructor(db = null) {
+        super('income', db);
     }
 
     create(incomeData) {
-        // ✅ Build query dynamically to handle missing columns
-        const fields = ['user_id', 'source', 'amount', 'category', 'description'];
-        const values = [
+        const stmt = this.db.prepare(`
+            INSERT INTO income (
+                user_id, source, amount, description, date
+            ) VALUES (?, ?, ?, ?, ?)
+        `);
+        const result = stmt.run(
             incomeData.user_id,
             incomeData.source,
             incomeData.amount,
-            incomeData.category || 'Other',
-            incomeData.description || null
-        ];
-
-        // ✅ Check if payment_status column exists
-        const tableInfo = this.db.prepare('PRAGMA table_info(income)').all();
-        const existingColumns = tableInfo.map(col => col.name);
-
-        // ✅ Add optional fields if they exist in the table
-        if (existingColumns.includes('payment_status') && incomeData.payment_status !== undefined) {
-            fields.push('payment_status');
-            values.push(incomeData.payment_status);
-        }
-        if (existingColumns.includes('date') && incomeData.date !== undefined) {
-            fields.push('date');
-            values.push(incomeData.date);
-        }
-        if (existingColumns.includes('due_date') && incomeData.due_date !== undefined) {
-            fields.push('due_date');
-            values.push(incomeData.due_date);
-        }
-
-        const placeholders = fields.map(() => '?').join(', ');
-        const stmt = this.db.prepare(
-            `INSERT INTO income (${fields.join(', ')}) VALUES (${placeholders})`
+            incomeData.description || null,
+            incomeData.date || new Date().toISOString().split('T')[0]
         );
-        const result = stmt.run(...values);
         return this.findById(result.lastInsertRowid);
     }
 
@@ -50,65 +29,81 @@ class IncomeRepository extends BaseRepository {
 
     findByUserId(userId) {
         return this.db.prepare(
-            'SELECT * FROM income WHERE user_id = ? ORDER BY created_at DESC'
+            'SELECT * FROM income WHERE user_id = ? ORDER BY date DESC'
         ).all(userId);
+    }
+
+    findByBusinessId(businessId) {
+        return this.db.prepare(
+            'SELECT * FROM income WHERE business_id = ? ORDER BY date DESC'
+        ).all(businessId);
     }
 
     findByDateRange(userId, startDate, endDate) {
         return this.db.prepare(`
             SELECT * FROM income 
-            WHERE user_id = ? AND created_at BETWEEN ? AND ? 
-            ORDER BY created_at DESC
+            WHERE user_id = ? AND date BETWEEN ? AND ? 
+            ORDER BY date DESC
         `).all(userId, startDate, endDate);
+    }
+
+    findBySource(userId, source) {
+        return this.db.prepare(`
+            SELECT * FROM income 
+            WHERE user_id = ? AND source = ? 
+            ORDER BY date DESC
+        `).all(userId, source);
+    }
+
+    findByFilters({ businessId, source, startDate, endDate, limit = 50, offset = 0 }) {
+        let sql = 'SELECT * FROM income WHERE user_id = ?';
+        const params = [businessId];
+
+        if (source) {
+            sql += ' AND source = ?';
+            params.push(source);
+        }
+        if (startDate) {
+            sql += ' AND date >= ?';
+            params.push(startDate);
+        }
+        if (endDate) {
+            sql += ' AND date <= ?';
+            params.push(endDate);
+        }
+
+        sql += ' ORDER BY date DESC LIMIT ? OFFSET ?';
+        params.push(limit, offset);
+
+        return this.db.prepare(sql).all(...params);
     }
 
     getTodayIncome(userId) {
         const today = new Date().toISOString().split('T')[0];
         return this.db.prepare(`
             SELECT * FROM income 
-            WHERE user_id = ? AND DATE(created_at) = ? 
-            ORDER BY created_at DESC
+            WHERE user_id = ? AND date = ? 
+            ORDER BY date DESC
         `).all(userId, today);
     }
 
     getIncomeSummary(userId) {
-        // ✅ Check if payment_status column exists
-        const tableInfo = this.db.prepare('PRAGMA table_info(income)').all();
-        const existingColumns = tableInfo.map(col => col.name);
-
-        let sql = `
+        const result = this.db.prepare(`
             SELECT 
                 COUNT(*) as total_entries,
                 COALESCE(SUM(amount), 0) as total_amount,
                 COALESCE(AVG(amount), 0) as average_amount,
-                COUNT(DISTINCT category) as categories_used
-        `;
+                COUNT(DISTINCT source) as sources_used
+            FROM income 
+            WHERE user_id = ?
+        `).get(userId);
 
-        // ✅ Only add payment_status fields if the column exists
-        if (existingColumns.includes('payment_status')) {
-            sql += `,
-                COALESCE(SUM(CASE WHEN payment_status = 'PAID' THEN amount ELSE 0 END), 0) as total_paid,
-                COALESCE(SUM(CASE WHEN payment_status IN ('UNPAID', 'PARTIAL') THEN amount ELSE 0 END), 0) as total_outstanding
-            `;
-        } else {
-            // Fallback if payment_status doesn't exist
-            sql += `,
-                0 as total_paid,
-                0 as total_outstanding
-            `;
-        }
-
-        sql += ` FROM income WHERE user_id = ?`;
-
-        return this.db.prepare(sql).get(userId);
-    }
-
-    findBySource(userId, source) {
-        return this.db.prepare(`
-            SELECT * FROM income 
-            WHERE user_id = ? AND source LIKE ? 
-            ORDER BY created_at DESC
-        `).all(userId, `%${source}%`);
+        return {
+            total_entries: result?.total_entries || 0,
+            total_amount: result?.total_amount || 0,
+            average_amount: result?.average_amount || 0,
+            sources_used: result?.sources_used || 0,
+        };
     }
 
     getMonthlySummary(userId, year, month) {
@@ -118,10 +113,10 @@ class IncomeRepository extends BaseRepository {
             SELECT 
                 COUNT(*) as total_entries,
                 COALESCE(SUM(amount), 0) as total_amount,
-                COUNT(DISTINCT category) as categories_used
+                COUNT(DISTINCT source) as sources_used
             FROM income 
             WHERE user_id = ? 
-            AND created_at BETWEEN ? AND ?
+            AND date BETWEEN ? AND ?
         `).get(userId, startDate, endDate);
     }
 
@@ -143,25 +138,13 @@ class IncomeRepository extends BaseRepository {
             fields.push('amount = ?');
             values.push(data.amount);
         }
-        if (data.category !== undefined) {
-            fields.push('category = ?');
-            values.push(data.category);
-        }
         if (data.description !== undefined) {
             fields.push('description = ?');
             values.push(data.description);
         }
-        if (data.payment_status !== undefined) {
-            fields.push('payment_status = ?');
-            values.push(data.payment_status);
-        }
         if (data.date !== undefined) {
             fields.push('date = ?');
             values.push(data.date);
-        }
-        if (data.due_date !== undefined) {
-            fields.push('due_date = ?');
-            values.push(data.due_date);
         }
 
         fields.push('updated_at = CURRENT_TIMESTAMP');
@@ -178,7 +161,7 @@ class IncomeRepository extends BaseRepository {
         const result = stmt.run(...values);
 
         if (result.changes === 0) {
-            throw new Error('Income not found or no changes made');
+            throw new Error('Income record not found or no changes made');
         }
 
         return this.findById(id);

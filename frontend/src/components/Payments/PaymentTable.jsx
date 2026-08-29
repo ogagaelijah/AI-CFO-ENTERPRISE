@@ -1,28 +1,37 @@
-// frontend/src/components/Customers/CustomerTable.jsx
+// frontend/src/components/Payments/PaymentTable.jsx
 
-import { Eye, Edit2, Trash2, CreditCard } from 'lucide-react';
+import { Eye, Trash2 } from 'lucide-react';
 
-const CustomerTable = ({ customers, onView, onEdit, onDelete }) => {
-  if (!customers || customers.length === 0) {
+const PaymentTable = ({ payments, onView, onDelete }) => {
+  if (!payments || payments.length === 0) {
     return (
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-8 text-center">
-        <p className="text-gray-500 dark:text-gray-400">No customers found</p>
+        <p className="text-gray-500 dark:text-gray-400">No payments recorded yet</p>
         <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
-          Click "Add Customer" to create your first customer.
+          Click "Record Payment" to create your first payment.
         </p>
       </div>
     );
   }
 
+  const formatDate = (date) => {
+    if (!date) return 'N/A';
+    return new Date(date).toLocaleDateString('en-NG', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+  };
+
   const getTypeBadge = (type) => {
-    const types = {
-      CUSTOMER: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400',
-      PATIENT: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400',
-      CLIENT: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400',
-      TENANT: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400',
-      STUDENT: 'bg-pink-100 dark:bg-pink-900/30 text-pink-700 dark:text-pink-400',
-    };
-    return types[type] || types.CUSTOMER;
+    if (type === 'IN') {
+      return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400';
+    }
+    return 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400';
+  };
+
+  const getTypeIcon = (type) => {
+    return type === 'IN' ? '↓' : '↑';
   };
 
   return (
@@ -32,19 +41,19 @@ const CustomerTable = ({ customers, onView, onEdit, onDelete }) => {
           <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
             <tr>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-600 dark:text-gray-300">
-                Name
-              </th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-600 dark:text-gray-300">
-                Phone
-              </th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-600 dark:text-gray-300">
-                Email
-              </th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-600 dark:text-gray-300">
-                Tax ID
-              </th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-600 dark:text-gray-300">
                 Type
+              </th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-600 dark:text-gray-300">
+                Reference
+              </th>
+              <th className="px-4 py-3 text-right text-sm font-medium text-gray-600 dark:text-gray-300">
+                Amount
+              </th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-600 dark:text-gray-300">
+                Method
+              </th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-600 dark:text-gray-300">
+                Date
               </th>
               <th className="px-4 py-3 text-right text-sm font-medium text-gray-600 dark:text-gray-300">
                 Actions
@@ -52,46 +61,39 @@ const CustomerTable = ({ customers, onView, onEdit, onDelete }) => {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-            {customers.map((customer) => (
+            {payments.map((payment) => (
               <tr
-                key={customer.id}
+                key={payment.id}
                 className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition"
               >
-                <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
-                  {customer.name}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
-                  {customer.phone || '-'}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
-                  {customer.email || '-'}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
-                  {customer.taxId || '-'}
-                </td>
-                <td className="px-4 py-3 text-sm">
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getTypeBadge(customer.type)}`}>
-                    {customer.type}
+                <td className="px-4 py-3">
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getTypeBadge(payment.type)}`}>
+                    {getTypeIcon(payment.type)} {payment.type}
                   </span>
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+                  {payment.referenceType || 'N/A'} #{payment.referenceId || 'N/A'}
+                </td>
+                <td className={`px-4 py-3 text-right text-sm font-medium ${payment.type === 'IN' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                  {payment.type === 'IN' ? '+' : '-'} ₦{(payment.amount || 0).toLocaleString()}
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+                  {payment.paymentMethod || 'CASH'}
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+                  {formatDate(payment.paymentDate)}
                 </td>
                 <td className="px-4 py-3 text-right">
                   <div className="flex items-center justify-end space-x-2">
                     <button
-                      onClick={() => onView(customer.id)}
+                      onClick={() => onView(payment.id)}
                       className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition"
                       title="View"
                     >
                       <Eye className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => onEdit(customer)}
-                      className="p-1.5 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition"
-                      title="Edit"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => onDelete(customer)}
+                      onClick={() => onDelete(payment)}
                       className="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition"
                       title="Delete"
                     >
@@ -108,4 +110,4 @@ const CustomerTable = ({ customers, onView, onEdit, onDelete }) => {
   );
 };
 
-export default CustomerTable;
+export default PaymentTable;

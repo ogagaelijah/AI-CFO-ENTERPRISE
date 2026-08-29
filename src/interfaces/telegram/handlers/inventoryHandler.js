@@ -3,28 +3,23 @@
 const { getSessionManager } = require('../sessionManager');
 const UserRepository = require('../../../infrastructure/database/sqlite/repositories/UserRepository');
 const InventoryRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryRepository');
-const AddStockUseCase = require('../../../application/useCases/inventory/AddStockUseCase');
 const { getInventoryKeyboard, getBackKeyboard } = require('../keyboards/dashboardKeyboard');
 const logger = require('../../../shared/utils/logger');
 
 const sessionManager = getSessionManager();
 const userRepo = new UserRepository();
 const inventoryRepo = new InventoryRepository();
-const addStockUseCase = new AddStockUseCase(inventoryRepo);
 
 const LOW_STOCK_THRESHOLD = 5;
 
 // Helper function to get text from either message or callback query
 function getTextFromContext(ctx) {
-    // Check for text message
     if (ctx.message && ctx.message.text) {
         return ctx.message.text.trim();
     }
-    // Check for callback query
     if (ctx.callbackQuery && ctx.callbackQuery.data) {
         return ctx.callbackQuery.data.trim();
     }
-    // Check for update callback query
     if (ctx.update && ctx.update.callback_query && ctx.update.callback_query.data) {
         return ctx.update.callback_query.data.trim();
     }
@@ -48,7 +43,6 @@ async function inventoryHandler(ctx) {
             return;
         }
 
-        // Check if this is a button click (callback query)
         const isButtonClick = ctx.callbackQuery || (ctx.update && ctx.update.callback_query);
         if (isButtonClick) {
             console.log('🔍 [5] Button click detected — clearing session');
@@ -123,7 +117,7 @@ async function inventoryHandler(ctx) {
 }
 
 // =============================================
-// SHOW INVENTORY MENU (UPDATED with profit & margin)
+// SHOW INVENTORY MENU
 // =============================================
 async function showInventoryMenu(ctx, telegramId, user) {
     try {
@@ -138,7 +132,6 @@ async function showInventoryMenu(ctx, telegramId, user) {
         const summary = await inventoryRepo.getSummary(user.id);
         console.log('🔍 [menu] Summary:', summary);
 
-        // Calculate margin
         const margin = summary.total_cost_value > 0 
             ? ((summary.total_profit / summary.total_cost_value) * 100).toFixed(1) 
             : 0;
@@ -193,7 +186,7 @@ async function showInventoryMenu(ctx, telegramId, user) {
 }
 
 // =============================================
-// ADD ITEM FLOW
+// ADD ITEM FLOW (Using repository directly)
 // =============================================
 async function handleAddItem(ctx, telegramId, user) {
     const text = getTextFromContext(ctx);
@@ -319,7 +312,6 @@ async function handleEditItem(ctx, telegramId, user) {
     const text = getTextFromContext(ctx);
     console.log('🔍 [editItem] Text received:', text);
 
-    // If it's a menu button (starts with "menu_"), show the menu instead
     if (!text || text.startsWith('menu_')) {
         await showInventoryMenu(ctx, telegramId, user);
         return;
@@ -560,12 +552,11 @@ async function handleAdjustValue(ctx, telegramId, user) {
 }
 
 // =============================================
-// CONFIRMATION HANDLER (FIXED)
+// CONFIRMATION HANDLER
 // =============================================
 async function handleConfirmation(ctx, telegramId, user) {
     const session = sessionManager.getSession(telegramId);
     
-    // Get text from context - handle both message and callback query
     let text = null;
     if (ctx.message && ctx.message.text) {
         text = ctx.message.text.trim();
@@ -586,7 +577,6 @@ async function handleConfirmation(ctx, telegramId, user) {
         return;
     }
 
-    // Normalize text for comparison
     const normalizedText = text ? text.toUpperCase() : '';
     console.log('🔍 [confirmation] Normalized text:', normalizedText);
 
@@ -596,12 +586,15 @@ async function handleConfirmation(ctx, telegramId, user) {
 
         try {
             if (pendingAction === 'add_stock') {
-                await addStockUseCase.execute({
-                    userId: user.id,
-                    itemName: session.data.itemName,
+                // ✅ Create inventory item directly using repository
+                const newItem = await inventoryRepo.create({
+                    user_id: user.id,
+                    item_name: session.data.itemName,
                     quantity: session.data.quantity,
-                    costPrice: session.data.costPrice,
-                    sellingPrice: session.data.sellingPrice,
+                    cost_price: session.data.costPrice,
+                    selling_price: session.data.sellingPrice,
+                    last_purchase_cost: session.data.costPrice,
+                    reorder_level: 5,
                 });
 
                 sessionManager.clearSession(telegramId);
@@ -773,7 +766,7 @@ async function handleInventoryDeleteConfirm(ctx, telegramId, user) {
 }
 
 // =============================================
-// LIST INVENTORY (UPDATED with correct profit)
+// LIST INVENTORY
 // =============================================
 async function listInventory(ctx) {
     const telegramId = ctx.from.id;
@@ -803,7 +796,6 @@ async function listInventory(ctx) {
         const costPrice = item.cost_price || 0;
         const sellingPrice = item.selling_price || 0;
         
-        // Calculate per item totals
         const itemCost = quantity * costPrice;
         const itemSell = quantity * sellingPrice;
         const itemProfit = itemSell - itemCost;
@@ -812,10 +804,7 @@ async function listInventory(ctx) {
         totalSellingValue += itemSell;
         totalProfitValue += itemProfit;
 
-        // Status indicator
         const status = quantity <= 0 ? '🚫' : quantity <= LOW_STOCK_THRESHOLD ? '⚠️' : '✅';
-        
-        // Per-unit profit and margin
         const unitProfit = sellingPrice - costPrice;
         const profitMargin = costPrice > 0 ? ((unitProfit / costPrice) * 100).toFixed(1) : 0;
 
@@ -824,7 +813,6 @@ async function listInventory(ctx) {
         message += `   💰 Cost: ₦${costPrice.toLocaleString()}\n`;
         message += `   💲 Sell: ₦${sellingPrice.toLocaleString()}\n`;
         
-        // Only show profit if selling price > 0
         if (sellingPrice > 0 && unitProfit > 0) {
             message += `   📈 Profit: ₦${unitProfit.toLocaleString()} (${profitMargin}% margin) per unit\n`;
         } else if (sellingPrice > 0 && unitProfit <= 0) {
@@ -833,7 +821,6 @@ async function listInventory(ctx) {
         message += `   🆔 ID: ${item.id}\n\n`;
     }
 
-    // Calculate total margin
     const totalMargin = totalCostValue > 0 ? ((totalProfitValue / totalCostValue) * 100).toFixed(1) : 0;
 
     message += `📊 **Total Value**\n`;

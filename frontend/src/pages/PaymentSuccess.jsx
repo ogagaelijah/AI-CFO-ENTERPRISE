@@ -1,10 +1,10 @@
 // frontend/src/pages/PaymentSuccess.jsx
+
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
-import { CheckCircle, XCircle, Loader } from 'lucide-react';
-import { paymentApi } from '../services/paymentService';
+import { CheckCircle, XCircle, Loader, ArrowRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { authApi } from '../services/api';
+import api from '../services/api';
 
 const PaymentSuccess = () => {
   const [searchParams] = useSearchParams();
@@ -28,17 +28,17 @@ const PaymentSuccess = () => {
       console.log('🔍 Verifying payment reference:', reference);
 
       try {
-        const response = await paymentApi.verify(reference);
+        const response = await api.get(`/payment/verify/${reference}`);
         console.log('🔍 Verification response:', response.data);
 
         if (response.data.success) {
           setSuccess(true);
           setPlan(response.data.data?.plan || 'Pro');
           
-          // ✅ Refresh user data from backend
+          // Refresh user data from backend
           console.log('🔄 Refreshing user data...');
           try {
-            const userResponse = await authApi.getCurrentUser();
+            const userResponse = await api.get('/auth/me');
             if (userResponse.data?.user) {
               setUser(userResponse.data.user);
               console.log('✅ User data refreshed:', userResponse.data.user);
@@ -47,7 +47,7 @@ const PaymentSuccess = () => {
             console.error('Failed to refresh user data:', refreshError);
           }
           
-          // ✅ Wait 1 second then redirect to dashboard
+          // Redirect to dashboard after 3 seconds
           setTimeout(() => {
             navigate('/dashboard');
           }, 3000);
@@ -57,7 +57,7 @@ const PaymentSuccess = () => {
           setErrorMessage(response.data.message || 'Payment verification failed');
         }
       } catch (error) {
-        console.error('Verification error:', error);
+        console.error('❌ Verification error:', error);
         setSuccess(false);
         setErrorMessage(error.response?.data?.message || 'Payment verification failed. Please contact support.');
       } finally {
@@ -66,14 +66,15 @@ const PaymentSuccess = () => {
     };
 
     verifyPayment();
-  }, [reference]);
+  }, [reference, navigate, setUser]);
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-slate-900">
         <div className="text-center">
           <Loader className="w-12 h-12 text-primary-600 animate-spin mx-auto" />
-          <p className="mt-4 text-gray-600 dark:text-gray-400">Verifying payment...</p>
+          <p className="mt-4 text-gray-600 dark:text-gray-400">Verifying your payment...</p>
+          <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">Please wait while we confirm your transaction</p>
         </div>
       </div>
     );
@@ -89,7 +90,7 @@ const PaymentSuccess = () => {
             </div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Payment Successful! 🎉</h1>
             <p className="text-gray-600 dark:text-gray-400 mt-2">
-              Your <span className="font-semibold text-primary-600 dark:text-gold-400">{plan}</span> plan has been activated.
+              Your <span className="font-semibold text-primary-600 dark:text-gold-400 capitalize">{plan}</span> plan has been activated.
             </p>
             <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">
               Redirecting you to the dashboard...
@@ -100,19 +101,19 @@ const PaymentSuccess = () => {
             <div className="mt-6 space-y-3">
               <Link
                 to="/dashboard"
-                className="block w-full px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium transition"
+                className="w-full px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium transition flex items-center justify-center gap-2"
                 onClick={() => {
-                  // Force refresh user data on click
-                  authApi.getCurrentUser().then(res => {
+                  api.get('/auth/me').then(res => {
                     if (res.data?.user) setUser(res.data.user);
                   });
                 }}
               >
                 Go to Dashboard
+                <ArrowRight className="w-4 h-4" />
               </Link>
               <Link
                 to="/subscription"
-                className="block w-full px-6 py-3 bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 dark:hover:bg-slate-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium transition"
+                className="w-full px-6 py-3 bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 dark:hover:bg-slate-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium transition block text-center"
               >
                 View Subscription
               </Link>
@@ -133,13 +134,13 @@ const PaymentSuccess = () => {
             <div className="mt-6 space-y-3">
               <Link
                 to="/subscription"
-                className="block w-full px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium transition"
+                className="w-full px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium transition block text-center"
               >
                 Try Again
               </Link>
               <Link
                 to="/dashboard"
-                className="block w-full px-6 py-3 bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 dark:hover:bg-slate-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium transition"
+                className="w-full px-6 py-3 bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 dark:hover:bg-slate-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium transition block text-center"
               >
                 Go to Dashboard
               </Link>

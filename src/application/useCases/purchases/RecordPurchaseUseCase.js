@@ -8,6 +8,7 @@ class RecordPurchaseUseCase {
         inventoryTransactionRepository,
         creditorRepository,
         supplierRepository,
+        paymentRepository = null,
     }) {
         this.purchaseRepository = purchaseRepository;
         this.transactionRepository = transactionRepository;
@@ -15,6 +16,7 @@ class RecordPurchaseUseCase {
         this.inventoryTransactionRepository = inventoryTransactionRepository;
         this.creditorRepository = creditorRepository;
         this.supplierRepository = supplierRepository;
+        this.paymentRepository = paymentRepository;
     }
 
     async execute({
@@ -183,6 +185,26 @@ class RecordPurchaseUseCase {
                 }
             } catch (error) {
                 console.error('❌ Failed to update supplier metadata:', error.message);
+            }
+        }
+
+        // ✅ CREATE PAYMENT RECORD IF PAID OR PARTIAL
+        if (this.paymentRepository && (paymentStatus === 'PAID' || paymentStatus === 'PARTIAL')) {
+            const paidAmount = amountPaid || (paymentStatus === 'PAID' ? finalTotalCost : 0);
+            if (paidAmount > 0) {
+                const paymentDateObj = purchaseDate instanceof Date ? purchaseDate : new Date();
+                await this.paymentRepository.create({
+                    businessId: businessId,
+                    userId: userId,
+                    type: 'MADE',
+                    amount: paidAmount,
+                    paymentDate: paymentDateObj,
+                    referenceType: 'PURCHASE',
+                    referenceId: purchase.id,
+                    paymentMethod: 'CASH',
+                    notes: `Payment for purchase ${purchase.id}`,
+                });
+                console.log(`✅ Payment record created for purchase ${purchase.id}: ₦${paidAmount}`);
             }
         }
 

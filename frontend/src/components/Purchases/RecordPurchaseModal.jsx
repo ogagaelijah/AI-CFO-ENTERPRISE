@@ -145,10 +145,10 @@ const RecordPurchaseModal = ({ isOpen, form, setForm, onSubmit, onClose, error }
             </div>
 
             <div className="grid grid-cols-12 gap-2 mb-1 text-xs text-gray-500 dark:text-gray-400">
-              <div className="col-span-4">Item Name</div>
+              <div className="col-span-5">Item Name</div>
               <div className="col-span-3 text-center">Qty</div>
               <div className="col-span-3 text-center">Unit Cost</div>
-              <div className="col-span-2 text-center">Total</div>
+              <div className="col-span-1 text-center">Total</div>
             </div>
 
             {(form.items || []).map((item, index) => {
@@ -159,7 +159,7 @@ const RecordPurchaseModal = ({ isOpen, form, setForm, onSubmit, onClose, error }
                     type="text"
                     value={item.name}
                     onChange={(e) => handleItemChange(index, 'name', e.target.value)}
-                    className="col-span-4 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+                    className="col-span-5 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
                     placeholder="Item name"
                     required
                   />
@@ -181,7 +181,7 @@ const RecordPurchaseModal = ({ isOpen, form, setForm, onSubmit, onClose, error }
                     step="0.01"
                     required
                   />
-                  <div className="col-span-2 text-center text-sm font-medium text-blue-600 dark:text-blue-400">
+                  <div className="col-span-1 text-center text-sm font-medium text-blue-600 dark:text-blue-400">
                     ₦{itemTotal.toFixed(0)}
                   </div>
                   <div className="col-span-1 text-center">

@@ -10,14 +10,14 @@ class RecordExpenseUseCase {
         category,
         amount,
         description = '',
-        paymentStatus = 'PAID',
         date = new Date(),
-        dueDate = null,
     }) {
         // Validate
-        if (!category || category.length < 2) {
-            throw new Error('Category must be at least 2 characters');
+        const validCategories = ['SALARY', 'RENT', 'TRANSPORT', 'UTILITIES', 'MARKETING', 'INSURANCE', 'OTHER'];
+        if (!category || !validCategories.includes(category)) {
+            throw new Error(`Category must be one of: ${validCategories.join(', ')}`);
         }
+
         if (!amount || amount <= 0) {
             throw new Error('Amount must be greater than 0');
         }
@@ -27,9 +27,7 @@ class RecordExpenseUseCase {
             category: category,
             amount: amount,
             description: description || null,
-            payment_status: paymentStatus,
             date: date instanceof Date ? date.toISOString().split('T')[0] : date,
-            due_date: dueDate,
         };
 
         return await this.expenseRepository.create(expenseData);

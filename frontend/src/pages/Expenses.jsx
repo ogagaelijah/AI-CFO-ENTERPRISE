@@ -1,4 +1,5 @@
 // frontend/src/pages/Expenses.jsx
+
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
@@ -33,7 +34,7 @@ const Expenses = () => {
   const [success, setSuccess] = useState('');
 
   const [formData, setFormData] = useState({
-    category: 'Other',
+    category: 'OTHER',
     amount: 0,
     description: '',
     date: new Date().toISOString().split('T')[0],
@@ -127,7 +128,7 @@ const Expenses = () => {
         setShowConfirmModal(false);
         setConfirmData(null);
         setFormData({
-          category: 'Other',
+          category: 'OTHER',
           amount: 0,
           description: '',
           date: new Date().toISOString().split('T')[0],

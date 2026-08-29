@@ -9,7 +9,7 @@ import RecordPurchaseModal from '../components/Purchases/RecordPurchaseModal';
 import ConfirmModal from '../components/Purchases/ConfirmModal';
 import PurchaseDetailModal from '../components/Purchases/PurchaseDetailModal';
 import EditPurchaseModal from '../components/Purchases/EditPurchaseModal';
-import PartialPaymentModal from '../components/Purchases/PartialPaymentModal'; // ✅ NEW
+import PartialPaymentModal from '../components/Purchases/PartialPaymentModal';
 
 const Purchases = () => {
   const { user } = useAuth();
@@ -38,7 +38,7 @@ const Purchases = () => {
 
   const [formData, setFormData] = useState({
     supplierName: '',
-    items: [{ name: '', quantity: 1, unitCost: 0, sellingPrice: 0 }],
+    items: [{ name: '', quantity: 1, unitCost: 0 }], // ✅ REMOVED: sellingPrice
     paymentStatus: 'UNPAID',
     purchaseDate: new Date().toISOString().split('T')[0],
     notes: '',
@@ -116,10 +116,7 @@ const Purchases = () => {
         setError(`Unit cost for "${item.name || 'item'}" must be greater than 0`);
         return;
       }
-      if (item.sellingPrice <= 0) {
-        setError(`Selling price for "${item.name || 'item'}" must be greater than 0`);
-        return;
-      }
+      // ✅ REMOVED: selling price validation
     }
 
     // ✅ If PARTIAL, show partial payment modal
@@ -173,7 +170,7 @@ const Purchases = () => {
         name: item.name.trim(),
         quantity: parseInt(item.quantity) || 1,
         unitCost: parseFloat(item.unitCost) || 0,
-        sellingPrice: parseFloat(item.sellingPrice) || 0,
+        // ✅ REMOVED: sellingPrice
       }));
 
       const totalCost = items.reduce((sum, item) => sum + (item.quantity * item.unitCost), 0);
@@ -200,7 +197,7 @@ const Purchases = () => {
         setPartialAmount('');
         setFormData({
           supplierName: '',
-          items: [{ name: '', quantity: 1, unitCost: 0, sellingPrice: 0 }],
+          items: [{ name: '', quantity: 1, unitCost: 0 }], // ✅ REMOVED: sellingPrice
           paymentStatus: 'UNPAID',
           purchaseDate: new Date().toISOString().split('T')[0],
           notes: '',

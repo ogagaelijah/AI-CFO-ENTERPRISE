@@ -10,6 +10,7 @@ const RecordCustomerModal = ({ isOpen, onSubmit, onClose, error, setError }) => 
     email: '',
     address: '',
     type: 'CUSTOMER',
+    taxId: '',
     notes: '',
   });
   const [step, setStep] = useState(1);
@@ -50,6 +51,7 @@ const RecordCustomerModal = ({ isOpen, onSubmit, onClose, error, setError }) => 
         email: '',
         address: '',
         type: 'CUSTOMER',
+        taxId: '',
         notes: '',
       });
       setStep(1);
@@ -67,6 +69,7 @@ const RecordCustomerModal = ({ isOpen, onSubmit, onClose, error, setError }) => 
       email: '',
       address: '',
       type: 'CUSTOMER',
+      taxId: '',
       notes: '',
     });
     setStep(1);
@@ -161,6 +164,19 @@ const RecordCustomerModal = ({ isOpen, onSubmit, onClose, error, setError }) => 
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Tax ID / TIN
+              </label>
+              <input
+                type="text"
+                name="taxId"
+                value={formData.taxId}
+                onChange={handleChange}
+                placeholder="Enter tax ID (optional)"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Notes
               </label>
               <textarea
@@ -201,6 +217,10 @@ const RecordCustomerModal = ({ isOpen, onSubmit, onClose, error, setError }) => 
                 <p>
                   <span className="font-medium text-gray-700 dark:text-gray-300">Address:</span>{' '}
                   <span className="text-gray-900 dark:text-white">{formData.address || 'Not set'}</span>
+                </p>
+                <p>
+                  <span className="font-medium text-gray-700 dark:text-gray-300">Tax ID:</span>{' '}
+                  <span className="text-gray-900 dark:text-white">{formData.taxId || 'Not set'}</span>
                 </p>
                 {formData.notes && (
                   <p>

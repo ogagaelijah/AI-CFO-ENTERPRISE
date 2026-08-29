@@ -1,4 +1,5 @@
 // frontend/src/components/Expenses/ConfirmModal.jsx
+
 import { X } from 'lucide-react';
 
 const ConfirmModal = ({ isOpen, data, onConfirm, onCancel }) => {

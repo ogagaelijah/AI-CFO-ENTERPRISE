@@ -2,22 +2,10 @@
 const express = require('express');
 const router = express.Router();
 const InventoryRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryRepository');
-const AddStockUseCase = require('../../../application/useCases/inventory/AddStockUseCase');
-const AdjustStockUseCase = require('../../../application/useCases/inventory/AdjustStockUseCase');
-const ReleaseStockUseCase = require('../../../application/useCases/inventory/ReleaseStockUseCase');
-const GetLowStockAlertUseCase = require('../../../application/useCases/inventory/GetLowStockAlertUseCase');
-const GetInventoryValueUseCase = require('../../../application/useCases/inventory/GetInventoryValueUseCase');
 const { authMiddleware } = require('../middleware/authMiddleware');
 
 // ✅ Initialize repository
 const inventoryRepo = new InventoryRepository();
-
-// ✅ Initialize use cases - PASS DIRECTLY (not as object)
-const addStockUseCase = new AddStockUseCase(inventoryRepo);
-const adjustStockUseCase = new AdjustStockUseCase(inventoryRepo);
-const releaseStockUseCase = new ReleaseStockUseCase(inventoryRepo);
-const getLowStockAlertUseCase = new GetLowStockAlertUseCase({ inventoryRepository: inventoryRepo });
-const getInventoryValueUseCase = new GetInventoryValueUseCase({ inventoryRepository: inventoryRepo });
 
 // All routes require authentication
 router.use(authMiddleware);
@@ -40,19 +28,11 @@ router.get('/', async (req, res) => {
         }
 
         const summary = await inventoryRepo.getSummary(userId);
-        const margin = summary.total_cost_value > 0 
-            ? ((summary.total_profit / summary.total_cost_value) * 100) 
-            : 0;
 
         res.json({
             success: true,
-            data: {
-                items,
-                summary: {
-                    ...summary,
-                    margin: parseFloat(margin.toFixed(1))
-                }
-            }
+            data: items,
+            summary: summary
         });
 
     } catch (error) {
@@ -102,15 +82,12 @@ router.get('/:id', async (req, res) => {
 });
 
 // =============================================
-// POST /api/inventory - Add new inventory item
+// POST /api/inventory - Add new inventory item (Add Stock)
 // =============================================
 router.post('/', async (req, res) => {
     try {
         const userId = req.user.id;
         const { itemName, quantity, costPrice, sellingPrice, reorderLevel = 5 } = req.body;
-
-        console.log('📦 Adding inventory - User:', userId);
-        console.log('📦 Item data:', { itemName, quantity, costPrice, sellingPrice });
 
         // Validate
         if (!itemName || itemName.length < 2) {
@@ -141,10 +118,8 @@ router.post('/', async (req, res) => {
             });
         }
 
-        // ✅ Check if item already exists using the repository directly
+        // Check if item already exists
         const existing = await inventoryRepo.findByNameIgnoreCase(userId, itemName);
-        console.log('📦 Existing item:', existing);
-
         if (existing) {
             return res.status(400).json({
                 success: false,
@@ -153,25 +128,25 @@ router.post('/', async (req, res) => {
             });
         }
 
-        // ✅ Execute use case
-        const result = await addStockUseCase.execute({
-            userId,
-            itemName,
-            quantity,
-            costPrice,
-            sellingPrice,
-            reorderLevel
+        // Create new inventory item
+        const newItem = await inventoryRepo.create({
+            user_id: userId,
+            item_name: itemName,
+            quantity: quantity,
+            cost_price: costPrice,
+            selling_price: sellingPrice,
+            last_purchase_cost: costPrice,
+            reorder_level: reorderLevel
         });
 
         res.status(201).json({
             success: true,
             message: 'Stock added successfully',
-            data: result
+            data: newItem
         });
 
     } catch (error) {
         console.error('❌ Error adding inventory:', error);
-        console.error('❌ Stack:', error.stack);
         res.status(500).json({
             success: false,
             message: error.message || 'Failed to add inventory item'
@@ -180,7 +155,7 @@ router.post('/', async (req, res) => {
 });
 
 // =============================================
-// PUT /api/inventory/:id - Update inventory item
+// PUT /api/inventory/:id - Update inventory item (Edit)
 // =============================================
 router.put('/:id', async (req, res) => {
     try {
@@ -233,19 +208,19 @@ router.patch('/:id/stock', async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
-        const { action, quantity } = req.body;
+        const { adjustment, reason } = req.body;
 
-        if (!['add', 'remove', 'set'].includes(action)) {
+        if (adjustment === undefined || adjustment === null) {
             return res.status(400).json({
                 success: false,
-                message: 'Action must be "add", "remove", or "set"'
+                message: 'Adjustment amount is required'
             });
         }
 
-        if (!quantity || quantity <= 0) {
+        if (adjustment === 0) {
             return res.status(400).json({
                 success: false,
-                message: 'Quantity must be greater than 0'
+                message: 'Adjustment cannot be zero'
             });
         }
 
@@ -264,23 +239,29 @@ router.patch('/:id/stock', async (req, res) => {
             });
         }
 
-        let result;
-        switch (action) {
-            case 'add':
-                result = await inventoryRepo.addStock(id, quantity);
-                break;
-            case 'remove':
-                result = await inventoryRepo.reduceStock(id, quantity);
-                break;
-            case 'set':
-                result = await inventoryRepo.update(id, { quantity });
-                break;
+        const currentQuantity = existing.quantity || 0;
+        const newQuantity = currentQuantity + adjustment;
+
+        if (newQuantity < 0) {
+            return res.status(400).json({
+                success: false,
+                message: `Cannot adjust stock. Current quantity: ${currentQuantity}, Adjustment: ${adjustment} would result in negative stock.`
+            });
         }
+
+        const updated = await inventoryRepo.update(id, {
+            quantity: newQuantity
+        });
 
         res.json({
             success: true,
-            message: `Stock ${action}ed successfully`,
-            data: result
+            message: `Stock adjusted by ${adjustment} (${adjustment > 0 ? 'added' : 'removed'})`,
+            data: {
+                previousQuantity: currentQuantity,
+                newQuantity: newQuantity,
+                adjustment: adjustment,
+                item: updated
+            }
         });
 
     } catch (error) {
@@ -339,16 +320,10 @@ router.get('/summary', async (req, res) => {
         const userId = req.user.id;
 
         const summary = await inventoryRepo.getSummary(userId);
-        const margin = summary.total_cost_value > 0 
-            ? ((summary.total_profit / summary.total_cost_value) * 100) 
-            : 0;
 
         res.json({
             success: true,
-            data: {
-                ...summary,
-                margin: parseFloat(margin.toFixed(1))
-            }
+            data: summary
         });
 
     } catch (error) {
@@ -384,29 +359,6 @@ router.get('/low-stock', async (req, res) => {
         res.status(500).json({
             success: false,
             message: error.message || 'Failed to fetch low stock items'
-        });
-    }
-});
-
-// =============================================
-// GET /api/inventory/value - Get inventory value
-// =============================================
-router.get('/value', async (req, res) => {
-    try {
-        const userId = req.user.id;
-
-        const result = await getInventoryValueUseCase.execute({ businessId: userId });
-
-        res.json({
-            success: true,
-            data: result
-        });
-
-    } catch (error) {
-        console.error('❌ Error fetching inventory value:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to fetch inventory value'
         });
     }
 });

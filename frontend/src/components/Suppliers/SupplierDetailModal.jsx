@@ -1,6 +1,6 @@
 // frontend/src/components/Suppliers/SupplierDetailModal.jsx
 
-import { X, Phone, Mail, MapPin, Building, FileText, Calendar } from 'lucide-react';
+import { X, Phone, Mail, MapPin, Building, FileText, Calendar, CreditCard } from 'lucide-react';
 
 const SupplierDetailModal = ({ isOpen, supplier, isLoading, onClose }) => {
   if (!isOpen) return null;
@@ -82,7 +82,7 @@ const SupplierDetailModal = ({ isOpen, supplier, isLoading, onClose }) => {
           {/* Tax ID */}
           {supplier.taxId && (
             <div className="flex items-start space-x-3">
-              <FileText className="w-5 h-5 text-gray-400 dark:text-gray-500 mt-0.5" />
+              <CreditCard className="w-5 h-5 text-gray-400 dark:text-gray-500 mt-0.5" />
               <div>
                 <p className="text-sm text-gray-500 dark:text-gray-400">Tax ID / TIN</p>
                 <p className="text-gray-900 dark:text-white">{supplier.taxId}</p>

@@ -1,4 +1,5 @@
 // frontend/src/components/Expenses/ExpenseDetailModal.jsx
+
 import { X } from 'lucide-react';
 
 const ExpenseDetailModal = ({ isOpen, expense, isLoading, onClose }) => {

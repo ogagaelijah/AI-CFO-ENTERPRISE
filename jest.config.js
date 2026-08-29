@@ -8,18 +8,11 @@ module.exports = {
   ],
   coverageDirectory: 'coverage',
   verbose: true,
-  // ✅ Add module resolution
+  testTimeout: 10000,
   moduleDirectories: ['node_modules', 'src'],
   moduleFileExtensions: ['js', 'json', 'node'],
   roots: ['<rootDir>'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
   },
-  // ✅ Ensure Jest uses the correct resolver
-  resolver: undefined,
-  // ✅ Transform CommonJS modules properly
-  transform: {},
-  transformIgnorePatterns: [
-    'node_modules/(?!(better-sqlite3)/)',
-  ],
 };

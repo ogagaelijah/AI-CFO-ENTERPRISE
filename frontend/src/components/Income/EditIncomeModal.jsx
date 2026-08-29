@@ -1,12 +1,12 @@
 // frontend/src/components/Income/EditIncomeModal.jsx
+
 import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 
 const EditIncomeModal = ({ isOpen, income, onSubmit, onClose, error, setError }) => {
   const [form, setForm] = useState({
-    source: '',
+    source: 'OTHER',
     amount: 0,
-    category: 'Other',
     description: '',
     date: new Date().toISOString().split('T')[0],
   });
@@ -14,9 +14,8 @@ const EditIncomeModal = ({ isOpen, income, onSubmit, onClose, error, setError })
   useEffect(() => {
     if (income) {
       setForm({
-        source: income.source || '',
+        source: income.source || 'OTHER',
         amount: income.amount || 0,
-        category: income.category || 'Other',
         description: income.description || '',
         date: income.date || new Date().toISOString().split('T')[0],
       });
@@ -54,13 +53,20 @@ const EditIncomeModal = ({ isOpen, income, onSubmit, onClose, error, setError })
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Source *
             </label>
-            <input
-              type="text"
+            <select
               value={form.source}
               onChange={(e) => setForm({ ...form, source: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               required
-            />
+            >
+              <option value="COMMISSION">Commission</option>
+              <option value="INTEREST">Interest</option>
+              <option value="RENT">Rent</option>
+              <option value="GRANT">Grant</option>
+              <option value="GIFT">Gift</option>
+              <option value="DIVIDEND">Dividend</option>
+              <option value="OTHER">Other</option>
+            </select>
           </div>
 
           <div>
@@ -76,26 +82,6 @@ const EditIncomeModal = ({ isOpen, income, onSubmit, onClose, error, setError })
               step="0.01"
               required
             />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Category
-            </label>
-            <select
-              value={form.category}
-              onChange={(e) => setForm({ ...form, category: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-            >
-              <option value="Other">Other</option>
-              <option value="Commission">Commission</option>
-              <option value="Interest">Interest</option>
-              <option value="Gift">Gift</option>
-              <option value="Rent">Rent</option>
-              <option value="Grant">Grant</option>
-              <option value="Dividend">Dividend</option>
-              <option value="Salary">Salary</option>
-            </select>
           </div>
 
           <div>

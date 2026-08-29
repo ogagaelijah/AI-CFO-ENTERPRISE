@@ -1,7 +1,7 @@
 // frontend/src/components/Customers/CustomerDetailModal.jsx
 
 import { useState, useEffect } from 'react';
-import { X, Phone, Mail, MapPin, FileText, Calendar } from 'lucide-react';
+import { X, Phone, Mail, MapPin, FileText, Calendar, CreditCard } from 'lucide-react';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 
@@ -118,6 +118,17 @@ const CustomerDetailModal = ({ isOpen, customer, isLoading, onClose }) => {
               <div>
                 <p className="text-sm text-gray-500 dark:text-gray-400">Address</p>
                 <p className="text-gray-900 dark:text-white">{customer.address}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Tax ID */}
+          {customer.taxId && (
+            <div className="flex items-start space-x-3">
+              <CreditCard className="w-5 h-5 text-gray-400 dark:text-gray-500 mt-0.5" />
+              <div>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Tax ID / TIN</p>
+                <p className="text-gray-900 dark:text-white">{customer.taxId}</p>
               </div>
             </div>
           )}

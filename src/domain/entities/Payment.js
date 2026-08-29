@@ -1,34 +1,70 @@
+// src/domain/entities/Payment.js
+
 class Payment {
   constructor({
     id,
     businessId,
     userId,
+    type, // 'IN' or 'OUT'
     amount,
-    paymentDate,
-    paymentMethod,
-    referenceType, // 'SALE', 'PURCHASE', 'INCOME', 'DEBTOR', 'CREDITOR', 'EXPENSE'
+    referenceType, // 'SALE', 'PURCHASE', 'INCOME', 'DEBTOR', 'CREDITOR', 'EXPENSE', 'MANUAL'
     referenceId,
-    notes,
-    createdAt
+    paymentDate = new Date(),
+    paymentMethod = 'CASH', // 'CASH', 'BANK', 'TRANSFER', 'POS', 'MOBILE_MONEY', 'CHEQUE'
+    referenceNumber = null,
+    notes = '',
+    metadata = {},
+    createdAt = new Date(),
+    updatedAt = new Date(),
   }) {
-    this.id = id;
+    this.id = id || null;
     this.businessId = businessId;
     this.userId = userId;
+    this.type = type;
     this.amount = parseFloat(amount);
-    this.paymentDate = paymentDate;
-    this.paymentMethod = paymentMethod; // 'CASH', 'BANK', 'TRANSFER', 'POS'
     this.referenceType = referenceType;
     this.referenceId = referenceId;
+    this.paymentDate = paymentDate;
+    this.paymentMethod = paymentMethod;
+    this.referenceNumber = referenceNumber;
     this.notes = notes;
+    this.metadata = metadata;
     this.createdAt = createdAt;
+    this.updatedAt = updatedAt;
   }
 
   isCashIn() {
-    return ['SALE', 'INCOME', 'DEBTOR'].includes(this.referenceType);
+    return this.type === 'IN';
   }
 
   isCashOut() {
-    return ['PURCHASE', 'CREDITOR', 'EXPENSE'].includes(this.referenceType);
+    return this.type === 'OUT';
+  }
+
+  getFormattedAmount() {
+    return new Intl.NumberFormat('en-NG', {
+      style: 'currency',
+      currency: 'NGN',
+    }).format(this.amount);
+  }
+
+  toJSON() {
+    return {
+      id: this.id,
+      businessId: this.businessId,
+      userId: this.userId,
+      type: this.type,
+      amount: this.amount,
+      referenceType: this.referenceType,
+      referenceId: this.referenceId,
+      paymentDate: this.paymentDate,
+      paymentMethod: this.paymentMethod,
+      referenceNumber: this.referenceNumber,
+      notes: this.notes,
+      metadata: this.metadata,
+      createdAt: this.createdAt,
+      updatedAt: this.updatedAt,
+    };
   }
 }
 

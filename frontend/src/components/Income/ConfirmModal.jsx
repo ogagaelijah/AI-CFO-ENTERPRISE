@@ -1,4 +1,5 @@
 // frontend/src/components/Income/ConfirmModal.jsx
+
 import { X } from 'lucide-react';
 
 const ConfirmModal = ({ isOpen, data, onConfirm, onCancel }) => {
@@ -33,9 +34,6 @@ const ConfirmModal = ({ isOpen, data, onConfirm, onCancel }) => {
             </p>
             <p className="text-sm text-gray-600 dark:text-gray-300">
               <span className="font-medium">Amount:</span> ₦{(data?.amount || 0).toLocaleString()}
-            </p>
-            <p className="text-sm text-gray-600 dark:text-gray-300">
-              <span className="font-medium">Category:</span> {data?.category || 'Other'}
             </p>
             {data?.description && (
               <p className="text-sm text-gray-600 dark:text-gray-300">

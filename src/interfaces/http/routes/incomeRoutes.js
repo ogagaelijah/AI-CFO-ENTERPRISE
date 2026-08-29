@@ -1,4 +1,5 @@
 // src/interfaces/http/routes/incomeRoutes.js
+
 const express = require('express');
 const router = express.Router();
 const IncomeRepository = require('../../../infrastructure/database/sqlite/repositories/IncomeRepository');
@@ -16,13 +17,22 @@ router.use(authMiddleware);
 router.get('/', async (req, res) => {
     try {
         const userId = req.user.id;
-        const { startDate, endDate, source } = req.query;
+        const { startDate, endDate, source, limit, offset } = req.query;
 
         let incomes;
         if (startDate && endDate) {
             incomes = await incomeRepo.findByDateRange(userId, startDate, endDate);
         } else if (source) {
             incomes = await incomeRepo.findBySource(userId, source);
+        } else if (limit || offset) {
+            incomes = await incomeRepo.findByFilters({
+                businessId: userId,
+                source,
+                startDate,
+                endDate,
+                limit: parseInt(limit) || 50,
+                offset: parseInt(offset) || 0,
+            });
         } else {
             incomes = await incomeRepo.findByUserId(userId);
         }
@@ -37,9 +47,7 @@ router.get('/', async (req, res) => {
                     total_entries: 0,
                     total_amount: 0,
                     average_amount: 0,
-                    categories_used: 0,
-                    total_paid: 0,
-                    total_outstanding: 0,
+                    sources_used: 0,
                 }
             }
         });
@@ -101,9 +109,7 @@ router.get('/summary', async (req, res) => {
                 total_entries: 0,
                 total_amount: 0,
                 average_amount: 0,
-                categories_used: 0,
-                total_paid: 0,
-                total_outstanding: 0,
+                sources_used: 0,
             }
         });
 
@@ -122,14 +128,14 @@ router.get('/summary', async (req, res) => {
 router.post('/', async (req, res) => {
     try {
         const userId = req.user.id;
-        const { source, amount, category, description, paymentStatus, date, dueDate } = req.body;
+        const { source, amount, description, date } = req.body;
 
-        console.log('💰 Recording income:', { userId, source, amount, category });
+        console.log('💰 Recording income:', { userId, source, amount });
 
-        if (!source || source.length < 2) {
+        if (!source) {
             return res.status(400).json({
                 success: false,
-                message: 'Source must be at least 2 characters'
+                message: 'Source is required'
             });
         }
 
@@ -144,11 +150,8 @@ router.post('/', async (req, res) => {
             userId,
             source,
             amount,
-            category: category || 'Other',
             description: description || '',
-            paymentStatus: paymentStatus || 'PAID',
             date: date || new Date(),
-            dueDate: dueDate || null,
         });
 
         res.status(201).json({
@@ -200,6 +203,53 @@ router.get('/:id', async (req, res) => {
         res.status(500).json({
             success: false,
             message: error.message || 'Failed to fetch income'
+        });
+    }
+});
+
+// =============================================
+// PUT /api/income/:id - Update income record
+// =============================================
+router.put('/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const userId = req.user.id;
+        const { source, amount, description, date } = req.body;
+
+        const existing = await incomeRepo.findById(parseInt(id));
+        if (!existing) {
+            return res.status(404).json({
+                success: false,
+                message: 'Income record not found'
+            });
+        }
+
+        if (existing.user_id !== userId) {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied'
+            });
+        }
+
+        const updateData = {};
+        if (source !== undefined) updateData.source = source;
+        if (amount !== undefined) updateData.amount = amount;
+        if (description !== undefined) updateData.description = description;
+        if (date !== undefined) updateData.date = date;
+
+        const updated = await incomeRepo.update(parseInt(id), updateData);
+
+        res.json({
+            success: true,
+            message: 'Income updated successfully',
+            data: updated
+        });
+
+    } catch (error) {
+        console.error('❌ Error updating income:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to update income'
         });
     }
 });

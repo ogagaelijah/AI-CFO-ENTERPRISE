@@ -160,7 +160,6 @@ router.post('/', async (req, res) => {
             itemName,
             quantity,
             unitCost,
-            sellingPrice,
             totalCost,
             paymentStatus = 'UNPAID',
             amountPaid = 0,
@@ -172,7 +171,7 @@ router.post('/', async (req, res) => {
 
         // ✅ Check if using multi-item format
         const hasItems = items && items.length > 0;
-        const hasSingleItem = itemName && quantity && unitCost && sellingPrice;
+        const hasSingleItem = itemName && quantity && unitCost;
 
         console.log('🔍 hasItems:', hasItems);
         console.log('🔍 hasSingleItem:', hasSingleItem);
@@ -182,7 +181,7 @@ router.post('/', async (req, res) => {
         if (!hasItems && !hasSingleItem) {
             return res.status(400).json({
                 success: false,
-                message: 'Either "items" array or (itemName, quantity, unitCost, sellingPrice) is required'
+                message: 'Either "items" array or (itemName, quantity, unitCost) is required'
             });
         }
 
@@ -207,12 +206,7 @@ router.post('/', async (req, res) => {
                         message: `Unit cost for "${item.name}" must be greater than 0`
                     });
                 }
-                if (!item.sellingPrice || item.sellingPrice <= 0) {
-                    return res.status(400).json({
-                        success: false,
-                        message: `Selling price for "${item.name}" must be greater than 0`
-                    });
-                }
+                // ✅ REMOVED: selling price validation
             }
         } else {
             // ✅ Validate single item
@@ -234,12 +228,7 @@ router.post('/', async (req, res) => {
                     message: 'Unit cost must be greater than 0'
                 });
             }
-            if (!sellingPrice || sellingPrice <= 0) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Selling price must be greater than 0'
-                });
-            }
+            // ✅ REMOVED: selling price validation
         }
 
         console.log('✅ Validation passed, executing use case...');
@@ -253,7 +242,6 @@ router.post('/', async (req, res) => {
             itemName,
             quantity,
             unitCost,
-            sellingPrice,
             totalCost,
             paymentStatus,
             amountPaid,

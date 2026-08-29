@@ -1,8 +1,9 @@
 // frontend/src/pages/Income.jsx
+
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
-import { Plus, X, CheckCircle, AlertCircle } from 'lucide-react'; // ✅ Added CheckCircle and AlertCircle
+import { Plus, X, CheckCircle, AlertCircle } from 'lucide-react';
 import SummaryCards from '../components/Income/SummaryCards';
 import IncomeTable from '../components/Income/IncomeTable';
 import RecordIncomeModal from '../components/Income/RecordIncomeModal';
@@ -17,7 +18,7 @@ const Income = () => {
     total_entries: 0,
     total_amount: 0,
     average_amount: 0,
-    categories_used: 0,
+    sources_used: 0,
   });
   const [isLoading, setIsLoading] = useState(true);
   
@@ -33,9 +34,8 @@ const Income = () => {
   const [success, setSuccess] = useState('');
 
   const [formData, setFormData] = useState({
-    source: '',
+    source: 'OTHER',
     amount: 0,
-    category: 'Other',
     description: '',
     date: new Date().toISOString().split('T')[0],
   });
@@ -56,7 +56,7 @@ const Income = () => {
           total_entries: 0,
           total_amount: 0,
           average_amount: 0,
-          categories_used: 0,
+          sources_used: 0,
         });
       }
     } catch (error) {
@@ -101,7 +101,6 @@ const Income = () => {
       return;
     }
 
-    // Close record modal and open confirmation
     setShowModal(false);
     setConfirmData({ ...formData });
     setShowConfirmModal(true);
@@ -112,7 +111,6 @@ const Income = () => {
     setError('');
     setSuccess('');
 
-    // Safety check
     if (!confirmData) {
       setError('No data to confirm');
       return;
@@ -122,29 +120,20 @@ const Income = () => {
       const response = await api.post('/income', {
         source: confirmData.source.trim(),
         amount: parseFloat(confirmData.amount),
-        category: confirmData.category || 'Other',
         description: confirmData.description?.trim() || '',
         date: confirmData.date,
       });
 
       if (response.data?.success) {
-        // Close confirmation modal
         setShowConfirmModal(false);
         setConfirmData(null);
-        
-        // Reset form
         setFormData({
-          source: '',
+          source: 'OTHER',
           amount: 0,
-          category: 'Other',
           description: '',
           date: new Date().toISOString().split('T')[0],
         });
-        
-        // Show success
         setSuccess('✅ Income recorded successfully!');
-        
-        // Refresh the list
         await fetchIncome();
       } else {
         setError(response.data?.message || 'Failed to record income');
@@ -153,7 +142,6 @@ const Income = () => {
       console.error('Error recording income:', error);
       const errorMsg = error.response?.data?.message || 'Failed to record income';
       setError(errorMsg);
-      // Go back to record modal on error
       setShowConfirmModal(false);
       setShowModal(true);
     }
@@ -168,7 +156,6 @@ const Income = () => {
       const response = await api.put(`/income/${selectedIncome.id}`, {
         source: updatedData.source.trim(),
         amount: parseFloat(updatedData.amount),
-        category: updatedData.category || 'Other',
         description: updatedData.description?.trim() || '',
         date: updatedData.date,
       });

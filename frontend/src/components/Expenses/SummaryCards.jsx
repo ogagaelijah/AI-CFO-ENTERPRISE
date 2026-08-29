@@ -1,5 +1,6 @@
 // frontend/src/components/Expenses/SummaryCards.jsx
-import { TrendingDown, Calendar, DollarSign, Tag } from 'lucide-react';
+
+import { TrendingDown, DollarSign, Tag, Calendar } from 'lucide-react';
 
 const SummaryCards = ({ summary }) => {
   const cards = [

@@ -144,7 +144,7 @@ function createTestTables(db) {
     )
   `);
 
-  // Creditors table
+  // ✅ FIX: Add last_payment_date column
   db.exec(`
     CREATE TABLE IF NOT EXISTS creditors (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -159,6 +159,7 @@ function createTestTables(db) {
       due_date DATETIME,
       reference_type TEXT,
       reference_id INTEGER,
+      last_payment_date DATETIME,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id),
@@ -167,7 +168,7 @@ function createTestTables(db) {
     )
   `);
 
-  // Debtors table
+  // ✅ FIX: Add last_payment_date column
   db.exec(`
     CREATE TABLE IF NOT EXISTS debtors (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -184,9 +185,9 @@ function createTestTables(db) {
       reference_type TEXT,
       reference_id INTEGER,
       notes TEXT,
+      last_payment_date DATETIME,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      last_payment_date DATETIME,
       FOREIGN KEY (user_id) REFERENCES users(id),
       FOREIGN KEY (business_id) REFERENCES businesses(id)
     )
