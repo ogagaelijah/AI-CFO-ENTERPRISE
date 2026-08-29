@@ -3,30 +3,31 @@
 const BaseRepository = require('./BaseRepository');
 
 class PaymentRepository extends BaseRepository {
-    constructor() {
-        super('payments');
+    constructor(db = null) {
+        super('payments', db);
     }
 
     /**
      * Create a new payment
-     * @param {Object} paymentData - Payment entity data
-     * @returns {Promise<Object>} Created payment
      */
     create(paymentData) {
         const stmt = this.db.prepare(`
             INSERT INTO payments (
-                business_id, type, amount, reference_type, reference_id,
-                date, notes, metadata
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                business_id, user_id, payment_type, amount, reference_type, reference_id,
+                payment_date, payment_method, reference_number, notes, metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         const result = stmt.run(
             paymentData.businessId,
+            paymentData.userId,
             paymentData.type,
             paymentData.amount,
             paymentData.referenceType || null,
             paymentData.referenceId || null,
-            paymentData.date ? paymentData.date.toISOString() : new Date().toISOString(),
+            paymentData.paymentDate ? paymentData.paymentDate.toISOString() : new Date().toISOString(),
+            paymentData.paymentMethod || null,
+            paymentData.referenceNumber || null,
             paymentData.notes || '',
             JSON.stringify(paymentData.metadata || {})
         );
@@ -36,8 +37,6 @@ class PaymentRepository extends BaseRepository {
 
     /**
      * Find payment by ID
-     * @param {string|number} id - Payment ID
-     * @returns {Promise<Object|null>} Payment or null
      */
     findById(id) {
         const result = this.db.prepare('SELECT * FROM payments WHERE id = ?').get(id);
@@ -47,16 +46,13 @@ class PaymentRepository extends BaseRepository {
 
     /**
      * Find payments by business ID
-     * @param {string|number} businessId - Business ID
-     * @param {Object} options - { limit, offset, type, referenceType, referenceId, startDate, endDate }
-     * @returns {Promise<Array>} Array of payments
      */
     findByBusinessId(businessId, options = {}) {
         let query = 'SELECT * FROM payments WHERE business_id = ?';
         const params = [businessId];
 
         if (options.type) {
-            query += ' AND type = ?';
+            query += ' AND payment_type = ?';
             params.push(options.type);
         }
 
@@ -71,16 +67,16 @@ class PaymentRepository extends BaseRepository {
         }
 
         if (options.startDate) {
-            query += ' AND date >= ?';
+            query += ' AND payment_date >= ?';
             params.push(options.startDate.toISOString());
         }
 
         if (options.endDate) {
-            query += ' AND date <= ?';
+            query += ' AND payment_date <= ?';
             params.push(options.endDate.toISOString());
         }
 
-        query += ' ORDER BY date DESC';
+        query += ' ORDER BY payment_date DESC';
 
         if (options.limit) {
             query += ' LIMIT ?';
@@ -98,16 +94,12 @@ class PaymentRepository extends BaseRepository {
 
     /**
      * Find payments by reference
-     * @param {string|number} businessId - Business ID
-     * @param {string} referenceType - DEBTOR, CREDITOR, SALE, PURCHASE, INCOME, EXPENSE
-     * @param {string|number} referenceId - Reference ID
-     * @returns {Promise<Array>} Array of payments
      */
     findByReference(businessId, referenceType, referenceId) {
         const results = this.db.prepare(`
             SELECT * FROM payments
             WHERE business_id = ? AND reference_type = ? AND reference_id = ?
-            ORDER BY date DESC
+            ORDER BY payment_date DESC
         `).all(businessId, referenceType, referenceId);
 
         return results.map(r => this._hydrate(r));
@@ -115,11 +107,6 @@ class PaymentRepository extends BaseRepository {
 
     /**
      * Find payments by date range
-     * @param {string|number} businessId - Business ID
-     * @param {Date} startDate - Start date
-     * @param {Date} endDate - End date
-     * @param {Object} options - { type, limit, offset }
-     * @returns {Promise<Array>} Array of payments
      */
     findByDateRange(businessId, startDate, endDate, options = {}) {
         return this.findByBusinessId(businessId, {
@@ -131,8 +118,6 @@ class PaymentRepository extends BaseRepository {
 
     /**
      * Find payments by filters
-     * @param {Object} filters - { businessId, type, referenceType, referenceId, startDate, endDate, limit, offset }
-     * @returns {Promise<Array>} Array of payments
      */
     findByFilters(filters) {
         return this.findByBusinessId(
@@ -151,16 +136,13 @@ class PaymentRepository extends BaseRepository {
 
     /**
      * Update a payment
-     * @param {string|number} id - Payment ID
-     * @param {Object} data - Updated data
-     * @returns {Promise<Object>} Updated payment
      */
     update(id, data) {
         const fields = [];
         const values = [];
 
         if (data.type !== undefined) {
-            fields.push('type = ?');
+            fields.push('payment_type = ?');
             values.push(data.type);
         }
         if (data.amount !== undefined) {
@@ -175,9 +157,17 @@ class PaymentRepository extends BaseRepository {
             fields.push('reference_id = ?');
             values.push(data.referenceId);
         }
-        if (data.date !== undefined) {
-            fields.push('date = ?');
-            values.push(data.date.toISOString());
+        if (data.paymentDate !== undefined) {
+            fields.push('payment_date = ?');
+            values.push(data.paymentDate.toISOString());
+        }
+        if (data.paymentMethod !== undefined) {
+            fields.push('payment_method = ?');
+            values.push(data.paymentMethod);
+        }
+        if (data.referenceNumber !== undefined) {
+            fields.push('reference_number = ?');
+            values.push(data.referenceNumber);
         }
         if (data.notes !== undefined) {
             fields.push('notes = ?');
@@ -210,8 +200,6 @@ class PaymentRepository extends BaseRepository {
 
     /**
      * Delete a payment
-     * @param {string|number} id - Payment ID
-     * @returns {Promise<boolean>} True if deleted
      */
     delete(id) {
         const stmt = this.db.prepare('DELETE FROM payments WHERE id = ?');
@@ -221,15 +209,13 @@ class PaymentRepository extends BaseRepository {
 
     /**
      * Count payments by filters
-     * @param {Object} filters - { businessId, type, referenceType, referenceId, startDate, endDate }
-     * @returns {Promise<number>} Count of payments
      */
     countByFilters(filters) {
         let query = 'SELECT COUNT(*) as count FROM payments WHERE business_id = ?';
         const params = [filters.businessId];
 
         if (filters.type) {
-            query += ' AND type = ?';
+            query += ' AND payment_type = ?';
             params.push(filters.type);
         }
 
@@ -244,12 +230,12 @@ class PaymentRepository extends BaseRepository {
         }
 
         if (filters.startDate) {
-            query += ' AND date >= ?';
+            query += ' AND payment_date >= ?';
             params.push(filters.startDate.toISOString());
         }
 
         if (filters.endDate) {
-            query += ' AND date <= ?';
+            query += ' AND payment_date <= ?';
             params.push(filters.endDate.toISOString());
         }
 
@@ -258,25 +244,25 @@ class PaymentRepository extends BaseRepository {
     }
 
     /**
-     * Hydrate database row to entity
-     * @param {Object} row - Database row
-     * @returns {Object} Payment entity
+     * Hydrate database row to object (no entity dependency for testing)
      */
     _hydrate(row) {
-        const Payment = require('../../../domain/entities/Payment');
-        return new Payment({
+        return {
             id: row.id,
             businessId: row.business_id,
-            type: row.type,
+            userId: row.user_id,
+            type: row.payment_type,
             amount: row.amount,
             referenceType: row.reference_type,
             referenceId: row.reference_id,
-            date: new Date(row.date),
+            paymentDate: new Date(row.payment_date),
+            paymentMethod: row.payment_method,
+            referenceNumber: row.reference_number,
             notes: row.notes,
             metadata: row.metadata ? JSON.parse(row.metadata) : {},
             createdAt: new Date(row.created_at),
             updatedAt: new Date(row.updated_at),
-        });
+        };
     }
 }
 

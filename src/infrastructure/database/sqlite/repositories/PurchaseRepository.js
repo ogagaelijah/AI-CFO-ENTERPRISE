@@ -3,11 +3,10 @@
 const BaseRepository = require('./BaseRepository');
 
 class PurchaseRepository extends BaseRepository {
-    constructor() {
-        super('purchases');
+    constructor(db = null) {
+        super('purchases', db);
     }
 
-    // ✅ Helper to parse items from JSON
     _hydrate(row) {
         if (!row) return null;
         let items = [];

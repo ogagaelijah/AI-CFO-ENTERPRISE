@@ -1,7 +1,7 @@
 // src/interfaces/http/server.js
 const express = require('express');
 const cors = require('cors');
-const cookieParser = require('cookie-parser'); // ✅ Fixed: cookie-parser (with dash)
+const cookieParser = require('cookie-parser');
 require('dotenv').config();
 
 const app = express();
@@ -28,9 +28,9 @@ const debtorRoutes = require('./routes/debtorRoutes');
 const incomeRoutes = require('./routes/incomeRoutes');
 const expenseRoutes = require('./routes/expenseRoutes');
 const purchaseRoutes = require('./routes/purchaseRoutes');
-const creditorRoutes = require('./routes/creditorRoutes'); // ✅ ADDED
-const supplierRoutes = require('./routes/supplierRoutes'); // ✅ ADDED
-const customerRoutes = require('./routes/customerRoutes'); // ✅ ADDED
+const creditorRoutes = require('./routes/creditorRoutes');
+const supplierRoutes = require('./routes/supplierRoutes');
+const customerRoutes = require('./routes/customerRoutes');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -44,9 +44,9 @@ app.use('/api/debtors', debtorRoutes);
 app.use('/api/income', incomeRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/purchases', purchaseRoutes);
-app.use('/api/creditors', creditorRoutes); // ✅ ADDED
-app.use('/api/suppliers', supplierRoutes); // ✅ ADDED
-app.use('/api/customers', customerRoutes); // ✅ ADDED
+app.use('/api/creditors', creditorRoutes);
+app.use('/api/suppliers', supplierRoutes);
+app.use('/api/customers', customerRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

@@ -27,7 +27,6 @@ class RecordPurchaseUseCase {
         itemName,
         quantity,
         unitCost,
-        sellingPrice,
         totalCost,
         paymentStatus = 'UNPAID',
         amountPaid = 0,
@@ -56,7 +55,6 @@ class RecordPurchaseUseCase {
                 }
                 const qty = parseInt(item.quantity) || 1;
                 const cost = parseFloat(item.unitCost) || 0;
-                const sell = parseFloat(item.sellingPrice) || 0;
                 
                 if (qty <= 0) {
                     throw new Error(`Quantity for "${item.name}" must be greater than 0`);
@@ -64,15 +62,11 @@ class RecordPurchaseUseCase {
                 if (cost <= 0) {
                     throw new Error(`Unit cost for "${item.name}" must be greater than 0`);
                 }
-                if (sell <= 0) {
-                    throw new Error(`Selling price for "${item.name}" must be greater than 0`);
-                }
                 
                 processedItems.push({
                     name: item.name.trim(),
                     quantity: qty,
                     unitCost: cost,
-                    sellingPrice: sell,
                 });
                 
                 totalPurchaseCost += qty * cost;
@@ -87,15 +81,11 @@ class RecordPurchaseUseCase {
             if (!unitCost || unitCost <= 0) {
                 throw new Error('Unit cost must be greater than zero');
             }
-            if (!sellingPrice || sellingPrice <= 0) {
-                throw new Error('Selling price must be greater than zero');
-            }
             
             processedItems = [{
                 name: itemName,
                 quantity: parseInt(quantity),
                 unitCost: parseFloat(unitCost),
-                sellingPrice: parseFloat(sellingPrice),
             }];
             
             totalPurchaseCost = quantity * unitCost;
@@ -208,14 +198,15 @@ class RecordPurchaseUseCase {
                 let previousSellingPrice = 0;
                 
                 if (!inventoryItemData) {
-                    // ✅ Create new inventory item
+                    // ✅ Create new inventory item (selling price = 0, user sets it later)
                     const newItem = new InventoryItem({
                         userId: userId,
                         name: item.name,
                         category: 'Purchased Goods',
                         quantity: item.quantity,
                         costPrice: item.unitCost,
-                        sellingPrice: item.sellingPrice,
+                        lastPurchaseCost: item.unitCost,
+                        sellingPrice: 0,
                         reorderLevel: 5,
                     });
                     
@@ -224,48 +215,46 @@ class RecordPurchaseUseCase {
                     previousQuantity = 0;
                     previousCostPrice = 0;
                     previousSellingPrice = 0;
-                    console.log(`✅ Created new inventory item: ${item.name} (Qty: ${item.quantity}, Cost: ₦${item.unitCost}, Sell: ₦${item.sellingPrice})`);
+                    console.log(`✅ Created new inventory item: ${item.name} (Qty: ${item.quantity}, Cost: ₦${item.unitCost})`);
                 } else {
                     // ✅ Store previous values
                     previousQuantity = inventoryItemData.quantity || 0;
-                    previousCostPrice = inventoryItemData.costPrice || 0;
-                    previousSellingPrice = inventoryItemData.sellingPrice || 0;
-                    
-                    // ✅ FIX: If previous cost is 0, treat as new item (use new cost)
-                    const effectivePreviousCost = previousCostPrice > 0 ? previousCostPrice : 0;
-                    const effectivePreviousSell = previousSellingPrice > 0 ? previousSellingPrice : 0;
+                    previousCostPrice = inventoryItemData.cost_price || 0;
+                    previousSellingPrice = inventoryItemData.selling_price || 0;
                     
                     // ✅ Instantiate as InventoryItem entity
                     inventoryItem = new InventoryItem(inventoryItemData);
-                    console.log(`✅ Found existing inventory item: ${item.name} (Qty: ${previousQuantity}, Cost: ₦${previousCostPrice}, Sell: ₦${previousSellingPrice})`);
+                    console.log(`✅ Found existing inventory item: ${item.name} (Qty: ${previousQuantity}, Avg Cost: ₦${previousCostPrice})`);
 
                     // ✅ Calculate new quantity
                     const newQuantity = previousQuantity + item.quantity;
                     
                     // ✅ Calculate weighted average cost (WAC)
-                    // If previous cost is 0, use new cost as base
-                    const totalCostValue = (previousQuantity * effectivePreviousCost) + (item.quantity * item.unitCost);
+                    const totalCurrentValue = previousQuantity * (previousCostPrice > 0 ? previousCostPrice : 0);
+                    const totalNewValue = item.quantity * item.unitCost;
                     const totalQtyValue = previousQuantity + item.quantity;
-                    const newCostPrice = totalQtyValue > 0 ? totalCostValue / totalQtyValue : item.unitCost;
-                    
-                    // ✅ Set selling price to the HIGHEST between old and new
-                    const newSellingPrice = Math.max(effectivePreviousSell, item.sellingPrice);
+                    const newCostPrice = totalQtyValue > 0 ? (totalCurrentValue + totalNewValue) / totalQtyValue : item.unitCost;
                     
                     // ✅ Update the entity
                     inventoryItem.quantity = newQuantity;
                     inventoryItem.costPrice = newCostPrice;
-                    inventoryItem.sellingPrice = newSellingPrice;
+                    inventoryItem.lastPurchaseCost = item.unitCost;
                     inventoryItem.updatedAt = new Date();
                     
-                    console.log(`📊 WAC: (${previousQuantity} × ₦${effectivePreviousCost}) + (${item.quantity} × ₦${item.unitCost}) = ₦${totalCostValue} / ${totalQtyValue} = ₦${newCostPrice}`);
-                    console.log(`📈 Selling price: ₦${previousSellingPrice} → ₦${newSellingPrice} (Highest)`);
+                    console.log(`📊 WAC: (${previousQuantity} × ₦${previousCostPrice}) + (${item.quantity} × ₦${item.unitCost}) = ₦${totalCurrentValue + totalNewValue} / ${totalQtyValue} = ₦${newCostPrice}`);
+                    console.log(`📊 Last Purchase Cost: ₦${item.unitCost}`);
                     
-                    // ✅ Save ONCE
-                    await this.inventoryRepository.update(inventoryItem.id, inventoryItem);
+                    // ✅ Save ONCE - explicitly pass all fields
+                    await this.inventoryRepository.update(inventoryItem.id, {
+                        quantity: inventoryItem.quantity,
+                        cost_price: inventoryItem.costPrice,
+                        selling_price: inventoryItem.sellingPrice,
+                        last_purchase_cost: inventoryItem.lastPurchaseCost,
+                    });
                     console.log(`✅ Inventory updated: ${item.name} (${previousQuantity} → ${newQuantity})`);
                 }
 
-                // ✅ Create inventory transaction record (skip if table doesn't exist)
+                // ✅ Create inventory transaction record
                 if (this.inventoryTransactionRepository) {
                     try {
                         const InventoryTransaction = require('../../../domain/entities/InventoryTransaction');
@@ -284,28 +273,23 @@ class RecordPurchaseUseCase {
                         });
                         await this.inventoryTransactionRepository.create(invTransaction);
                     } catch (txError) {
-                        // If inventory_transactions table doesn't exist, log but continue
                         console.warn(`⚠️ Inventory transaction not recorded:`, txError.message);
                     }
                 }
 
-                // ✅ Calculate potential profit for this item
+                // ✅ Calculate inventory value
                 const inventoryValue = inventoryItem.quantity * inventoryItem.costPrice;
-                const potentialRevenue = inventoryItem.quantity * inventoryItem.sellingPrice;
-                const potentialProfit = potentialRevenue - inventoryValue;
 
                 inventoryUpdates.push({
                     name: item.name,
                     previousQuantity,
                     newQuantity: inventoryItem.quantity,
                     newCostPrice: inventoryItem.costPrice,
-                    newSellingPrice: inventoryItem.sellingPrice,
+                    lastPurchaseCost: inventoryItem.lastPurchaseCost,
                     inventoryValue: inventoryValue,
-                    potentialRevenue: potentialRevenue,
-                    potentialProfit: potentialProfit,
                 });
 
-                console.log(`📊 ${item.name}: Inventory Value: ₦${inventoryValue}, Potential Revenue: ₦${potentialRevenue}, Potential Profit: ₦${potentialProfit}`);
+                console.log(`📊 ${item.name}: Inventory Value: ₦${inventoryValue}`);
 
             } catch (error) {
                 console.error(`❌ Inventory update error for ${item.name}:`, error.message);
@@ -339,12 +323,6 @@ class RecordPurchaseUseCase {
             }
         }
 
-        // ✅ Calculate total profit (for this purchase only)
-        let totalProfit = 0;
-        for (const item of processedItems) {
-            totalProfit += (item.sellingPrice - item.unitCost) * item.quantity;
-        }
-
         return {
             success: true,
             purchase: purchase,
@@ -353,7 +331,6 @@ class RecordPurchaseUseCase {
             supplierCreated: finalSupplierId !== null,
             balanceRemaining: balanceRemaining,
             creditorCreated: creditorCreated,
-            totalProfit: totalProfit,
             items: processedItems,
             inventoryUpdates: inventoryUpdates,
             message: 'Purchase recorded successfully',

@@ -3,14 +3,14 @@
 const BaseRepository = require('./BaseRepository');
 
 class InventoryRepository extends BaseRepository {
-    constructor() {
-        super('inventory');
+    constructor(db = null) {
+        super('inventory', db);
     }
 
     create(inventoryData) {
         const stmt = this.db.prepare(`
-            INSERT INTO inventory (user_id, item_name, quantity, cost_price, selling_price, reorder_level)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO inventory (user_id, item_name, quantity, cost_price, selling_price, last_purchase_cost, reorder_level)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         `);
         const result = stmt.run(
             inventoryData.user_id,
@@ -18,6 +18,7 @@ class InventoryRepository extends BaseRepository {
             inventoryData.quantity || 0,
             inventoryData.cost_price || 0,
             inventoryData.selling_price || 0,
+            inventoryData.last_purchase_cost || 0,
             inventoryData.reorder_level || 5
         );
         return this.findById(result.lastInsertRowid);
@@ -33,28 +34,24 @@ class InventoryRepository extends BaseRepository {
         ).all(userId);
     }
 
-    // ✅ PERMANENT: Case-sensitive exact match
     findByName(userId, itemName) {
         return this.db.prepare(
             'SELECT * FROM inventory WHERE user_id = ? AND item_name = ?'
         ).get(userId, itemName);
     }
 
-    // ✅ PERMANENT: Case-insensitive exact match
     findByNameIgnoreCase(userId, itemName) {
         return this.db.prepare(
             'SELECT * FROM inventory WHERE user_id = ? AND LOWER(item_name) = LOWER(?)'
         ).get(userId, itemName);
     }
 
-    // ✅ PERMANENT: Case-insensitive partial search
     searchByName(userId, searchTerm) {
         return this.db.prepare(
             'SELECT * FROM inventory WHERE user_id = ? AND LOWER(item_name) LIKE LOWER(?) ORDER BY item_name ASC'
         ).all(userId, `%${searchTerm}%`);
     }
 
-    // ✅ Find with fallback (case-insensitive first, then partial)
     findByNameWithFallback(userId, itemName) {
         let item = this.findByNameIgnoreCase(userId, itemName);
         if (item) return item;
@@ -88,6 +85,10 @@ class InventoryRepository extends BaseRepository {
             fields.push('selling_price = ?');
             values.push(data.selling_price);
         }
+        if (data.last_purchase_cost !== undefined) {
+            fields.push('last_purchase_cost = ?');
+            values.push(data.last_purchase_cost);
+        }
         if (data.reorder_level !== undefined) {
             fields.push('reorder_level = ?');
             values.push(data.reorder_level);
@@ -113,19 +114,40 @@ class InventoryRepository extends BaseRepository {
         return this.findById(id);
     }
 
+    updateCostOnPurchase(inventoryId, quantity, unitCost) {
+        const item = this.findById(inventoryId);
+        if (!item) throw new Error('Inventory item not found');
+        
+        const totalCurrentValue = (item.quantity || 0) * (item.cost_price || 0);
+        const totalNewValue = quantity * unitCost;
+        const totalQuantity = (item.quantity || 0) + quantity;
+        const newCostPrice = totalQuantity > 0 ? (totalCurrentValue + totalNewValue) / totalQuantity : unitCost;
+        
+        const updateData = {
+            quantity: totalQuantity,
+            cost_price: newCostPrice,
+            last_purchase_cost: unitCost,
+        };
+        
+        // Log for debugging
+        console.log(`📊 updateCostOnPurchase: item ${item.id}, old qty: ${item.quantity}, old cost: ${item.cost_price}, new qty: ${totalQuantity}, new cost: ${newCostPrice}`);
+        
+        return this.update(inventoryId, updateData);
+    }
+
     addStock(inventoryId, quantity) {
         const item = this.findById(inventoryId);
         if (!item) throw new Error('Inventory item not found');
-        return this.update(inventoryId, { quantity: item.quantity + quantity });
+        return this.update(inventoryId, { quantity: (item.quantity || 0) + quantity });
     }
 
     reduceStock(inventoryId, quantity) {
         const item = this.findById(inventoryId);
         if (!item) throw new Error('Inventory item not found');
-        if (item.quantity < quantity) {
+        if ((item.quantity || 0) < quantity) {
             throw new Error(`Insufficient stock. Available: ${item.quantity}, Requested: ${quantity}`);
         }
-        return this.update(inventoryId, { quantity: item.quantity - quantity });
+        return this.update(inventoryId, { quantity: (item.quantity || 0) - quantity });
     }
 
     getSummary(userId) {

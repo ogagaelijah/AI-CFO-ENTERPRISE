@@ -18,9 +18,9 @@ import Debtors from './pages/Debtors';
 import Income from './pages/Income';
 import Expenses from './pages/Expenses';
 import Purchases from './pages/Purchases';
-import Creditors from './pages/Creditors'; // ✅ ADDED
-import Suppliers from './pages/Suppliers'; // ✅ ADDED
-import Customers from './pages/Customers'; // ✅ ADDED
+import Creditors from './pages/Creditors';
+import Suppliers from './pages/Suppliers';
+import Customers from './pages/Customers';
 
 function App() {
   return (
@@ -67,7 +67,6 @@ function App() {
                 </ProtectedRoute>
               }
             />
-            {/* Sales Route */}
             <Route
               path="/sales"
               element={
@@ -76,7 +75,6 @@ function App() {
                 </ProtectedRoute>
               }
             />
-            {/* Inventory Route */}
             <Route
               path="/inventory"
               element={
@@ -85,7 +83,6 @@ function App() {
                 </ProtectedRoute>
               }
             />
-            {/* Debtors Route */}
             <Route
               path="/debtors"
               element={
@@ -94,7 +91,6 @@ function App() {
                 </ProtectedRoute>
               }
             />
-            {/* Income Route */}
             <Route
               path="/income"
               element={
@@ -103,7 +99,6 @@ function App() {
                 </ProtectedRoute>
               }
             />
-            {/* Expenses Route */}
             <Route
               path="/expenses"
               element={
@@ -112,7 +107,6 @@ function App() {
                 </ProtectedRoute>
               }
             />
-            {/* Purchases Route */}
             <Route
               path="/purchases"
               element={
@@ -121,7 +115,6 @@ function App() {
                 </ProtectedRoute>
               }
             />
-            {/* ✅ ADDED: Creditors Route */}
             <Route
               path="/creditors"
               element={
@@ -130,7 +123,6 @@ function App() {
                 </ProtectedRoute>
               }
             />
-            {/* ✅ ADDED: Suppliers Route */}
             <Route
               path="/suppliers"
               element={
@@ -139,7 +131,6 @@ function App() {
                 </ProtectedRoute>
               }
             />
-            {/* ✅ ADDED: Customers Route */}
             <Route
               path="/customers"
               element={

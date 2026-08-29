@@ -3,11 +3,10 @@
 const BaseRepository = require('./BaseRepository');
 
 class DebtorRepository extends BaseRepository {
-    constructor() {
-        super('debtors');
+    constructor(db = null) {
+        super('debtors', db);
     }
 
-    // ✅ Helper to hydrate data
     _hydrate(row) {
         if (!row) return null;
         return {
@@ -97,7 +96,6 @@ class DebtorRepository extends BaseRepository {
         return rows.map(row => this._hydrate(row));
     }
 
-    // ✅ NEW: Find ALL overdue debtors across all users (for notification job)
     findAllOverdue() {
         const today = new Date().toISOString().split('T')[0];
         return this.db.prepare(`
@@ -265,7 +263,6 @@ class DebtorRepository extends BaseRepository {
         return this.findById(id);
     }
 
-    // ✅ Find by filters for web API
     findByFilters({ businessId, status, customerType, limit = 50, offset = 0 }) {
         let sql = 'SELECT * FROM debtors WHERE user_id = ?';
         const params = [businessId];
@@ -286,7 +283,6 @@ class DebtorRepository extends BaseRepository {
         return rows.map(row => this._hydrate(row));
     }
 
-    // ✅ Count by filters
     countByFilters({ businessId, status, customerType }) {
         let sql = 'SELECT COUNT(*) as total FROM debtors WHERE user_id = ?';
         const params = [businessId];

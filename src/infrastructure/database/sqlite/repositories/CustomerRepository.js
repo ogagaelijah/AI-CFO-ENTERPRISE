@@ -2,7 +2,6 @@
 
 const BaseRepository = require('./BaseRepository');
 
-// ✅ Define Customer class directly inside this file
 class Customer {
     constructor({
         id,
@@ -70,8 +69,8 @@ class Customer {
 }
 
 class CustomerRepository extends BaseRepository {
-    constructor() {
-        super('customers');
+    constructor(db = null) {
+        super('customers', db);
     }
 
     create(customerData) {
@@ -102,14 +101,7 @@ class CustomerRepository extends BaseRepository {
         return this._hydrate(result);
     }
 
-    /**
-     * Find all customers for a user (via business)
-     * Used by ReportService
-     * @param {number} userId - User ID
-     * @returns {Array} Array of customers
-     */
     findByUserId(userId) {
-        // First get the user's business
         const business = this.db.prepare(
             'SELECT id FROM businesses WHERE user_id = ? LIMIT 1'
         ).get(userId);

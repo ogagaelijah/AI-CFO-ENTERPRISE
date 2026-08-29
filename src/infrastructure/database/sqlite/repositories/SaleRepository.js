@@ -3,8 +3,8 @@
 const BaseRepository = require('./BaseRepository');
 
 class SaleRepository extends BaseRepository {
-    constructor() {
-        super('sales');
+    constructor(db = null) {
+        super('sales', db);
     }
 
     _hydrate(row) {
@@ -82,19 +82,30 @@ class SaleRepository extends BaseRepository {
 
     findByDateRange(userId, startDate, endDate) {
         const rows = this.db.prepare(`
-            SELECT * FROM sales 
-            WHERE user_id = ? 
-            AND sale_date >= ? 
-            AND sale_date <= ?
+            SELECT * FROM sales
+            WHERE user_id = ?
+            AND date(sale_date) >= ?
+            AND date(sale_date) <= ?
             ORDER BY sale_date DESC
         `).all(userId, startDate, endDate);
         return rows.map(row => this._hydrate(row));
     }
 
+    findByBusinessIdAndDateRange(businessId, startDate, endDate) {
+        const rows = this.db.prepare(`
+            SELECT * FROM sales
+            WHERE business_id = ?
+            AND date(sale_date) >= ?
+            AND date(sale_date) <= ?
+            ORDER BY sale_date DESC
+        `).all(businessId, startDate, endDate);
+        return rows.map(row => this._hydrate(row));
+    }
+
     findByCustomerName(userId, customerName) {
         const rows = this.db.prepare(`
-            SELECT * FROM sales 
-            WHERE user_id = ? 
+            SELECT * FROM sales
+            WHERE user_id = ?
             AND customer_name LIKE ?
             ORDER BY sale_date DESC
         `).all(userId, `%${customerName}%`);
@@ -103,8 +114,8 @@ class SaleRepository extends BaseRepository {
 
     findByCustomerId(businessId, customerId) {
         const rows = this.db.prepare(`
-            SELECT * FROM sales 
-            WHERE business_id = ? 
+            SELECT * FROM sales
+            WHERE business_id = ?
             AND customer_id = ?
             ORDER BY sale_date DESC
         `).all(businessId, customerId);
@@ -208,7 +219,7 @@ class SaleRepository extends BaseRepository {
 
     getSummary(userId) {
         return this.db.prepare(`
-            SELECT 
+            SELECT
                 COUNT(*) as total_sales,
                 SUM(total_price) as total_amount,
                 SUM(CASE WHEN payment_status = 'PAID' THEN total_price ELSE 0 END) as total_paid,
@@ -216,22 +227,22 @@ class SaleRepository extends BaseRepository {
                 COUNT(CASE WHEN payment_status = 'PAID' THEN 1 END) as paid_count,
                 COUNT(CASE WHEN payment_status = 'UNPAID' THEN 1 END) as unpaid_count,
                 COUNT(CASE WHEN payment_status = 'PARTIAL' THEN 1 END) as partial_count
-            FROM sales 
+            FROM sales
             WHERE user_id = ?
         `).get(userId);
     }
 
     findWithCostByDateRange(userId, startDate, endDate) {
         const rows = this.db.prepare(`
-            SELECT 
+            SELECT
                 s.*,
                 s.unit_cost,
                 s.cogs,
                 s.gross_profit,
                 s.margin_percentage
             FROM sales s
-            WHERE s.user_id = ? 
-            AND s.sale_date >= ? 
+            WHERE s.user_id = ?
+            AND s.sale_date >= ?
             AND s.sale_date <= ?
             ORDER BY s.sale_date DESC
         `).all(userId, startDate, endDate);
@@ -240,15 +251,15 @@ class SaleRepository extends BaseRepository {
 
     getCostSummary(userId, startDate, endDate) {
         return this.db.prepare(`
-            SELECT 
+            SELECT
                 COALESCE(SUM(total_price), 0) as total_revenue,
                 COALESCE(SUM(cogs), 0) as total_cogs,
                 COALESCE(SUM(gross_profit), 0) as total_gross_profit,
                 COALESCE(AVG(margin_percentage), 0) as avg_margin,
                 COUNT(*) as total_sales
-            FROM sales 
-            WHERE user_id = ? 
-            AND sale_date >= ? 
+            FROM sales
+            WHERE user_id = ?
+            AND sale_date >= ?
             AND sale_date <= ?
             AND (unit_cost > 0 OR cogs > 0)
         `).get(userId, startDate, endDate);
@@ -257,19 +268,19 @@ class SaleRepository extends BaseRepository {
     findByBusinessIdWithFilters(businessId, filters = {}) {
         let sql = 'SELECT * FROM sales WHERE business_id = ?';
         const params = [businessId];
-        
+
         if (filters.startDate && filters.endDate) {
-            sql += ' AND sale_date >= ? AND sale_date <= ?';
+            sql += ' AND date(sale_date) >= ? AND date(sale_date) <= ?';
             params.push(filters.startDate, filters.endDate);
         }
-        
+
         if (filters.paymentStatus) {
             sql += ' AND payment_status = ?';
             params.push(filters.paymentStatus);
         }
-        
+
         sql += ' ORDER BY sale_date DESC, id DESC';
-        
+
         if (filters.limit) {
             sql += ' LIMIT ?';
             params.push(filters.limit);
@@ -278,14 +289,14 @@ class SaleRepository extends BaseRepository {
                 params.push(filters.offset);
             }
         }
-        
+
         const rows = this.db.prepare(sql).all(...params);
         return rows.map(row => this._hydrate(row));
     }
 
     getStats(businessId) {
         const stmt = this.db.prepare(`
-            SELECT 
+            SELECT
                 COUNT(*) as total_sales,
                 COALESCE(SUM(total_price), 0) as total_revenue,
                 COALESCE(SUM(CASE WHEN payment_status = 'PAID' THEN total_price ELSE 0 END), 0) as total_paid,
@@ -293,7 +304,7 @@ class SaleRepository extends BaseRepository {
                 COALESCE(SUM(gross_profit), 0) as total_profit,
                 COALESCE(AVG(margin_percentage), 0) as avg_margin,
                 COUNT(DISTINCT customer_name) as unique_customers
-            FROM sales 
+            FROM sales
             WHERE business_id = ?
         `);
         return stmt.get(businessId) || {

@@ -8,7 +8,7 @@ const RecordPurchaseModal = ({ isOpen, form, setForm, onSubmit, onClose, error }
   const handleAddItem = () => {
     setForm({
       ...form,
-      items: [...(form.items || []), { name: '', quantity: 1, unitCost: 0, sellingPrice: 0 }],
+      items: [...(form.items || []), { name: '', quantity: 1, unitCost: 0 }],
     });
   };
 
@@ -27,7 +27,7 @@ const RecordPurchaseModal = ({ isOpen, form, setForm, onSubmit, onClose, error }
 
   // Initialize with one item if empty
   if (!form.items || form.items.length === 0) {
-    setForm({ ...form, items: [{ name: '', quantity: 1, unitCost: 0, sellingPrice: 0 }] });
+    setForm({ ...form, items: [{ name: '', quantity: 1, unitCost: 0 }] });
     return null;
   }
 
@@ -129,7 +129,7 @@ const RecordPurchaseModal = ({ isOpen, form, setForm, onSubmit, onClose, error }
             </div>
           </div>
 
-          {/* ✅ Multi-Item Section */}
+          {/* ✅ Multi-Item Section - NO SELL PRICE */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -145,12 +145,10 @@ const RecordPurchaseModal = ({ isOpen, form, setForm, onSubmit, onClose, error }
             </div>
 
             <div className="grid grid-cols-12 gap-2 mb-1 text-xs text-gray-500 dark:text-gray-400">
-              <div className="col-span-3">Item Name</div>
-              <div className="col-span-2 text-center">Qty</div>
-              <div className="col-span-2 text-center">Unit Cost</div>
-              <div className="col-span-2 text-center">Sell Price</div>
+              <div className="col-span-4">Item Name</div>
+              <div className="col-span-3 text-center">Qty</div>
+              <div className="col-span-3 text-center">Unit Cost</div>
               <div className="col-span-2 text-center">Total</div>
-              <div className="col-span-1"></div>
             </div>
 
             {(form.items || []).map((item, index) => {
@@ -161,7 +159,7 @@ const RecordPurchaseModal = ({ isOpen, form, setForm, onSubmit, onClose, error }
                     type="text"
                     value={item.name}
                     onChange={(e) => handleItemChange(index, 'name', e.target.value)}
-                    className="col-span-3 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+                    className="col-span-4 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
                     placeholder="Item name"
                     required
                   />
@@ -169,7 +167,7 @@ const RecordPurchaseModal = ({ isOpen, form, setForm, onSubmit, onClose, error }
                     type="number"
                     value={item.quantity}
                     onChange={(e) => handleItemChange(index, 'quantity', e.target.value)}
-                    className="col-span-2 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-center"
+                    className="col-span-3 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-center"
                     min="1"
                     required
                   />
@@ -177,17 +175,7 @@ const RecordPurchaseModal = ({ isOpen, form, setForm, onSubmit, onClose, error }
                     type="number"
                     value={item.unitCost}
                     onChange={(e) => handleItemChange(index, 'unitCost', e.target.value)}
-                    className="col-span-2 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-center"
-                    placeholder="0"
-                    min="0"
-                    step="0.01"
-                    required
-                  />
-                  <input
-                    type="number"
-                    value={item.sellingPrice}
-                    onChange={(e) => handleItemChange(index, 'sellingPrice', e.target.value)}
-                    className="col-span-2 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-center"
+                    className="col-span-3 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-center"
                     placeholder="0"
                     min="0"
                     step="0.01"

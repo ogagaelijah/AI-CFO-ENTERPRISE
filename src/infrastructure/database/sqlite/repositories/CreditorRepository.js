@@ -3,8 +3,8 @@
 const BaseRepository = require('./BaseRepository');
 
 class CreditorRepository extends BaseRepository {
-    constructor() {
-        super('creditors');
+    constructor(db = null) {
+        super('creditors', db);
     }
 
     create(creditorData) {
@@ -59,11 +59,6 @@ class CreditorRepository extends BaseRepository {
         ).all(userId);
     }
 
-    /**
-     * Alias for findActive - used by ReportService
-     * @param {number} userId - User ID
-     * @returns {Array} Array of active creditors
-     */
     findActiveByUser(userId) {
         return this.findActive(userId);
     }
@@ -193,11 +188,6 @@ class CreditorRepository extends BaseRepository {
         `).get(userId);
     }
 
-    /**
-     * Delete creditor by ID
-     * @param {number} id - Creditor ID
-     * @returns {boolean} True if deleted
-     */
     delete(id) {
         const stmt = this.db.prepare('DELETE FROM creditors WHERE id = ?');
         const result = stmt.run(id);

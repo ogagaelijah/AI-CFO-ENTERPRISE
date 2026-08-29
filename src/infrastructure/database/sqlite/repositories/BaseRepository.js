@@ -3,9 +3,19 @@
 const { getDatabase } = require('../connection');
 
 class BaseRepository {
-    constructor(tableName) {
+    constructor(tableName, db = null) {
         this.tableName = tableName;
-        this.db = getDatabase();
+        // ✅ Allow custom db connection for testing
+        this._db = db;
+    }
+
+    get db() {
+        // If a custom db was provided (for testing), use it
+        if (this._db) {
+            return this._db;
+        }
+        // Otherwise use the default connection
+        return getDatabase();
     }
 
     findById(id) {

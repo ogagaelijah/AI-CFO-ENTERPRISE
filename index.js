@@ -29,9 +29,15 @@ const { supplierHandler } = require('./src/interfaces/telegram/handlers/supplier
 const { projectHandler } = require('./src/interfaces/telegram/handlers/projectHandler');
 
 // =============================================
-// REPORT SERVICE IMPORTS
+// REPORT SERVICE IMPORTS - Using new modular services
 // =============================================
-const ReportService = require('./src/application/services/reportService');
+const ProfitLossService = require('./src/application/services/reports/ProfitLossService');
+const DailyReportService = require('./src/application/services/reports/DailyReportService');
+const WeeklyReportService = require('./src/application/services/reports/WeeklyReportService');
+const MonthlyReportService = require('./src/application/services/reports/MonthlyReportService');
+const YearlyReportService = require('./src/application/services/reports/YearlyReportService');
+const ExecutiveReportService = require('./src/application/services/reports/ExecutiveReportService');
+
 const SaleRepository = require('./src/infrastructure/database/sqlite/repositories/SaleRepository');
 const PurchaseRepository = require('./src/infrastructure/database/sqlite/repositories/PurchaseRepository');
 const CustomerRepository = require('./src/infrastructure/database/sqlite/repositories/CustomerRepository');
@@ -80,21 +86,73 @@ const debtorRepo = new DebtorRepository();
 const creditorRepo = new CreditorRepository();
 
 // =============================================
-// INITIALIZE REPORT SERVICE
+// INITIALIZE REPORT SERVICES
 // =============================================
 const saleRepo = new SaleRepository();
 const purchaseRepo = new PurchaseRepository();
 const customerRepo = new CustomerRepository();
 
-const reportService = new ReportService({
+// P&L Service
+const profitLossService = new ProfitLossService({
     saleRepository: saleRepo,
-    incomeRepository: incomeRepo,
-    expenseRepository: expenseRepo,
     purchaseRepository: purchaseRepo,
+    expenseRepository: expenseRepo,
+    incomeRepository: incomeRepo,
+});
+
+// Daily Report Service
+const dailyReportService = new DailyReportService({
+    saleRepository: saleRepo,
+    purchaseRepository: purchaseRepo,
+    expenseRepository: expenseRepo,
+    incomeRepository: incomeRepo,
     debtorRepository: debtorRepo,
     creditorRepository: creditorRepo,
     inventoryRepository: inventoryRepo,
-    customerRepository: customerRepo,
+});
+
+// Weekly Report Service
+const weeklyReportService = new WeeklyReportService({
+    saleRepository: saleRepo,
+    purchaseRepository: purchaseRepo,
+    expenseRepository: expenseRepo,
+    incomeRepository: incomeRepo,
+    debtorRepository: debtorRepo,
+    creditorRepository: creditorRepo,
+    inventoryRepository: inventoryRepo,
+});
+
+// Monthly Report Service
+const monthlyReportService = new MonthlyReportService({
+    saleRepository: saleRepo,
+    purchaseRepository: purchaseRepo,
+    expenseRepository: expenseRepo,
+    incomeRepository: incomeRepo,
+    debtorRepository: debtorRepo,
+    creditorRepository: creditorRepo,
+    inventoryRepository: inventoryRepo,
+    profitLossService: profitLossService,
+});
+
+// Yearly Report Service
+const yearlyReportService = new YearlyReportService({
+    saleRepository: saleRepo,
+    purchaseRepository: purchaseRepo,
+    expenseRepository: expenseRepo,
+    incomeRepository: incomeRepo,
+    debtorRepository: debtorRepo,
+    creditorRepository: creditorRepo,
+    inventoryRepository: inventoryRepo,
+    profitLossService: profitLossService,
+});
+
+// Executive Report Service
+const executiveReportService = new ExecutiveReportService({
+    profitLossService: profitLossService,
+    inventoryRepository: inventoryRepo,
+    debtorRepository: debtorRepo,
+    creditorRepository: creditorRepo,
+    saleRepository: saleRepo,
 });
 
 // =============================================
@@ -120,14 +178,21 @@ botInstance.command('creditors', creditorHandler);
 botInstance.command('purchase', purchaseHandler);
 
 // =============================================
-// REPORT COMMANDS (Pass reportService)
+// REPORT COMMANDS (Using new services)
 // =============================================
-botInstance.command('reports', (ctx) => reportHandler(ctx, reportService));
-botInstance.command('daily', (ctx) => reportHandler(ctx, reportService));
-botInstance.command('weekly', (ctx) => reportHandler(ctx, reportService));
-botInstance.command('monthly', (ctx) => reportHandler(ctx, reportService));
-botInstance.command('yearly', (ctx) => reportHandler(ctx, reportService));
-botInstance.command('executive', (ctx) => reportHandler(ctx, reportService));
+botInstance.command('reports', (ctx) => reportHandler(ctx, { 
+    profitLossService, 
+    dailyReportService, 
+    weeklyReportService, 
+    monthlyReportService, 
+    yearlyReportService, 
+    executiveReportService 
+}));
+botInstance.command('daily', (ctx) => reportHandler(ctx, { dailyReportService }));
+botInstance.command('weekly', (ctx) => reportHandler(ctx, { weeklyReportService }));
+botInstance.command('monthly', (ctx) => reportHandler(ctx, { monthlyReportService }));
+botInstance.command('yearly', (ctx) => reportHandler(ctx, { yearlyReportService }));
+botInstance.command('executive', (ctx) => reportHandler(ctx, { executiveReportService }));
 
 // =============================================
 // OTHER COMMANDS
@@ -275,12 +340,26 @@ botInstance.on('callback_query', async (ctx) => {
         }
 
         // =============================================
-        // REPORT CALLBACKS (Pass reportService)
+        // REPORT CALLBACKS (Using new services)
         // =============================================
-        if (data === 'report_daily' || data === 'report_weekly' || 
-            data === 'report_monthly' || data === 'report_yearly' || 
-            data === 'report_executive') {
-            await reportCallbackHandler(ctx, reportService);
+        if (data === 'report_daily') {
+            await reportCallbackHandler(ctx, { dailyReportService });
+            return;
+        }
+        if (data === 'report_weekly') {
+            await reportCallbackHandler(ctx, { weeklyReportService });
+            return;
+        }
+        if (data === 'report_monthly') {
+            await reportCallbackHandler(ctx, { monthlyReportService });
+            return;
+        }
+        if (data === 'report_yearly') {
+            await reportCallbackHandler(ctx, { yearlyReportService });
+            return;
+        }
+        if (data === 'report_executive') {
+            await reportCallbackHandler(ctx, { executiveReportService });
             return;
         }
 
@@ -818,7 +897,7 @@ bot.launch().then(() => {
     console.log('🏢 Supplier module loaded');
     console.log('🏗️ Project module loaded');
     console.log('🗑️ Delete functionality added to all modules');
-    console.log('📊 Report Service loaded (Daily/Weekly/Monthly/Yearly/Executive)');
+    console.log('📊 Report Services loaded (P&L, Daily, Weekly, Monthly, Yearly, Executive)');
     console.log('⚙️ Settings module loaded');
     console.log('=====================================');
 }).catch((error) => {

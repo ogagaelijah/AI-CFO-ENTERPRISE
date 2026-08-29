@@ -12,6 +12,7 @@ class InventoryItem {
         reorderLevel = 5,
         costPrice = 0,
         sellingPrice = 0,
+        lastPurchaseCost = 0,  // ✅ NEW: actual cost of most recent purchase
         unit = 'unit',
         location = null,
         supplierId = null,
@@ -25,6 +26,7 @@ class InventoryItem {
         reorder_level,
         cost_price,
         selling_price,
+        last_purchase_cost,  // ✅ NEW
         supplier_id,
         created_at,
         updated_at,
@@ -39,6 +41,7 @@ class InventoryItem {
         this.reorderLevel = reorderLevel || reorder_level || 5;
         this.costPrice = costPrice || cost_price || 0;
         this.sellingPrice = sellingPrice || selling_price || 0;
+        this.lastPurchaseCost = lastPurchaseCost || last_purchase_cost || 0;  // ✅ NEW
         this.unit = unit || 'unit';
         this.location = location || null;
         this.supplierId = supplierId || supplier_id || null;
@@ -105,6 +108,24 @@ class InventoryItem {
         return this;
     }
 
+    // ✅ NEW: Update average cost and last purchase cost on purchase
+    updateCostOnPurchase(quantity, unitCost) {
+        if (quantity <= 0) throw new Error('Quantity must be positive');
+        if (unitCost <= 0) throw new Error('Unit cost must be positive');
+        
+        // Store last purchase cost
+        this.lastPurchaseCost = unitCost;
+        
+        // Calculate new weighted average cost
+        const totalCurrentValue = this.quantity * this.costPrice;
+        const totalNewValue = quantity * unitCost;
+        const totalQuantity = this.quantity + quantity;
+        this.costPrice = totalQuantity > 0 ? (totalCurrentValue + totalNewValue) / totalQuantity : unitCost;
+        this.quantity = totalQuantity;
+        this.updatedAt = new Date();
+        return this;
+    }
+
     toJSON() {
         return {
             id: this.id,
@@ -115,6 +136,7 @@ class InventoryItem {
             reorder_level: this.reorderLevel,
             cost_price: this.costPrice,
             selling_price: this.sellingPrice,
+            last_purchase_cost: this.lastPurchaseCost,  // ✅ NEW
             unit: this.unit,
             location: this.location,
             supplier_id: this.supplierId,

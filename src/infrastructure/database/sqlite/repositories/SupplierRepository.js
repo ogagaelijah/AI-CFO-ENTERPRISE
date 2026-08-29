@@ -2,7 +2,6 @@
 
 const BaseRepository = require('./BaseRepository');
 
-// ✅ Define Supplier class directly inside this file
 class Supplier {
     constructor({
         id,
@@ -48,8 +47,8 @@ class Supplier {
 }
 
 class SupplierRepository extends BaseRepository {
-    constructor() {
-        super('suppliers');
+    constructor(db = null) {
+        super('suppliers', db);
     }
 
     create(supplierData) {
