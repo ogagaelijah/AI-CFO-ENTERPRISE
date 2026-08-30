@@ -1,9 +1,21 @@
 // src/application/services/reports/MonthlyReportService.js
 
+const RevenueCalculator = require('./calculators/RevenueCalculator');
+const CogsCalculator = require('./calculators/CogsCalculator');
+const ProfitCalculator = require('./calculators/ProfitCalculator');
+const CashCalculator = require('./calculators/CashCalculator');
+const ARCalculator = require('./calculators/ARCalculator');
+const APCalculator = require('./calculators/APCalculator');
+const InventoryCalculator = require('./calculators/InventoryCalculator');
+const ComparisonCalculator = require('./calculators/ComparisonCalculator');
+
 /**
- * Monthly Report Service
- * Full management report
+ * Monthly Report Service - Refactored to use canonical calculators
+ * 
+ * Management analysis report
  * Shows MoM trends, YTD, KPIs, Risks, AI Insights
+ * 
+ * All data flows through canonical calculators (single source of truth)
  */
 class MonthlyReportService {
     constructor({
@@ -14,7 +26,15 @@ class MonthlyReportService {
         debtorRepository,
         creditorRepository,
         inventoryRepository,
-        profitLossService,
+        paymentRepository,
+        revenueCalculator = null,
+        cogsCalculator = null,
+        profitCalculator = null,
+        cashCalculator = null,
+        arCalculator = null,
+        apCalculator = null,
+        inventoryCalculator = null,
+        comparisonCalculator = null,
     }) {
         this.saleRepository = saleRepository;
         this.purchaseRepository = purchaseRepository;
@@ -23,153 +43,339 @@ class MonthlyReportService {
         this.debtorRepository = debtorRepository;
         this.creditorRepository = creditorRepository;
         this.inventoryRepository = inventoryRepository;
-        this.profitLossService = profitLossService;
+        this.paymentRepository = paymentRepository;
+
+        this.revenueCalculator = revenueCalculator || new RevenueCalculator({
+            saleRepository: this.saleRepository,
+        });
+
+        this.cogsCalculator = cogsCalculator || new CogsCalculator({
+            saleRepository: this.saleRepository,
+        });
+
+        this.profitCalculator = profitCalculator || new ProfitCalculator({
+            saleRepository: this.saleRepository,
+            expenseRepository: this.expenseRepository,
+            incomeRepository: this.incomeRepository,
+        });
+
+        this.cashCalculator = cashCalculator || new CashCalculator({
+            paymentRepository: this.paymentRepository,
+        });
+
+        this.arCalculator = arCalculator || new ARCalculator({
+            debtorRepository: this.debtorRepository,
+        });
+
+        this.apCalculator = apCalculator || new APCalculator({
+            creditorRepository: this.creditorRepository,
+        });
+
+        this.inventoryCalculator = inventoryCalculator || new InventoryCalculator({
+            inventoryRepository: this.inventoryRepository,
+        });
+
+        this.comparisonCalculator = comparisonCalculator || new ComparisonCalculator();
+    }
+
+    _safeArray(result) {
+        return Array.isArray(result) ? result : [];
+    }
+
+    _safeNumber(value) {
+        const num = Number(value);
+        return isNaN(num) ? 0 : num;
+    }
+
+    _parseDate(dateStr) {
+        if (!dateStr) return new Date();
+        const parts = dateStr.split('T')[0].split('-');
+        return new Date(
+            parseInt(parts[0]),
+            parseInt(parts[1]) - 1,
+            parseInt(parts[2]),
+            0, 0, 0, 0
+        );
+    }
+
+    _formatDateStr(date) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    _getLastDayOfMonth(date) {
+        return new Date(date.getFullYear(), date.getMonth() + 1, 0);
     }
 
     async generate({ userId, businessId, date }) {
-        const targetDate = date ? new Date(date) : new Date();
+        const targetDate = date ? this._parseDate(date) : new Date();
         const year = targetDate.getFullYear();
         const month = targetDate.getMonth();
         const monthName = targetDate.toLocaleString('default', { month: 'long' });
 
-        // Current month
         const monthStart = new Date(year, month, 1);
-        const monthEnd = new Date(year, month + 1, 0);
-        const monthStartStr = monthStart.toISOString().split('T')[0];
-        const monthEndStr = monthEnd.toISOString().split('T')[0];
+        const monthEnd = this._getLastDayOfMonth(monthStart);
+        const monthStartStr = this._formatDateStr(monthStart);
+        const monthEndStr = this._formatDateStr(monthEnd);
 
-        // Previous month
-        const prevMonth = month === 0 ? 11 : month - 1;
-        const prevYear = month === 0 ? year - 1 : year;
-        const prevMonthStart = new Date(prevYear, prevMonth, 1);
-        const prevMonthEnd = new Date(prevYear, prevMonth + 1, 0);
-        const prevMonthStartStr = prevMonthStart.toISOString().split('T')[0];
-        const prevMonthEndStr = prevMonthEnd.toISOString().split('T')[0];
+        const prevMonthStart = new Date(year, month - 1, 1);
+        const prevMonthEnd = this._getLastDayOfMonth(prevMonthStart);
+        const prevMonthStartStr = this._formatDateStr(prevMonthStart);
+        const prevMonthEndStr = this._formatDateStr(prevMonthEnd);
 
-        // Year-to-Date
         const ytdStart = new Date(year, 0, 1);
-        const ytdStartStr = ytdStart.toISOString().split('T')[0];
-        const ytdEndStr = monthEndStr;
+        const ytdStartStr = this._formatDateStr(ytdStart);
 
-        // ✅ FIX: Use sale_date for sales
-        const sales = await this.saleRepository.findByDateRange(
-            userId,
-            monthStartStr,
-            monthEndStr
-        );
+        // =============================================
+        // CURRENT MONTH DATA
+        // =============================================
 
-        const income = await this.incomeRepository.findByDateRange(
-            userId,
-            monthStartStr,
-            monthEndStr
-        );
-
-        const expenses = await this.expenseRepository.findByDateRange(
-            userId,
-            monthStartStr,
-            monthEndStr
-        );
-
-        const purchases = await this.purchaseRepository.findByDateRange(
-            userId,
-            monthStartStr,
-            monthEndStr
-        );
-
-        // Get P&L for current month
-        const pl = await this.profitLossService.generate({
+        const currentRevenue = await this.revenueCalculator.calculate({
             userId,
             businessId,
             startDate: monthStartStr,
             endDate: monthEndStr,
-            period: 'monthly',
         });
 
-        // Get P&L for previous month
-        const prevPl = await this.profitLossService.generate({
+        const currentCogs = await this.cogsCalculator.calculate({
+            userId,
+            businessId,
+            startDate: monthStartStr,
+            endDate: monthEndStr,
+        });
+
+        const currentProfit = await this.profitCalculator.calculate({
+            userId,
+            businessId,
+            startDate: monthStartStr,
+            endDate: monthEndStr,
+            revenueData: { totalRevenue: currentRevenue.totalRevenue },
+            cogsData: { totalCogs: currentCogs.totalCogs },
+        });
+
+        const [currentCash, currentAr, currentAp, currentInventory] = await Promise.all([
+            this.cashCalculator.calculate({ userId, businessId, startDate: monthStartStr, endDate: monthEndStr }),
+            this.arCalculator.calculate({ userId, businessId, asAtDate: monthEndStr }),
+            this.apCalculator.calculate({ userId, businessId, asAtDate: monthEndStr }),
+            this.inventoryCalculator.calculate({ userId, businessId, includeDetails: false, lowStockThreshold: 5 }),
+        ]);
+
+        // =============================================
+        // PREVIOUS MONTH DATA
+        // =============================================
+
+        const prevRevenue = await this.revenueCalculator.calculate({
             userId,
             businessId,
             startDate: prevMonthStartStr,
             endDate: prevMonthEndStr,
-            period: 'monthly',
         });
 
-        // Get P&L for YTD
-        const ytdPl = await this.profitLossService.generate({
+        const prevCogs = await this.cogsCalculator.calculate({
+            userId,
+            businessId,
+            startDate: prevMonthStartStr,
+            endDate: prevMonthEndStr,
+        });
+
+        const prevProfit = await this.profitCalculator.calculate({
+            userId,
+            businessId,
+            startDate: prevMonthStartStr,
+            endDate: prevMonthEndStr,
+            revenueData: { totalRevenue: prevRevenue.totalRevenue },
+            cogsData: { totalCogs: prevCogs.totalCogs },
+        });
+
+        // =============================================
+        // YEAR-TO-DATE DATA
+        // =============================================
+
+        const ytdRevenue = await this.revenueCalculator.calculate({
             userId,
             businessId,
             startDate: ytdStartStr,
-            endDate: ytdEndStr,
-            period: 'ytd',
+            endDate: monthEndStr,
         });
 
-        // Get debtors summary
-        const debtorSummary = await this.debtorRepository.getSummary(userId);
+        const ytdCogs = await this.cogsCalculator.calculate({
+            userId,
+            businessId,
+            startDate: ytdStartStr,
+            endDate: monthEndStr,
+        });
 
-        // Get creditors summary
-        const creditorSummary = await this.creditorRepository.getSummary(userId);
+        // ✅ PERMANENT FIX: Pass revenueData and cogsData to YTD profit calculation
+        const ytdProfit = await this.profitCalculator.calculate({
+            userId,
+            businessId,
+            startDate: ytdStartStr,
+            endDate: monthEndStr,
+            revenueData: { totalRevenue: ytdRevenue.totalRevenue },
+            cogsData: { totalCogs: ytdCogs.totalCogs },
+        });
 
-        // Get inventory summary
-        const inventorySummary = await this.inventoryRepository.getSummary(userId);
+        // =============================================
+        // COMPARISONS
+        // =============================================
 
-        // Month-over-month comparisons
-        const revenueChange = prevPl.revenue.totalRevenue > 0
-            ? ((pl.revenue.totalRevenue - prevPl.revenue.totalRevenue) / prevPl.revenue.totalRevenue) * 100
-            : 0;
+        const revenueComparison = this.comparisonCalculator.compareValues(
+            currentRevenue.totalRevenue || 0,
+            prevRevenue.totalRevenue || 0,
+            'Revenue'
+        );
 
-        const profitChange = prevPl.netProfit.amount > 0
-            ? ((pl.netProfit.amount - prevPl.netProfit.amount) / prevPl.netProfit.amount) * 100
-            : 0;
+        const profitComparison = this.comparisonCalculator.compareValues(
+            currentProfit.netProfit || 0,
+            prevProfit.netProfit || 0,
+            'Net Profit'
+        );
 
-        // Financial ratios
+        const marginComparison = this.comparisonCalculator.compareValues(
+            currentProfit.grossMargin || 0,
+            prevProfit.grossMargin || 0,
+            'Gross Margin'
+        );
+
+        // =============================================
+        // PERMANENT FIX: Calculate netMargin using productRevenue
+        // =============================================
+        const productRevenue = currentRevenue.totalRevenue || 0;
+        const netProfit = currentProfit.netProfit || 0;
+        const netMargin = productRevenue > 0 ? (netProfit / productRevenue) * 100 : 0;
+
+        // =============================================
+        // FINANCIAL RATIOS
+        // =============================================
+
         const ratios = {
-            grossMargin: pl.grossProfit.margin,
-            netMargin: pl.netProfit.margin,
-            expenseRatio: pl.revenue.totalRevenue > 0
-                ? (pl.operatingExpenses.total / pl.revenue.totalRevenue) * 100
-                : 0,
+            grossMargin: currentProfit.grossMargin || 0,
+            netMargin: netMargin,
+            expenseRatio: productRevenue > 0 ? (currentProfit.totalExpenses / productRevenue) * 100 : 0,
         };
 
-        // Risk identification
+        // =============================================
+        // RISKS
+        // =============================================
+
         const risks = [];
-        if (debtorSummary.total_outstanding > 0) {
+        if (currentAr.overdueAmount > 0) {
             risks.push({
                 type: 'High Risk',
-                description: `Significant overdue receivables: ₦${debtorSummary.total_outstanding.toLocaleString()}`,
+                description: `Significant overdue receivables: ₦${currentAr.overdueAmount.toLocaleString()}`,
             });
         }
-        if (inventorySummary.low_stock_count > 0) {
+        if (currentInventory.lowStockCount > 0) {
             risks.push({
                 type: 'Medium Risk',
-                description: `${inventorySummary.low_stock_count} items are below reorder level`,
+                description: `${currentInventory.lowStockCount} items are below reorder level`,
             });
         }
-        if (revenueChange < -10) {
+        if (revenueComparison.percentageChange !== null && revenueComparison.percentageChange < -10) {
             risks.push({
                 type: 'High Risk',
-                description: `Revenue declined ${Math.abs(revenueChange).toFixed(1)}% month-over-month`,
+                description: `Revenue declined ${Math.abs(revenueComparison.percentageChange).toFixed(1)}% month-over-month`,
+            });
+        }
+        if (currentProfit.netProfit < 0) {
+            risks.push({
+                type: 'High Risk',
+                description: 'Business is operating at a loss this month',
             });
         }
 
-        // AI Insights
+        // =============================================
+        // AI INSIGHTS
+        // =============================================
+
         const insights = [];
-        if (revenueChange > 0) {
-            insights.push(`Revenue increased by ${revenueChange.toFixed(1)}% compared to previous month.`);
-        } else if (revenueChange < 0) {
-            insights.push(`Revenue decreased by ${Math.abs(revenueChange).toFixed(1)}% compared to previous month.`);
+        if (revenueComparison.percentageChange !== null && revenueComparison.percentageChange > 0) {
+            insights.push(`Revenue increased by ${revenueComparison.percentageChange.toFixed(1)}% compared to previous month.`);
+        } else if (revenueComparison.percentageChange !== null && revenueComparison.percentageChange < 0) {
+            insights.push(`Revenue decreased by ${Math.abs(revenueComparison.percentageChange).toFixed(1)}% compared to previous month.`);
         }
 
-        if (pl.netProfit.amount > 0) {
-            insights.push(`Business is profitable with a net margin of ${pl.netProfit.margin.toFixed(1)}%.`);
-        } else {
+        if (currentProfit.netProfit > 0) {
+            insights.push(`Business is profitable with a net margin of ${netMargin.toFixed(1)}%.`);
+        } else if (currentProfit.netProfit < 0) {
             insights.push(`Business is operating at a loss. Review expenses and pricing.`);
         }
 
-        // Recommendations
+        if (currentInventory.lowStockCount > 0) {
+            insights.push(`${currentInventory.lowStockCount} items are below reorder level.`);
+        }
+
+        // =============================================
+        // RECOMMENDATIONS
+        // =============================================
+
         const recommendations = [];
-        if (revenueChange < 0) recommendations.push('Review marketing and sales strategy to increase revenue.');
-        if (debtorSummary.total_outstanding > 0) recommendations.push('Follow up on overdue receivables.');
-        if (inventorySummary.low_stock_count > 0) recommendations.push('Reorder low stock items to prevent stockouts.');
+        if (revenueComparison.percentageChange !== null && revenueComparison.percentageChange < 0) {
+            recommendations.push('Review marketing and sales strategy to increase revenue.');
+        }
+        if (currentAr.overdueAmount > 0) {
+            recommendations.push('Follow up on overdue receivables.');
+        }
+        if (currentInventory.lowStockCount > 0) {
+            recommendations.push('Reorder low stock items to prevent stockouts.');
+        }
+        if (netMargin < 10 && netMargin > 0) {
+            recommendations.push('Review expense categories to improve net margin.');
+        }
+
+        // =============================================
+        // GET TRANSACTIONS
+        // =============================================
+
+        let currentSales = this._safeArray(currentRevenue.sales);
+
+        const productSales = {};
+        for (const sale of currentSales) {
+            const key = sale.item_name || 'Unknown';
+            if (!productSales[key]) productSales[key] = 0;
+            productSales[key] += this._safeNumber(sale.total_price);
+        }
+
+        const topProducts = Object.entries(productSales)
+            .map(([name, amount]) => ({ name, amount }))
+            .sort((a, b) => b.amount - a.amount)
+            .slice(0, 5);
+
+        const customerSales = {};
+        for (const sale of currentSales) {
+            const key = sale.customer_name || 'Unknown';
+            if (!customerSales[key]) customerSales[key] = 0;
+            customerSales[key] += this._safeNumber(sale.total_price);
+        }
+
+        const topCustomers = Object.entries(customerSales)
+            .map(([name, amount]) => ({ name, amount }))
+            .sort((a, b) => b.amount - a.amount)
+            .slice(0, 5);
+
+        let currentExpenses = [];
+        try {
+            const result = await this.expenseRepository.findByDateRange(userId, monthStartStr, monthEndStr);
+            currentExpenses = this._safeArray(result);
+        } catch (e) { /* ignore */ }
+
+        const expenseDrivers = {};
+        for (const expense of currentExpenses) {
+            const key = expense.category || 'Other';
+            if (!expenseDrivers[key]) expenseDrivers[key] = 0;
+            expenseDrivers[key] += this._safeNumber(expense.amount);
+        }
+
+        const topExpenses = Object.entries(expenseDrivers)
+            .map(([category, amount]) => ({ category, amount }))
+            .sort((a, b) => b.amount - a.amount)
+            .slice(0, 5);
+
+        // =============================================
+        // RETURN REPORT
+        // =============================================
 
         return {
             month: monthName,
@@ -179,71 +385,89 @@ class MonthlyReportService {
                 end: monthEndStr,
             },
             executiveSummary: {
-                totalRevenue: pl.revenue.totalRevenue,
-                netProfit: pl.netProfit.amount,
-                netMargin: pl.netProfit.margin,
-                revenueChange,
-                profitChange,
+                totalRevenue: productRevenue,
+                netProfit: netProfit,
+                netMargin: netMargin,
+                revenueChange: revenueComparison.percentageChange,
+                profitChange: profitComparison.percentageChange,
             },
             kpiDashboard: {
-                revenue: pl.revenue.totalRevenue,
-                cogs: pl.cogs.total,
-                grossProfit: pl.grossProfit.amount,
-                grossMargin: pl.grossProfit.margin,
-                expenses: pl.operatingExpenses.total,
-                netProfit: pl.netProfit.amount,
-                netMargin: pl.netProfit.margin,
-                ytdRevenue: ytdPl.revenue.totalRevenue,
-                ytdNetProfit: ytdPl.netProfit.amount,
+                revenue: productRevenue,
+                cogs: currentCogs.totalCogs || 0,
+                grossProfit: currentProfit.grossProfit || 0,
+                grossMargin: currentProfit.grossMargin || 0,
+                expenses: currentProfit.totalExpenses || 0,
+                netProfit: netProfit,
+                netMargin: netMargin,
+                ytdRevenue: ytdRevenue.totalRevenue || 0,
+                ytdNetProfit: ytdProfit.netProfit || 0,
             },
             revenuePerformance: {
-                productSales: pl.revenue.productSales,
-                otherRevenue: pl.revenue.otherRevenue,
-                totalRevenue: pl.revenue.totalRevenue,
+                productSales: productRevenue,
+                otherRevenue: 0,
+                totalRevenue: productRevenue,
                 monthOverMonth: {
-                    revenueChange,
-                    profitChange,
+                    revenueChange: revenueComparison.percentageChange,
+                    profitChange: profitComparison.percentageChange,
                 },
             },
-            cogs: pl.cogs,
-            grossProfit: pl.grossProfit,
-            operatingExpenses: pl.operatingExpenses,
-            netProfit: pl.netProfit,
-            cashFlow: {},
+            cogs: {
+                total: currentCogs.totalCogs || 0,
+            },
+            grossProfit: {
+                amount: currentProfit.grossProfit || 0,
+                margin: currentProfit.grossMargin || 0,
+            },
+            operatingExpenses: {
+                total: currentProfit.totalExpenses || 0,
+                topExpenses,
+            },
+            netProfit: {
+                amount: netProfit,
+                margin: netMargin,
+            },
+            cashFlow: {
+                opening: currentCash.openingCash || 0,
+                closing: currentCash.closingCash || 0,
+            },
             accountsReceivable: {
-                totalOutstanding: debtorSummary.total_outstanding || 0,
-                activeCount: debtorSummary.active_count || 0,
-                overdueCount: debtorSummary.overdue_count || 0,
+                totalOutstanding: currentAr.totalOutstanding || 0,
+                activeCount: currentAr.activeCount || 0,
+                overdueCount: currentAr.overdueCount || 0,
+                overdueAmount: currentAr.overdueAmount || 0,
             },
             accountsPayable: {
-                totalOutstanding: creditorSummary.total_outstanding || 0,
-                activeCount: creditorSummary.active_count || 0,
-                overdueCount: creditorSummary.overdue_count || 0,
+                totalOutstanding: currentAp.totalOutstanding || 0,
+                activeCount: currentAp.activeCount || 0,
+                overdueCount: currentAp.overdueCount || 0,
+                overdueAmount: currentAp.overdueAmount || 0,
             },
             inventory: {
-                totalItems: inventorySummary.total_items,
-                totalValue: inventorySummary.total_cost_value,
-                potentialProfit: inventorySummary.total_profit,
-                lowStockCount: inventorySummary.low_stock_count,
+                totalItems: currentInventory.totalItems || 0,
+                totalValue: currentInventory.totalCostValue || 0,
+                potentialProfit: currentInventory.totalPotentialProfit || 0,
+                lowStockCount: currentInventory.lowStockCount || 0,
             },
             financialRatios: ratios,
-            risks,
-            aiInsights: insights,
-            recommendations,
             monthOverMonth: {
-                revenueChange,
-                profitChange,
+                revenueChange: revenueComparison.percentageChange,
+                profitChange: profitComparison.percentageChange,
                 previousMonth: {
-                    revenue: prevPl.revenue.totalRevenue,
-                    grossProfit: prevPl.grossProfit.amount,
-                    netProfit: prevPl.netProfit.amount,
+                    revenue: prevRevenue.totalRevenue || 0,
+                    grossProfit: prevProfit.grossProfit || 0,
+                    netProfit: prevProfit.netProfit || 0,
                 },
             },
             yearToDate: {
-                revenue: ytdPl.revenue.totalRevenue,
-                netProfit: ytdPl.netProfit.amount,
+                revenue: ytdRevenue.totalRevenue || 0,
+                netProfit: ytdProfit.netProfit || 0,
             },
-            forecast: {},
+            risks,
+            aiInsights: insights,
+            recommendations,
+            topProducts,
+            topCustomers,
+            topExpenses,
         };
     }
 }

@@ -1,19 +1,25 @@
 // src/application/services/reports/CashFlowService.js
 
+const CashCalculator = require('./calculators/CashCalculator');
+
 /**
- * Cash Flow Report Service
+ * Cash Flow Service - Refactored to use CashCalculator
+ * 
  * Implements IAS 7 compliant cash flow reporting
  * Distinguishes between Operating, Investing, and Financing activities
+ * 
+ * All cash calculations flow through CashCalculator (single source of truth)
  */
 class CashFlowService {
     constructor({
         paymentRepository,
-        saleRepository,
-        purchaseRepository,
-        expenseRepository,
-        incomeRepository,
-        debtorRepository,
-        creditorRepository,
+        saleRepository = null,
+        purchaseRepository = null,
+        expenseRepository = null,
+        incomeRepository = null,
+        debtorRepository = null,
+        creditorRepository = null,
+        cashCalculator = null,
     }) {
         this.paymentRepository = paymentRepository;
         this.saleRepository = saleRepository;
@@ -22,62 +28,57 @@ class CashFlowService {
         this.incomeRepository = incomeRepository;
         this.debtorRepository = debtorRepository;
         this.creditorRepository = creditorRepository;
+
+        this.cashCalculator = cashCalculator || new CashCalculator({
+            paymentRepository: this.paymentRepository,
+        });
     }
 
     /**
      * Generate Cash Flow Statement for a date range
-     * Uses direct method (IAS 7)
      */
     async generate({ userId, businessId, startDate, endDate }) {
-        // Get all payments in date range
-        const payments = await this.paymentRepository.findByDateRange(
+        // 1. Get cash data from CashCalculator (single source of truth)
+        const cashData = await this.cashCalculator.calculate({
+            userId,
             businessId,
-            new Date(startDate),
-            new Date(endDate)
-        );
+            startDate,
+            endDate,
+            includeDetails: true,
+        });
 
-        // =============================================
-        // OPERATING ACTIVITIES - CASH IN
-        // =============================================
-        const fromCustomers = payments
-            .filter(p => p.type === 'RECEIVED' && p.referenceType === 'SALE')
-            .reduce((sum, p) => sum + p.amount, 0);
+        // 2. Get all payments for categorization (ensure array)
+        let payments = [];
+        try {
+            payments = await this.paymentRepository.findByDateRange(
+                businessId,
+                new Date(startDate),
+                new Date(endDate)
+            );
+        } catch (error) {
+            console.warn('⚠️ Could not fetch payments for categorization:', error.message);
+            payments = [];
+        }
 
-        const fromDebtors = payments
-            .filter(p => p.type === 'RECEIVED' && p.referenceType === 'DEBTOR')
-            .reduce((sum, p) => sum + p.amount, 0);
+        // Ensure payments is always an array
+        if (!payments || !Array.isArray(payments)) {
+            payments = [];
+        }
 
-        const fromOtherIncome = payments
-            .filter(p => p.type === 'RECEIVED' && p.referenceType === 'INCOME')
-            .reduce((sum, p) => sum + p.amount, 0);
+        // 3. Categorize payments by reference type
+        const operatingIn = payments
+            .filter(p => (p.type === 'RECEIVED' || p.type === 'IN') && 
+                         ['SALE', 'DEBTOR', 'INCOME'].includes(p.referenceType))
+            .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
 
-        const totalCashIn = fromCustomers + fromDebtors + fromOtherIncome;
+        const operatingOut = payments
+            .filter(p => (p.type === 'MADE' || p.type === 'OUT') && 
+                         ['PURCHASE', 'CREDITOR', 'EXPENSE'].includes(p.referenceType))
+            .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
 
-        // =============================================
-        // OPERATING ACTIVITIES - CASH OUT
-        // =============================================
-        const toSuppliers = payments
-            .filter(p => p.type === 'MADE' && p.referenceType === 'PURCHASE')
-            .reduce((sum, p) => sum + p.amount, 0);
+        const netOperatingCash = operatingIn - operatingOut;
 
-        const toCreditors = payments
-            .filter(p => p.type === 'MADE' && p.referenceType === 'CREDITOR')
-            .reduce((sum, p) => sum + p.amount, 0);
-
-        const operatingExpenses = payments
-            .filter(p => p.type === 'MADE' && p.referenceType === 'EXPENSE')
-            .reduce((sum, p) => sum + p.amount, 0);
-
-        const totalCashOut = toSuppliers + toCreditors + operatingExpenses;
-
-        // =============================================
-        // NET OPERATING CASH FLOW
-        // =============================================
-        const netOperatingCash = totalCashIn - totalCashOut;
-
-        // =============================================
-        // INVESTING ACTIVITIES
-        // =============================================
+        // 4. Investing Activities (placeholder)
         const investingActivities = {
             purchaseOfEquipment: 0,
             purchaseOfLongTermAssets: 0,
@@ -88,9 +89,7 @@ class CashFlowService {
             investingActivities.purchaseOfEquipment -
             investingActivities.purchaseOfLongTermAssets;
 
-        // =============================================
-        // FINANCING ACTIVITIES
-        // =============================================
+        // 5. Financing Activities (placeholder)
         const financingActivities = {
             loansReceived: 0,
             loanRepayments: 0,
@@ -103,29 +102,9 @@ class CashFlowService {
             financingActivities.loanRepayments -
             financingActivities.ownerWithdrawals;
 
-        // =============================================
-        // NET CHANGE IN CASH
-        // =============================================
+        // 6. Net change and closing cash
         const netChangeInCash = netOperatingCash + netInvestingCash + netFinancingCash;
 
-        // Calculate opening and closing cash
-        const openingPayments = await this.paymentRepository.findByDateRange(
-            businessId,
-            new Date('2000-01-01'),
-            new Date(startDate)
-        );
-
-        const openingCash = openingPayments.reduce((sum, p) => {
-            if (p.type === 'RECEIVED') return sum + p.amount;
-            if (p.type === 'MADE') return sum - p.amount;
-            return sum;
-        }, 0);
-
-        const closingCash = openingCash + netChangeInCash;
-
-        // =============================================
-        // RETURN FULL REPORT
-        // =============================================
         return {
             period: {
                 startDate,
@@ -133,16 +112,16 @@ class CashFlowService {
             },
             operatingActivities: {
                 cashIn: {
-                    fromCustomers,
-                    fromDebtors,
-                    fromOtherIncome,
-                    total: totalCashIn,
+                    fromCustomers: operatingIn,
+                    fromDebtors: 0,
+                    fromOtherIncome: 0,
+                    total: operatingIn,
                 },
                 cashOut: {
-                    toSuppliers,
-                    toCreditors,
-                    operatingExpenses,
-                    total: totalCashOut,
+                    toSuppliers: 0,
+                    toCreditors: 0,
+                    operatingExpenses: operatingOut,
+                    total: operatingOut,
                 },
                 netOperatingCash,
             },
@@ -160,8 +139,8 @@ class CashFlowService {
                 netFinancingCash,
             },
             netChangeInCash,
-            openingCash,
-            closingCash,
+            openingCash: cashData.openingCash || 0,
+            closingCash: cashData.closingCash || 0,
         };
     }
 

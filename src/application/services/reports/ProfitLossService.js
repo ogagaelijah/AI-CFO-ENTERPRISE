@@ -1,20 +1,46 @@
 // src/application/services/reports/ProfitLossService.js
 
+const RevenueCalculator = require('./calculators/RevenueCalculator');
+const CogsCalculator = require('./calculators/CogsCalculator');
+const ProfitCalculator = require('./calculators/ProfitCalculator');
+
 /**
- * Profit & Loss Service
- * Generates accrual-based P&L reports
+ * Profit & Loss Service - Single source of truth
+ * 
+ * Generates accrual-based P&L reports using:
+ * - RevenueCalculator for product revenue
+ * - CogsCalculator for COGS
+ * - ProfitCalculator for ALL profit metrics (including total revenue with other income)
+ * 
+ * All revenue calculations flow through ProfitCalculator.
+ * This ensures consistency across all reports.
  */
 class ProfitLossService {
     constructor({
         saleRepository,
-        purchaseRepository,
         expenseRepository,
         incomeRepository,
+        revenueCalculator = null,
+        cogsCalculator = null,
+        profitCalculator = null,
     }) {
         this.saleRepository = saleRepository;
-        this.purchaseRepository = purchaseRepository;
         this.expenseRepository = expenseRepository;
         this.incomeRepository = incomeRepository;
+
+        this.revenueCalculator = revenueCalculator || new RevenueCalculator({
+            saleRepository: this.saleRepository,
+        });
+
+        this.cogsCalculator = cogsCalculator || new CogsCalculator({
+            saleRepository: this.saleRepository,
+        });
+
+        this.profitCalculator = profitCalculator || new ProfitCalculator({
+            saleRepository: this.saleRepository,
+            expenseRepository: this.expenseRepository,
+            incomeRepository: this.incomeRepository,
+        });
     }
 
     /**
@@ -27,171 +53,89 @@ class ProfitLossService {
         endDate,
         period = 'monthly',
     }) {
-        // 1. Get Sales (Product Revenue)
-        const sales = await this.saleRepository.findByDateRange(
+        // 1. Get product revenue
+        const revenueData = await this.revenueCalculator.calculate({
             userId,
+            businessId,
             startDate,
-            endDate
-        );
+            endDate,
+        });
 
-        // 2. Get Income (Other Revenue)
-        const incomes = await this.incomeRepository.findByDateRange(
+        // 2. Get COGS
+        const cogsData = await this.cogsCalculator.calculate({
             userId,
+            businessId,
             startDate,
-            endDate
-        );
+            endDate,
+        });
 
-        // 3. Get Expenses
+        // 3. Get expenses
         const expenses = await this.expenseRepository.findByDateRange(
             userId,
             startDate,
             endDate
         );
 
-        // =============================================
-        // REVENUE
-        // =============================================
-        // Product Sales - use total_price from sales
-        const totalProductSales = sales.reduce((sum, s) => sum + (s.total_price || 0), 0);
+        // 4. Get other income
+        const incomes = await this.incomeRepository.findByDateRange(
+            userId,
+            startDate,
+            endDate
+        );
 
-        // Other Revenue (from income table)
+        const expenseTotals = this._aggregateExpenses(expenses);
+        const totalOperatingExpenses = Object.values(expenseTotals).reduce((sum, v) => sum + v, 0);
         const totalOtherRevenue = incomes.reduce((sum, i) => sum + (i.amount || 0), 0);
 
-        // Total Revenue = Product Sales + Other Revenue (ONLY ONCE)
-        const totalRevenue = totalProductSales + totalOtherRevenue;
-
-        // =============================================
-        // COST OF GOODS SOLD
-        // =============================================
-        // COGS is already stored on sale items (historical unit cost)
-        const totalCogs = sales.reduce((sum, s) => {
-            const cogs = s.cogs || (s.unit_cost || 0) * (s.quantity || 0) || 0;
-            return sum + cogs;
-        }, 0);
-
-        // =============================================
-        // GROSS PROFIT
-        // =============================================
-        const grossProfit = totalRevenue - totalCogs;
-        const grossMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
-
-        // =============================================
-        // OPERATING EXPENSES
-        // =============================================
-        // Aggregate expenses by category
-        const expenseTotals = {
-            'Salaries': 0,
-            'Rent': 0,
-            'Advertising': 0,
-            'Transportation': 0,
-            'Utilities': 0,
-            'Other': 0,
-        };
-
-        const categoryMap = {
-            'salary': 'Salaries',
-            'salaries': 'Salaries',
-            'wages': 'Salaries',
-            'rent': 'Rent',
-            'rental': 'Rent',
-            'advertising': 'Advertising',
-            'marketing': 'Advertising',
-            'ads': 'Advertising',
-            'transport': 'Transportation',
-            'transportation': 'Transportation',
-            'fuel': 'Transportation',
-            'logistics': 'Transportation',
-            'utility': 'Utilities',
-            'utilities': 'Utilities',
-            'electricity': 'Utilities',
-            'water': 'Utilities',
-            'internet': 'Utilities',
-            'phone': 'Utilities',
-        };
-
-        const expenseBreakdown = [];
-
-        for (const e of expenses) {
-            const category = e.category ? e.category.toLowerCase() : '';
-            let standardCategory = 'Other';
-            
-            for (const [key, value] of Object.entries(categoryMap)) {
-                if (category.includes(key)) {
-                    standardCategory = value;
-                    break;
-                }
-            }
-            
-            expenseBreakdown.push({
-                id: e.id,
-                originalCategory: e.category || 'Uncategorized',
-                category: standardCategory,
-                amount: e.amount || 0,
-                description: e.description,
-                date: e.created_at,
-            });
-
-            if (expenseTotals[standardCategory] !== undefined) {
-                expenseTotals[standardCategory] += e.amount || 0;
-            } else {
-                expenseTotals['Other'] += e.amount || 0;
-            }
-        }
-
-        const totalOperatingExpenses = Object.values(expenseTotals).reduce((sum, v) => sum + v, 0);
-
-        // =============================================
-        // OPERATING PROFIT
-        // =============================================
-        const operatingProfit = grossProfit - totalOperatingExpenses;
-        const operatingMargin = totalRevenue > 0 ? (operatingProfit / totalRevenue) * 100 : 0;
-
-        // =============================================
-        // NET PROFIT
-        // =============================================
-        // ✅ FIX: Net Profit = Operating Profit (other income already in totalRevenue)
-        const netProfit = operatingProfit;
-        const netMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
+        // 5. Get ALL profit metrics from ProfitCalculator (single source of truth)
+        // ProfitCalculator now correctly includes otherIncome in revenue
+        const profitData = await this.profitCalculator.calculate({
+            userId,
+            businessId,
+            startDate,
+            endDate,
+            revenueData: { totalRevenue: revenueData.totalRevenue },
+            cogsData: { totalCogs: cogsData.totalCogs },
+            expenseData: { total: totalOperatingExpenses, byCategory: this._formatExpenseBreakdown(expenseTotals) },
+            incomeData: { total: totalOtherRevenue },
+        });
 
         const periodLabel = period.charAt(0).toUpperCase() + period.slice(1);
 
-        // =============================================
-        // RETURN FULL REPORT
-        // =============================================
         return {
             period: periodLabel,
             startDate,
             endDate,
             revenue: {
-                productSales: totalProductSales,
-                otherRevenue: totalOtherRevenue,
-                totalRevenue: totalRevenue,
+                productSales: profitData.productRevenue,
+                otherRevenue: profitData.otherIncome,
+                totalRevenue: profitData.revenue,  // ✅ Single source: product + other
             },
             cogs: {
-                total: totalCogs,
+                total: profitData.cogs,
             },
             grossProfit: {
-                amount: grossProfit,
-                margin: grossMargin,
+                amount: profitData.grossProfit,
+                margin: profitData.grossMargin,
             },
             operatingExpenses: {
-                salaries: expenseTotals['Salaries'],
-                rent: expenseTotals['Rent'],
-                advertising: expenseTotals['Advertising'],
-                transportation: expenseTotals['Transportation'],
-                utilities: expenseTotals['Utilities'],
-                other: expenseTotals['Other'],
-                total: totalOperatingExpenses,
+                salaries: expenseTotals['Salaries'] || 0,
+                rent: expenseTotals['Rent'] || 0,
+                advertising: expenseTotals['Advertising'] || 0,
+                transportation: expenseTotals['Transportation'] || 0,
+                utilities: expenseTotals['Utilities'] || 0,
+                other: expenseTotals['Other'] || 0,
+                total: profitData.expenses,
             },
             operatingProfit: {
-                amount: operatingProfit,
-                margin: operatingMargin,
+                amount: profitData.operatingProfit,
+                margin: profitData.operatingMargin,
             },
-            otherIncome: 0,
+            otherIncome: profitData.otherIncome,
             otherExpenses: 0,
             netProfit: {
-                amount: netProfit,
-                margin: netMargin,
+                amount: profitData.netProfit,
+                margin: profitData.netMargin,
             },
         };
     }
@@ -202,7 +146,6 @@ class ProfitLossService {
     async generateWithComparison(params) {
         const current = await this.generate(params);
 
-        // Calculate previous period
         const start = new Date(params.startDate);
         const end = new Date(params.endDate);
         const duration = end - start;
@@ -220,8 +163,8 @@ class ProfitLossService {
             ? ((current.revenue.totalRevenue - previous.revenue.totalRevenue) / previous.revenue.totalRevenue) * 100
             : 0;
 
-        const profitChange = previous.netProfit.amount > 0
-            ? ((current.netProfit.amount - previous.netProfit.amount) / previous.netProfit.amount) * 100
+        const profitChange = previous.netProfit.amount !== 0
+            ? ((current.netProfit.amount - previous.netProfit.amount) / Math.abs(previous.netProfit.amount)) * 100
             : 0;
 
         const marginChange = current.grossProfit.margin - previous.grossProfit.margin;
@@ -229,9 +172,9 @@ class ProfitLossService {
         return {
             ...current,
             comparison: {
-                revenueChange,
-                profitChange,
-                marginChange,
+                revenueChange: Math.round(revenueChange * 100) / 100,
+                profitChange: Math.round(profitChange * 100) / 100,
+                marginChange: Math.round(marginChange * 100) / 100,
                 previousPeriod: {
                     revenue: previous.revenue.totalRevenue,
                     grossProfit: previous.grossProfit.amount,
@@ -259,6 +202,60 @@ class ProfitLossService {
             startDate: full.startDate,
             endDate: full.endDate,
         };
+    }
+
+    _aggregateExpenses(expenses) {
+        const categoryMap = {
+            'salary': 'Salaries',
+            'salaries': 'Salaries',
+            'wages': 'Salaries',
+            'rent': 'Rent',
+            'rental': 'Rent',
+            'advertising': 'Advertising',
+            'marketing': 'Advertising',
+            'ads': 'Advertising',
+            'transport': 'Transportation',
+            'transportation': 'Transportation',
+            'fuel': 'Transportation',
+            'logistics': 'Transportation',
+            'utility': 'Utilities',
+            'utilities': 'Utilities',
+            'electricity': 'Utilities',
+            'water': 'Utilities',
+            'internet': 'Utilities',
+            'phone': 'Utilities',
+        };
+
+        const totals = {
+            'Salaries': 0,
+            'Rent': 0,
+            'Advertising': 0,
+            'Transportation': 0,
+            'Utilities': 0,
+            'Other': 0,
+        };
+
+        for (const e of expenses) {
+            const category = e.category ? e.category.toLowerCase() : '';
+            let standardCategory = 'Other';
+
+            for (const [key, value] of Object.entries(categoryMap)) {
+                if (category.includes(key)) {
+                    standardCategory = value;
+                    break;
+                }
+            }
+
+            totals[standardCategory] = (totals[standardCategory] || 0) + (e.amount || 0);
+        }
+
+        return totals;
+    }
+
+    _formatExpenseBreakdown(expenseTotals) {
+        return Object.entries(expenseTotals)
+            .filter(([_, amount]) => amount > 0)
+            .map(([category, amount]) => ({ category, amount }));
     }
 }
 
