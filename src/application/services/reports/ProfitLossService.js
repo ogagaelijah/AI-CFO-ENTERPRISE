@@ -1,20 +1,7 @@
-// src/application/services/reports/ProfitLossService.js
-
 const RevenueCalculator = require('./calculators/RevenueCalculator');
 const CogsCalculator = require('./calculators/CogsCalculator');
 const ProfitCalculator = require('./calculators/ProfitCalculator');
 
-/**
- * Profit & Loss Service - Single source of truth
- * 
- * Generates accrual-based P&L reports using:
- * - RevenueCalculator for product revenue
- * - CogsCalculator for COGS
- * - ProfitCalculator for ALL profit metrics (including total revenue with other income)
- * 
- * All revenue calculations flow through ProfitCalculator.
- * This ensures consistency across all reports.
- */
 class ProfitLossService {
     constructor({
         saleRepository,
@@ -43,9 +30,6 @@ class ProfitLossService {
         });
     }
 
-    /**
-     * Generate full detailed P&L report for a date range
-     */
     async generate({
         userId,
         businessId,
@@ -53,7 +37,7 @@ class ProfitLossService {
         endDate,
         period = 'monthly',
     }) {
-        // 1. Get product revenue
+        // 1. Get core product revenue
         const revenueData = await this.revenueCalculator.calculate({
             userId,
             businessId,
@@ -61,7 +45,7 @@ class ProfitLossService {
             endDate,
         });
 
-        // 2. Get COGS
+        // 2. Get Cost of Goods Sold (COGS)
         const cogsData = await this.cogsCalculator.calculate({
             userId,
             businessId,
@@ -69,36 +53,37 @@ class ProfitLossService {
             endDate,
         });
 
-        // 3. Get expenses
-        const expenses = await this.expenseRepository.findByDateRange(
-            userId,
-            startDate,
-            endDate
-        );
-
-        // 4. Get other income
+        // 3. Get non-operating other income
         const incomes = await this.incomeRepository.findByDateRange(
             userId,
             startDate,
             endDate
         );
-
-        const expenseTotals = this._aggregateExpenses(expenses);
-        const totalOperatingExpenses = Object.values(expenseTotals).reduce((sum, v) => sum + v, 0);
         const totalOtherRevenue = incomes.reduce((sum, i) => sum + (i.amount || 0), 0);
 
-        // 5. Get ALL profit metrics from ProfitCalculator (single source of truth)
-        // ProfitCalculator now correctly includes otherIncome in revenue
-        const profitData = await this.profitCalculator.calculate({
+        // 4. Get operating expenses
+        const expenses = await this.expenseRepository.findByDateRange(
             userId,
-            businessId,
             startDate,
-            endDate,
-            revenueData: { totalRevenue: revenueData.totalRevenue },
-            cogsData: { totalCogs: cogsData.totalCogs },
-            expenseData: { total: totalOperatingExpenses, byCategory: this._formatExpenseBreakdown(expenseTotals) },
-            incomeData: { total: totalOtherRevenue },
-        });
+            endDate
+        );
+        const expenseTotals = this._aggregateExpenses(expenses);
+        const totalOperatingExpenses = Object.values(expenseTotals).reduce((sum, v) => sum + v, 0);
+
+        const pureOperatingRevenue = revenueData.totalRevenue || 0;
+        const totalCogs = cogsData.totalCogs || 0;
+
+        // 5. ✅ PURE ACCOUNTING FORMULAS
+        const grossProfit = pureOperatingRevenue - totalCogs;
+        const operatingProfit = grossProfit - totalOperatingExpenses;
+        const netProfit = operatingProfit + totalOtherRevenue;
+
+        const combinedTotalRevenue = pureOperatingRevenue + totalOtherRevenue;
+
+        // Margins based on the correct revenue baseline denominators
+        const grossMargin = pureOperatingRevenue > 0 ? (grossProfit / pureOperatingRevenue) * 100 : 0;
+        const operatingMargin = pureOperatingRevenue > 0 ? (operatingProfit / pureOperatingRevenue) * 100 : 0;
+        const netMargin = combinedTotalRevenue > 0 ? (netProfit / combinedTotalRevenue) * 100 : 0;
 
         const periodLabel = period.charAt(0).toUpperCase() + period.slice(1);
 
@@ -107,16 +92,16 @@ class ProfitLossService {
             startDate,
             endDate,
             revenue: {
-                productSales: profitData.productRevenue,
-                otherRevenue: profitData.otherIncome,
-                totalRevenue: profitData.revenue,  // ✅ Single source: product + other
+                productSales: pureOperatingRevenue,
+                otherRevenue: totalOtherRevenue,
+                totalRevenue: combinedTotalRevenue,
             },
             cogs: {
-                total: profitData.cogs,
+                total: totalCogs,
             },
             grossProfit: {
-                amount: profitData.grossProfit,
-                margin: profitData.grossMargin,
+                amount: grossProfit,
+                margin: grossMargin,
             },
             operatingExpenses: {
                 salaries: expenseTotals['Salaries'] || 0,
@@ -125,24 +110,21 @@ class ProfitLossService {
                 transportation: expenseTotals['Transportation'] || 0,
                 utilities: expenseTotals['Utilities'] || 0,
                 other: expenseTotals['Other'] || 0,
-                total: profitData.expenses,
+                total: totalOperatingExpenses,
             },
             operatingProfit: {
-                amount: profitData.operatingProfit,
-                margin: profitData.operatingMargin,
+                amount: operatingProfit,
+                margin: operatingMargin,
             },
-            otherIncome: profitData.otherIncome,
+            otherIncome: totalOtherRevenue,
             otherExpenses: 0,
             netProfit: {
-                amount: profitData.netProfit,
-                margin: profitData.netMargin,
+                amount: netProfit,
+                margin: netMargin,
             },
         };
     }
 
-    /**
-     * Generate P&L with period comparison
-     */
     async generateWithComparison(params) {
         const current = await this.generate(params);
 
@@ -159,6 +141,7 @@ class ProfitLossService {
             endDate: prevEnd.toISOString().split('T')[0],
         });
 
+        // ✅ Fixed comparison baseline check
         const revenueChange = previous.revenue.totalRevenue > 0
             ? ((current.revenue.totalRevenue - previous.revenue.totalRevenue) / previous.revenue.totalRevenue) * 100
             : 0;
@@ -184,9 +167,6 @@ class ProfitLossService {
         };
     }
 
-    /**
-     * Generate quick summary (for dashboard)
-     */
     async generateSummary(params) {
         const full = await this.generate(params);
         return {
@@ -250,12 +230,6 @@ class ProfitLossService {
         }
 
         return totals;
-    }
-
-    _formatExpenseBreakdown(expenseTotals) {
-        return Object.entries(expenseTotals)
-            .filter(([_, amount]) => amount > 0)
-            .map(([category, amount]) => ({ category, amount }));
     }
 }
 

@@ -3,12 +3,10 @@
 /**
  * ProfitCalculator - Single source of truth for profit calculations
  * 
- * Calculates:
- * - Gross Profit (Revenue - COGS + Other Income)
- * - Gross Margin
- * - Net Profit (Gross Profit - Expenses)
- * - Net Margin
- * - Operating Profit
+ * Accounting Rules (per IFRS/IAS 1):
+ * - Gross Profit = Revenue - COGS (Operating Revenue ONLY)
+ * - Operating Profit = Gross Profit - Operating Expenses
+ * - Net Profit = Operating Profit + Other Income - Other Expenses
  * 
  * This is the SINGLE SOURCE OF TRUTH for all profit calculations.
  */
@@ -38,7 +36,7 @@ class ProfitCalculator {
         expenseData = null,
         incomeData = null,
     }) {
-        // Get product revenue
+        // Get operating revenue (product sales only)
         let revenue = revenueData;
         if (!revenue) {
             const RevenueCalculator = require('./RevenueCalculator');
@@ -54,7 +52,7 @@ class ProfitCalculator {
             cogs = await cogsCalc.calculate({ userId, businessId, startDate, endDate });
         }
 
-        // Get expenses
+        // Get operating expenses
         let expenses = expenseData;
         if (!expenses) {
             let expensesData = [];
@@ -71,7 +69,7 @@ class ProfitCalculator {
             };
         }
 
-        // Get other income
+        // Get other income (non-operating)
         let otherIncome = incomeData;
         if (!otherIncome) {
             let incomeDataArray = [];
@@ -89,35 +87,33 @@ class ProfitCalculator {
         }
 
         const productRevenue = this._safeNumber(revenue.totalRevenue);
-        const totalOtherIncome = this._safeNumber(otherIncome.total);
         const totalCogs = this._safeNumber(cogs.totalCogs);
         const totalExpenses = this._safeNumber(expenses.total);
+        const totalOtherIncome = this._safeNumber(otherIncome.total);
 
-        // ✅ Gross Profit = Product Revenue - COGS + Other Income
-        const grossProfit = productRevenue - totalCogs + totalOtherIncome;
+        // ✅ Accounting Rule 1: Gross Profit = Revenue - COGS (Operating Revenue ONLY)
+        const grossProfit = productRevenue - totalCogs;
         const grossMargin = productRevenue > 0 ? (grossProfit / productRevenue) * 100 : 0;
 
-        // ✅ Net Profit = Gross Profit - Expenses
-        const netProfit = grossProfit - totalExpenses;
-        const netMargin = productRevenue > 0 ? (netProfit / productRevenue) * 100 : 0;
-
-        // ✅ Operating Profit = Gross Profit - Expenses
+        // ✅ Accounting Rule 2: Operating Profit = Gross Profit - Operating Expenses
         const operatingProfit = grossProfit - totalExpenses;
         const operatingMargin = productRevenue > 0 ? (operatingProfit / productRevenue) * 100 : 0;
 
-        // ✅ RETURN WITH KEYS THAT TESTS EXPECT
+        // ✅ Accounting Rule 3: Net Profit = Operating Profit + Other Income - Other Expenses
+        const netProfit = operatingProfit + totalOtherIncome;
+        const netMargin = productRevenue > 0 ? (netProfit / productRevenue) * 100 : 0;
+
         return {
             revenue: productRevenue,
             cogs: totalCogs,
             grossProfit: grossProfit,
             grossMargin: grossMargin,
-            netProfit: netProfit,
-            netMargin: netMargin,
             operatingProfit: operatingProfit,
             operatingMargin: operatingMargin,
+            netProfit: netProfit,
+            netMargin: netMargin,
             expenses: totalExpenses,
             otherIncome: totalOtherIncome,
-            // Additional keys for backward compatibility
             productRevenue: productRevenue,
             totalRevenue: productRevenue + totalOtherIncome,
             totalCogs: totalCogs,

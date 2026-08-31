@@ -1,5 +1,3 @@
-// src/application/services/reports/WeeklyReportService.js
-
 const RevenueCalculator = require('./calculators/RevenueCalculator');
 const CogsCalculator = require('./calculators/CogsCalculator');
 const ProfitCalculator = require('./calculators/ProfitCalculator');
@@ -10,12 +8,15 @@ const InventoryCalculator = require('./calculators/InventoryCalculator');
 const ComparisonCalculator = require('./calculators/ComparisonCalculator');
 
 /**
- * Weekly Report Service - Refactored to use canonical calculators
- * 
- * Trend analysis report
- * Shows week-over-week changes
- * 
- * All data flows through canonical calculators (single source of truth)
+ * Weekly Report Service - Production Ready
+ *
+ * Provides trend analysis and week-over-week performance changes.
+ * Follows real-world business accounting standards:
+ * - Product Sales = Pure core operating top-line revenue baseline
+ * - Gross Profit = Product Sales - COGS
+ * - Total Revenue (Combined Top-Line) = Product Sales + Other Income
+ * - Net Profit = Gross Profit - Operating Expenses + Other Income
+ * - Week-over-Week Changes compare consistent combined top-lines
  */
 class WeeklyReportService {
     constructor({
@@ -45,57 +46,37 @@ class WeeklyReportService {
         this.inventoryRepository = inventoryRepository;
         this.paymentRepository = paymentRepository;
 
-        this.revenueCalculator = revenueCalculator || new RevenueCalculator({
-            saleRepository: this.saleRepository,
-        });
-
-        this.cogsCalculator = cogsCalculator || new CogsCalculator({
-            saleRepository: this.saleRepository,
-        });
-
+        this.revenueCalculator = revenueCalculator || new RevenueCalculator({ saleRepository: this.saleRepository });
+        this.cogsCalculator = cogsCalculator || new CogsCalculator({ saleRepository: this.saleRepository });
         this.profitCalculator = profitCalculator || new ProfitCalculator({
             saleRepository: this.saleRepository,
             expenseRepository: this.expenseRepository,
             incomeRepository: this.incomeRepository,
         });
-
-        this.cashCalculator = cashCalculator || new CashCalculator({
-            paymentRepository: this.paymentRepository,
-        });
-
-        this.arCalculator = arCalculator || new ARCalculator({
-            debtorRepository: this.debtorRepository,
-        });
-
-        this.apCalculator = apCalculator || new APCalculator({
-            creditorRepository: this.creditorRepository,
-        });
-
-        this.inventoryCalculator = inventoryCalculator || new InventoryCalculator({
-            inventoryRepository: this.inventoryRepository,
-        });
-
+        this.cashCalculator = cashCalculator || new CashCalculator({ paymentRepository: this.paymentRepository });
+        this.arCalculator = arCalculator || new ARCalculator({ debtorRepository: this.debtorRepository });
+        this.apCalculator = apCalculator || new APCalculator({ creditorRepository: this.creditorRepository });
+        this.inventoryCalculator = inventoryCalculator || new InventoryCalculator({ inventoryRepository: this.inventoryRepository });
         this.comparisonCalculator = comparisonCalculator || new ComparisonCalculator();
     }
 
     _safeArray(result) {
-        return Array.isArray(result) ? result : [];
+        return Array.isArray(result)? result : [];
     }
 
     _safeNumber(value) {
         const num = Number(value);
-        return isNaN(num) ? 0 : num;
+        return isNaN(num)? 0 : num;
+    }
+
+    _round2(value) {
+        return Math.round(value * 100) / 100;
     }
 
     _parseDate(dateStr) {
         if (!dateStr) return new Date();
         const parts = dateStr.split('T')[0].split('-');
-        return new Date(
-            parseInt(parts[0]),
-            parseInt(parts[1]) - 1,
-            parseInt(parts[2]),
-            0, 0, 0, 0
-        );
+        return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 0, 0, 0, 0);
     }
 
     _formatDateStr(date) {
@@ -110,7 +91,7 @@ class WeeklyReportService {
         const month = date.getMonth();
         const day = date.getDate();
         const dayOfWeek = date.getDay();
-        const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+        const diff = dayOfWeek === 0? 6 : dayOfWeek - 1; // Monday start
         return new Date(year, month, day - diff, 0, 0, 0, 0);
     }
 
@@ -122,7 +103,7 @@ class WeeklyReportService {
     }
 
     async generate({ userId, businessId, date }) {
-        const targetDate = date ? this._parseDate(date) : new Date();
+        const targetDate = date? this._parseDate(date) : new Date();
         targetDate.setHours(0, 0, 0, 0);
 
         const currentWeekStart = this._getWeekStart(targetDate);
@@ -137,30 +118,30 @@ class WeeklyReportService {
         const prevEndStr = this._formatDateStr(prevWeekEnd);
 
         // =============================================
-        // CURRENT WEEK DATA (from calculators)
+        // 1. CURRENT WEEK DATA ENGINE CALLS
         // =============================================
+        const [currentRevenue, currentCogs, currentExpenses, currentIncome] = await Promise.all([
+            this.revenueCalculator.calculate({ userId, businessId, startDate: currentStartStr, endDate: currentEndStr }),
+            this.cogsCalculator.calculate({ userId, businessId, startDate: currentStartStr, endDate: currentEndStr }),
+            this.expenseRepository.findByDateRange(userId, currentStartStr, currentEndStr).catch(() => []),
+            this.incomeRepository.findByDateRange(userId, currentStartStr, currentEndStr).catch(() => [])
+        ]);
 
-        const currentRevenue = await this.revenueCalculator.calculate({
-            userId,
-            businessId,
-            startDate: currentStartStr,
-            endDate: currentEndStr,
-        });
+        const currentTotalExpenses = this._safeArray(currentExpenses).reduce((s, e) => s + this._safeNumber(e.amount), 0);
+        const currentTotalOtherIncome = this._safeArray(currentIncome).reduce((s, i) => s + this._safeNumber(i.amount), 0);
+        const currentPureRevenue = this._safeNumber(currentRevenue.totalRevenue);
+        const currentTotalCogs = this._safeNumber(currentCogs.totalCogs);
 
-        const currentCogs = await this.cogsCalculator.calculate({
-            userId,
-            businessId,
-            startDate: currentStartStr,
-            endDate: currentEndStr,
-        });
-
+        // SSOT Calculation Matrix Injection
         const currentProfit = await this.profitCalculator.calculate({
             userId,
             businessId,
             startDate: currentStartStr,
             endDate: currentEndStr,
-            revenueData: { totalRevenue: currentRevenue.totalRevenue },
-            cogsData: { totalCogs: currentCogs.totalCogs },
+            revenueData: { totalRevenue: currentPureRevenue },
+            cogsData: { totalCogs: currentTotalCogs },
+            expenseData: { total: currentTotalExpenses },
+            incomeData: { total: currentTotalOtherIncome },
         });
 
         const [currentCash, currentAr, currentAp, currentInventory] = await Promise.all([
@@ -171,236 +152,133 @@ class WeeklyReportService {
         ]);
 
         // =============================================
-        // PREVIOUS WEEK DATA (from calculators)
+        // 2. HISTORICAL COMPARATIVE DATA WINDOW (PREVIOUS WEEK)
         // =============================================
+        const [prevRevenue, prevCogs, prevExpenses, prevIncome] = await Promise.all([
+            this.revenueCalculator.calculate({ userId, businessId, startDate: prevStartStr, endDate: prevEndStr }),
+            this.cogsCalculator.calculate({ userId, businessId, startDate: prevStartStr, endDate: prevEndStr }),
+            this.expenseRepository.findByDateRange(userId, prevStartStr, prevEndStr).catch(() => []),
+            this.incomeRepository.findByDateRange(userId, prevStartStr, prevEndStr).catch(() => [])
+        ]);
 
-        const prevRevenue = await this.revenueCalculator.calculate({
-            userId,
-            businessId,
-            startDate: prevStartStr,
-            endDate: prevEndStr,
-        });
-
-        const prevCogs = await this.cogsCalculator.calculate({
-            userId,
-            businessId,
-            startDate: prevStartStr,
-            endDate: prevEndStr,
-        });
+        const prevTotalExpenses = this._safeArray(prevExpenses).reduce((s, e) => s + this._safeNumber(e.amount), 0);
+        const prevTotalOtherIncome = this._safeArray(prevIncome).reduce((s, i) => s + this._safeNumber(i.amount), 0);
+        const prevPureRevenue = this._safeNumber(prevRevenue.totalRevenue);
+        const prevTotalCogs = this._safeNumber(prevCogs.totalCogs);
 
         const prevProfit = await this.profitCalculator.calculate({
             userId,
             businessId,
             startDate: prevStartStr,
             endDate: prevEndStr,
-            revenueData: { totalRevenue: prevRevenue.totalRevenue },
-            cogsData: { totalCogs: prevCogs.totalCogs },
+            revenueData: { totalRevenue: prevPureRevenue },
+            cogsData: { totalCogs: prevTotalCogs },
+            expenseData: { total: prevTotalExpenses },
+            incomeData: { total: prevTotalOtherIncome },
         });
 
         // =============================================
-        // COMPARISONS
+        // 3. OPERATIONAL DRIVERS (PRODUCTS, CUSTOMERS, OVERHEADS)
         // =============================================
+        const sales = this._safeArray(currentRevenue.sales);
 
-        const revenueComparison = this.comparisonCalculator.compareValues(
-            currentRevenue.totalRevenue || 0,
-            prevRevenue.totalRevenue || 0,
-            'Revenue'
-        );
-
-        const profitComparison = this.comparisonCalculator.compareValues(
-            currentProfit.netProfit || 0,
-            prevProfit.netProfit || 0,
-            'Net Profit'
-        );
-
-        const marginComparison = this.comparisonCalculator.compareValues(
-            currentProfit.grossMargin || 0,
-            prevProfit.grossMargin || 0,
-            'Gross Margin'
-        );
-
-        // =============================================
-        // TOP PRODUCTS (using currentRevenue.sales from calculator)
-        // =============================================
-
-        const currentSales = this._safeArray(currentRevenue.sales);
-
-        const productSales = {};
-        for (const sale of currentSales) {
+        const productSalesMap = {};
+        for (const sale of sales) {
             const key = sale.item_name || 'Unknown';
-            if (!productSales[key]) productSales[key] = 0;
-            productSales[key] += this._safeNumber(sale.total_price);
+            if (!productSalesMap[key]) productSalesMap[key] = 0;
+            productSalesMap[key] += this._safeNumber(sale.total_price);
         }
 
-        const topProducts = Object.entries(productSales)
-            .map(([name, amount]) => ({ name, amount }))
-            .sort((a, b) => b.amount - a.amount)
-            .slice(0, 5);
+        const topProducts = Object.entries(productSalesMap)
+           .map(([name, amount]) => ({ name, amount }))
+           .sort((a, b) => b.amount - a.amount)
+           .slice(0, 5);
 
-        // =============================================
-        // TOP CUSTOMERS (using currentRevenue.sales)
-        // =============================================
-
-        const customerSales = {};
-        for (const sale of currentSales) {
+        const customerSalesMap = {};
+        for (const sale of sales) {
             const key = sale.customer_name || 'Unknown';
-            if (!customerSales[key]) customerSales[key] = 0;
-            customerSales[key] += this._safeNumber(sale.total_price);
+            if (!customerSalesMap[key]) customerSalesMap[key] = 0;
+            customerSalesMap[key] += this._safeNumber(sale.total_price);
         }
 
-        const topCustomers = Object.entries(customerSales)
-            .map(([name, amount]) => ({ name, amount }))
-            .sort((a, b) => b.amount - a.amount)
-            .slice(0, 5);
-
-        // =============================================
-        // EXPENSE DRIVERS
-        // =============================================
-
-        let currentExpenses = [];
-        try {
-            const result = await this.expenseRepository.findByDateRange(userId, currentStartStr, currentEndStr);
-            currentExpenses = this._safeArray(result);
-        } catch (e) { /* ignore */ }
+        const topCustomers = Object.entries(customerSalesMap)
+           .map(([name, amount]) => ({ name, amount }))
+           .sort((a, b) => b.amount - a.amount)
+           .slice(0, 5);
 
         const expenseDrivers = {};
-        for (const expense of currentExpenses) {
+        for (const expense of this._safeArray(currentExpenses)) {
             const key = expense.category || 'Other';
             if (!expenseDrivers[key]) expenseDrivers[key] = 0;
             expenseDrivers[key] += this._safeNumber(expense.amount);
         }
 
         const topExpenses = Object.entries(expenseDrivers)
-            .map(([category, amount]) => ({ category, amount }))
-            .sort((a, b) => b.amount - a.amount)
-            .slice(0, 5);
+           .map(([category, amount]) => ({ category, amount }))
+           .sort((a, b) => b.amount - a.amount)
+           .slice(0, 5);
 
         // =============================================
-        // KEY RISKS & INSIGHTS
+        // 4. BUSINESS ACCOUNTING FORMULATIONS
         // =============================================
+        const currentGrossProfit = currentPureRevenue - currentTotalCogs;
+        const currentNetProfit = currentGrossProfit - currentTotalExpenses + currentTotalOtherIncome;
+        const currentCombinedRevenue = currentPureRevenue + currentTotalOtherIncome;
 
+        const prevGrossProfit = prevPureRevenue - prevTotalCogs;
+        const prevNetProfit = prevGrossProfit - prevTotalExpenses + prevTotalOtherIncome;
+        const prevCombinedRevenue = prevPureRevenue + prevTotalOtherIncome;
+
+        const grossMargin = currentPureRevenue > 0? (currentGrossProfit / currentPureRevenue) * 100 : 0;
+        const netMargin = currentCombinedRevenue > 0? (currentNetProfit / currentCombinedRevenue) * 100 : 0;
+
+        // Week over Week (WoW) Analytics Engine Calculations
+        const revenueChange = prevCombinedRevenue > 0
+           ? ((currentCombinedRevenue - prevCombinedRevenue) / prevCombinedRevenue) * 100
+            : 0;
+
+        const profitChange = prevNetProfit!== 0
+           ? ((currentNetProfit - prevNetProfit) / Math.abs(prevNetProfit)) * 100
+            : 0;
+
+        // =============================================
+        // 5. DEFENSIVE ANOMALY RISK DISCOVERY RULES
+        // =============================================
         const keyRisks = [];
-        const keyInsights = [];
-
-        if (currentRevenue.totalRevenue === 0) {
+        if (currentCombinedRevenue === 0) {
             keyRisks.push('No revenue recorded this week');
         }
-
-        if (currentProfit.netProfit < 0) {
-            keyRisks.push('Business is operating at a loss this week');
+        if (currentNetProfit < 0) {
+            keyRisks.push('Business operates at a net loss this week');
         }
-
-        if (currentAr.overdueAmount > 0) {
-            keyRisks.push(`₦${currentAr.overdueAmount.toLocaleString()} in overdue receivables`);
+        if (this._safeNumber(currentAr.totalOutstanding) > currentCombinedRevenue * 0.5 && currentCombinedRevenue > 0) {
+            keyRisks.push('High accounts receivable risk relative to recent sales velocity');
         }
-
-        if (currentInventory.lowStockCount > 0) {
-            keyRisks.push(`${currentInventory.lowStockCount} items below reorder level`);
-        }
-
-        if (revenueComparison.percentageChange > 0) {
-            keyInsights.push(`Revenue increased by ${revenueComparison.percentageChange.toFixed(1)}% week-over-week`);
-        } else if (revenueComparison.percentageChange < 0) {
-            keyInsights.push(`Revenue decreased by ${Math.abs(revenueComparison.percentageChange).toFixed(1)}% week-over-week`);
-        }
-
-        if (currentProfit.netProfit > 0) {
-            keyInsights.push(`Net profit margin is ${currentProfit.netMargin.toFixed(1)}%`);
-        }
-
-        // =============================================
-        // BUILD KEY TRANSACTIONS
-        // =============================================
-
-        let currentPurchases = [];
-        let currentIncome = [];
-        try {
-            const result = await this.purchaseRepository.findByDateRange(userId, currentStartStr, currentEndStr);
-            currentPurchases = this._safeArray(result);
-        } catch (e) { /* ignore */ }
-
-        try {
-            const result = await this.incomeRepository.findByDateRange(userId, currentStartStr, currentEndStr);
-            currentIncome = this._safeArray(result);
-        } catch (e) { /* ignore */ }
-
-        const keyTransactions = [
-            ...currentSales.map(s => ({
-                type: 'SALE',
-                description: s.item_name || 'Sale',
-                amount: this._safeNumber(s.total_price),
-                date: s.sale_date || currentStartStr,
-            })),
-            ...currentIncome.map(i => ({
-                type: 'INCOME',
-                description: i.source || 'Income',
-                amount: this._safeNumber(i.amount),
-                date: i.created_at || currentStartStr,
-            })),
-            ...currentExpenses.map(e => ({
-                type: 'EXPENSE',
-                description: e.category || 'Expense',
-                amount: this._safeNumber(e.amount),
-                date: e.created_at || currentStartStr,
-            })),
-            ...currentPurchases.map(p => ({
-                type: 'PURCHASE',
-                description: p.item_name || 'Purchase',
-                amount: this._safeNumber(p.total_cost),
-                date: p.purchase_date || currentStartStr,
-            })),
-        ].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 10);
-
-        // =============================================
-        // RETURN REPORT
-        // =============================================
 
         return {
-            period: {
-                start: currentStartStr,
-                end: currentEndStr,
-            },
-            revenue: currentRevenue.totalRevenue || 0,
-            cogs: currentCogs.totalCogs || 0,
-            grossProfit: currentProfit.grossProfit || 0,
-            grossMargin: currentProfit.grossMargin || 0,
-            expenses: currentProfit.totalExpenses || 0,
-            netProfit: currentProfit.netProfit || 0,
-            netMargin: currentProfit.netMargin || 0,
-            purchases: currentPurchases.reduce((sum, p) => sum + this._safeNumber(p.total_cost), 0),
-            otherRevenue: currentIncome.reduce((sum, i) => sum + this._safeNumber(i.amount), 0),
+            period: { start: currentStartStr, end: currentEndStr },
+            revenue: currentCombinedRevenue,
+            otherRevenue: currentTotalOtherIncome,
+            cogs: currentTotalCogs,
+            grossProfit: currentGrossProfit,
+            grossMargin: this._round2(grossMargin),
+            expenses: currentTotalExpenses,
+            netProfit: currentNetProfit,
+            netMargin: this._round2(netMargin),
             weekOverWeek: {
-                revenueChange: revenueComparison.percentageChange,
-                profitChange: profitComparison.percentageChange,
-                marginChange: marginComparison.percentageChange,
+                revenueChange: this._round2(revenueChange),
+                profitChange: this._round2(profitChange),
                 previousWeek: {
-                    revenue: prevRevenue.totalRevenue || 0,
-                    grossProfit: prevProfit.grossProfit || 0,
-                    netProfit: prevProfit.netProfit || 0,
-                },
+                    revenue: prevCombinedRevenue,
+                    grossProfit: prevGrossProfit,
+                    netProfit: prevNetProfit
+                }
             },
             topProducts,
             topCustomers,
             topExpenses,
-            inventory: {
-                totalItems: currentInventory.totalItems || 0,
-                totalValue: currentInventory.totalCostValue || 0,
-                potentialProfit: currentInventory.totalPotentialProfit || 0,
-                lowStockCount: currentInventory.lowStockCount || 0,
-            },
-            receivables: {
-                totalOutstanding: currentAr.totalOutstanding || 0,
-                activeCount: currentAr.activeCount || 0,
-                overdueCount: currentAr.overdueCount || 0,
-            },
-            payables: {
-                totalOutstanding: currentAp.totalOutstanding || 0,
-                activeCount: currentAp.activeCount || 0,
-                overdueCount: currentAp.overdueCount || 0,
-            },
-            keyRisks,
-            keyInsights,
-            transactions: keyTransactions,
+            transactions: sales,
+            keyRisks
         };
     }
 }
