@@ -1,5 +1,5 @@
 // src/application/services/forecast/contracts/ForecastContracts.js
-// Phase 5.1 - Production SSOT Factory | IFRS Compliant | Stateless | O(1)
+// Phase 5.4.1 - Production SSOT Factory | IFRS Compliant | Stateless | O(1) | 1M+ SCALE
 
 const FORECAST_HORIZONS = {
     '7D': { label: '7 Days', days: 7 },
@@ -11,18 +11,20 @@ const FORECAST_HORIZONS = {
     '12M': { label: '12 Months', days: 365 },
 };
 
+// PROD THRESHOLDS: 7/30/90
 const DATA_SUFFICIENCY = {
-    INSUFFICIENT: 'INSUFFICIENT',
-    MARGINAL: 'MARGINAL',
-    SUFFICIENT: 'SUFFICIENT',
+    INSUFFICIENT: 'INSUFFICIENT', // < 7
+    MINIMAL: 'MINIMAL', // 7 - 29
+    SUFFICIENT: 'SUFFICIENT', // 30 - 89
+    EXCELLENT: 'EXCELLENT', // >= 90
 };
 
 const CONFIDENCE_LEVELS = {
-    VERY_LOW: { label: 'Very Low', minScore: 0, maxScore: 20, color: 'red' },
-    LOW: { label: 'Low', minScore: 21, maxScore: 40, color: 'orange' },
-    MODERATE: { label: 'Moderate', minScore: 41, maxScore: 60, color: 'yellow' },
-    GOOD: { label: 'Good', minScore: 61, maxScore: 80, color: 'lightgreen' },
-    STRONG: { label: 'Strong', minScore: 81, maxScore: 100, color: 'green' },
+    VERY_LOW: { label: 'Very Low', minScore: 0, maxScore: 20, color: '#DC2626' },
+    LOW: { label: 'Low', minScore: 21, maxScore: 40, color: '#EA580C' },
+    MODERATE: { label: 'Moderate', minScore: 41, maxScore: 60, color: '#CA8A04' },
+    GOOD: { label: 'Good', minScore: 61, maxScore: 80, color: '#65A30D' },
+    STRONG: { label: 'Strong', minScore: 81, maxScore: 100, color: '#16A34A' },
 };
 
 const FORECAST_METHODS = {
@@ -36,8 +38,13 @@ const FORECAST_METHODS = {
 };
 
 class ForecastContracts {
-    static _safeNumber(val) { const num = Number(val); return isNaN(num) ? 0 : num; }
-    static _safeArray(arr) { return Array.isArray(arr) ? arr : []; }
+    static get DATA_SUFFICIENCY() { return DATA_SUFFICIENCY; }
+    static get FORECAST_HORIZONS() { return FORECAST_HORIZONS; }
+    static get CONFIDENCE_LEVELS() { return CONFIDENCE_LEVELS; }
+    static get FORECAST_METHODS() { return FORECAST_METHODS; }
+
+    static _safeNumber(val) { const num = Number(val); return isNaN(num)? 0 : num; }
+    static _safeArray(arr) { return Array.isArray(arr)? arr : []; }
     static _clamp(val, min = 0, max = 100) { return Math.max(min, Math.min(max, Math.round(val))); }
 
     static _getConfidenceLevel(score) {
@@ -59,10 +66,11 @@ class ForecastContracts {
     }
 
     static _calculateDefaultBounds(forecast, method) {
-        if (method === FORECAST_METHODS.SIMPLE_AVERAGE) return { lower: forecast * 0.85, upper: forecast * 1.15 };
-        if (method === FORECAST_METHODS.LINEAR_TREND) return { lower: forecast * 0.90, upper: forecast * 1.10 };
-        if (method === FORECAST_METHODS.SEASONAL) return { lower: forecast * 0.80, upper: forecast * 1.20 };
-        return { lower: forecast * 0.85, upper: forecast * 1.15 };
+        const f = Math.max(0, forecast);
+        if (method === FORECAST_METHODS.SIMPLE_AVERAGE) return { lower: f * 0.85, upper: f * 1.15 };
+        if (method === FORECAST_METHODS.LINEAR_TREND) return { lower: f * 0.90, upper: f * 1.10 };
+        if (method === FORECAST_METHODS.SEASONAL) return { lower: f * 0.80, upper: f * 1.20 };
+        return { lower: f * 0.85, upper: f * 1.15 };
     }
 
     static createForecast({
@@ -72,104 +80,113 @@ class ForecastContracts {
         confidence = null, historicalBasis = null, assumptions = [],
         dataStatus = DATA_SUFFICIENCY.SUFFICIENT, risks = [], metadata = {}
     }) {
-        const horizonInfo = FORECAST_HORIZONS[period?.horizon] || FORECAST_HORIZONS['30D'];
+        const horizonKey = period?.horizon || '30D';
+        const horizonInfo = FORECAST_HORIZONS[horizonKey] || FORECAST_HORIZONS['30D'];
         const fValue = this._safeNumber(forecast);
         const bounds = this._calculateDefaultBounds(fValue, method);
-        const score = confidence?.score !== undefined ? this._clamp(confidence.score) : 50;
+        const score = confidence?.score!== undefined? this._clamp(confidence.score) : 50;
         const level = confidence?.level || this._getConfidenceLevel(score);
-        const finalLower = lowerBound !== null ? this._safeNumber(lowerBound) : bounds.lower;
-        const finalUpper = upperBound !== null ? this._safeNumber(upperBound) : bounds.upper;
+        const finalLower = lowerBound!== null? Math.max(0, this._safeNumber(lowerBound)) : bounds.lower;
+        const finalUpper = upperBound!== null? Math.max(0, this._safeNumber(upperBound)) : bounds.upper;
 
         return Object.freeze({
             metric: String(metric), displayName: String(displayName),
             period: Object.freeze({
-                startDate: String(period?.startDate || ''), endDate: String(period?.endDate || ''),
-                label: String(period?.label || horizonInfo.label), horizon: period?.horizon || '30D', days: horizonInfo.days
+                startDate: String(period?.startDate || period?.start || ''),
+                endDate: String(period?.endDate || period?.end || ''),
+                label: String(period?.label || horizonInfo.label),
+                horizon: horizonKey,
+                days: horizonInfo.days
             }),
             forecast: Number(fValue.toFixed(2)),
-            lowerBound: Number(this._safeNumber(finalLower).toFixed(2)),
-            upperBound: Number(this._safeNumber(finalUpper).toFixed(2)),
+            lowerBound: Number(finalLower.toFixed(2)),
+            upperBound: Number(finalUpper.toFixed(2)),
             method: String(method),
             confidence: Object.freeze({
-                score, level: String(level), factors: Object.freeze(confidence?.factors || {}),
+                score, level: String(level), factors: Object.freeze({...confidence?.factors }),
                 summary: confidence?.summary || this._getConfidenceSummary(score, level)
             }),
-            historicalBasis: Object.freeze(historicalBasis || { periodsUsed: 0, average: 0, trend: null }),
-            assumptions: this._safeArray(assumptions), dataStatus: String(dataStatus),
-            risks: this._safeArray(risks), metadata: Object.freeze({ ...metadata, processedAt: new Date().toISOString() })
+            historicalBasis: Object.freeze({...historicalBasis }),
+            assumptions: this._safeArray(assumptions).slice(0, 5),
+            dataStatus: String(dataStatus),
+            risks: Object.freeze(this._safeArray(risks).slice(0, 5)), // REMOVED POLYFILL HACK
+            metadata: Object.freeze({...metadata, processedAt: new Date().toISOString() })
         });
     }
 
-    // ✅ FIXED FOR PRODUCTION: Returns full forecast format to prevent engine layout crashes
     static insufficientData(metric, displayName, reason = 'INSUFFICIENT_HISTORY') {
         return this.createForecast({
             metric, displayName, period: null, forecast: 0, lowerBound: 0, upperBound: 0,
             method: 'insufficient_data', confidence: this.createConfidence({ score: 0 }),
-            historicalBasis: null,
-            assumptions: [`Not enough historical data to produce a reliable ${displayName} forecast.`],
+            historicalBasis: { periodsUsed: 0, average: 0, trend: null },
+            assumptions: [`Not enough historical data to produce a reliable ${displayName} forecast. Minimum 7 data points required.`],
             dataStatus: DATA_SUFFICIENCY.INSUFFICIENT, risks: [], metadata: { dataPoints: 0, reason }
         });
     }
 
-    static isDataSufficient(dataPoints, minRequired = 7) { 
+    static isDataSufficient(dataPoints, minRequired = 7) {
         return this._safeNumber(dataPoints) >= minRequired;
     }
 
-    static getDataSufficiency(dataPoints) { 
+    static getDataSufficiency(dataPoints) {
         const count = this._safeNumber(dataPoints);
-        if (count >= 90) return DATA_SUFFICIENCY.SUFFICIENT;
-        if (count >= 30) return DATA_SUFFICIENCY.MARGINAL;
+        if (count >= 90) return DATA_SUFFICIENCY.EXCELLENT;
+        if (count >= 30) return DATA_SUFFICIENCY.SUFFICIENT;
+        if (count >= 7) return DATA_SUFFICIENCY.MINIMAL;
         return DATA_SUFFICIENCY.INSUFFICIENT;
     }
 
-    static getConfidenceFromDataPoints(dataPoints) { 
+    static getConfidenceFromDataPoints(dataPoints) {
         const count = this._safeNumber(dataPoints);
-        if (count >= 365) return 'STRONG';
-        if (count >= 180) return 'GOOD';
-        if (count >= 90) return 'MODERATE';
-        if (count >= 30) return 'LOW';
+        if (count >= 90) return 'STRONG';
+        if (count >= 30) return 'GOOD';
+        if (count >= 7) return 'MODERATE';
         return 'VERY_LOW';
     }
 
     static createScenario({ type = 'EXPECTED', label, values = {}, description = '', assumptions = [] }) {
-        return Object.freeze({ type: String(type), label: String(label || type.toLowerCase()), values: Object.freeze({ ...values }), description: String(description), assumptions: this._safeArray(assumptions) });
+        return Object.freeze({
+            type: String(type), label: String(label || type.toLowerCase()),
+            values: Object.freeze({...values }), description: String(description),
+            assumptions: this._safeArray(assumptions).slice(0, 3)
+        });
     }
 
     static createWhatIfResult({ parameter, originalValue = 0, newValue = 0, parameterType = 'OTHER', impact }) {
         const orig = this._safeNumber(originalValue); const imp = this._safeNumber(impact);
-        const impactChange = imp - orig; const impactPercentage = orig !== 0 ? (impactChange / orig) * 100 : 0;
-        return Object.freeze({ parameter: String(parameter), originalValue: orig, newValue: this._safeNumber(newValue), parameterType: String(parameterType), impact: Object.freeze({ forecastChange: Number(impactChange.toFixed(2)), percentageChange: Number(impactPercentage.toFixed(2)), direction: impactChange > 0 ? 'INCREASE' : impactChange < 0 ? 'DECREASE' : 'NEUTRAL' }) });
+        const impactChange = imp - orig; const impactPercentage = orig!== 0? (impactChange / orig) * 100 : 0;
+        return Object.freeze({
+            parameter: String(parameter), originalValue: orig, newValue: this._safeNumber(newValue), parameterType: String(parameterType),
+            impact: Object.freeze({ forecastChange: Number(impactChange.toFixed(2)), percentageChange: Number(impactPercentage.toFixed(2)), direction: impactChange > 0? 'INCREASE' : impactChange < 0? 'DECREASE' : 'NEUTRAL' })
+        });
     }
 
+    // RESTORED: Required by all 5 calculators
     static createConfidence({ score = 50, factors = {}, summary = null }) {
         const clampedScore = this._clamp(score); const level = this._getConfidenceLevel(clampedScore);
-        return Object.freeze({ score: clampedScore, level, factors: Object.freeze({ historicalDataPoints: this._safeNumber(factors?.historicalDataPoints), dataConsistency: String(factors?.dataConsistency || 'MODERATE'), volatility: this._safeNumber(factors?.volatility), trendStability: this._safeNumber(factors?.trendStability), seasonalityEvidence: this._safeNumber(factors?.seasonalityEvidence), priorAccuracy: this._safeNumber(factors?.priorAccuracy) }), summary: summary || this._getConfidenceSummary(clampedScore, level) });
+        return Object.freeze({
+            score: clampedScore, level,
+            factors: Object.freeze({
+                historicalDataPoints: this._safeNumber(factors?.historicalDataPoints),
+                dataConsistency: String(factors?.dataConsistency || 'MODERATE'),
+                volatilityIndex: this._safeNumber(factors?.volatilityIndex || factors?.volatility || 0),
+                trendStability: this._safeNumber(factors?.trendStability),
+                seasonalityEvidence: this._safeNumber(factors?.seasonalityEvidence),
+                priorAccuracy: this._safeNumber(factors?.priorAccuracy)
+            }),
+            summary: summary || this._getConfidenceSummary(clampedScore, level)
+        });
     }
 
-    static createRisk({ metric, displayName, type, severity = 'LOW', description = '', trigger = '', action = null, impact = null }) {
+    // RESTORED: Required by all 5 calculators
+    static createRisk({ metric, displayName, type, severity = 'LOW', description = '', trigger = '', action = null, impact = 0 }) {
         return Object.freeze({
-            metric: String(metric), displayName: String(displayName), type: String(type), severity: String(severity), description: String(description), trigger: String(trigger), action: action ? String(action) : null, impact: impact !== null ? this._safeNumber(impact) : null
+            metric: String(metric), displayName: String(displayName), type: String(type), severity: String(severity),
+            description: String(description), trigger: String(trigger),
+            action: action? String(action) : null,
+            impact: this._safeNumber(impact) // SCALE: never null
         });
     }
 }
 
-ForecastContracts.FORECAST_HORIZONS = FORECAST_HORIZONS;
-ForecastContracts.DATA_SUFFICIENCY = DATA_SUFFICIENCY;
-ForecastContracts.CONFIDENCE_LEVELS = CONFIDENCE_LEVELS;
-ForecastContracts.FORECAST_METHODS = FORECAST_METHODS;
-
-const hybridPayload = {
-    ForecastContracts, FORECAST_HORIZONS, DATA_SUFFICIENCY, CONFIDENCE_LEVELS, FORECAST_METHODS,
-    createForecast: ForecastContracts.createForecast.bind(ForecastContracts),
-    createScenario: ForecastContracts.createScenario.bind(ForecastContracts),
-    createWhatIfResult: ForecastContracts.createWhatIfResult.bind(ForecastContracts),
-    createConfidence: ForecastContracts.createConfidence.bind(ForecastContracts),
-    createRisk: ForecastContracts.createRisk.bind(ForecastContracts),
-    insufficientData: ForecastContracts.insufficientData.bind(ForecastContracts),
-    isDataSufficient: ForecastContracts.isDataSufficient.bind(ForecastContracts),
-    getDataSufficiency: ForecastContracts.getDataSufficiency.bind(ForecastContracts),
-    getConfidenceFromDataPoints: ForecastContracts.getConfidenceFromDataPoints.bind(ForecastContracts)
-};
-
-Object.assign(ForecastContracts, hybridPayload);
-module.exports = hybridPayload;
+module.exports = { ForecastContracts, DATA_SUFFICIENCY, FORECAST_HORIZONS, CONFIDENCE_LEVELS, FORECAST_METHODS };
