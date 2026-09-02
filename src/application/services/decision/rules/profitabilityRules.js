@@ -1,26 +1,44 @@
+'use strict';
+
 /**
  * Profitability Decision Rules
- * 
- * Detects profitability issues and opportunities
- * 
- * @version 1.0
+ * Path: src/application/services/decision/rules/profitabilityRules.js
+ * SSOT: DecisionContracts
+ * @version 1.2.0-prod
  */
 
 const {
   DECISION_TYPES,
   DECISION_CATEGORIES,
   DECISION_SEVERITY,
-  DECISION_PRIORITY
+  DECISION_TIMEFRAME,
+  DECISION_ENTITY,
 } = require('../contracts/DecisionContracts');
 
-/**
- * Profitability Rule Definitions
- */
-const profitabilityRules = [
+const NGN = new Intl.NumberFormat('en-NG', {
+  style: 'currency',
+  currency: 'NGN',
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+});
+
+// ─── pure helpers ────────────────────────────────────────────
+const toNumber = (val, fallback = 0) => {
+  const n = Number(val);
+  return Number.isFinite(n) ? n : fallback;
+};
+
+const safeData = (data) =>
+  data && typeof data === 'object' && !Array.isArray(data) ? data : {};
+
+const pct = (ratio) => (ratio * 100).toFixed(1);
+
+// ─── rules ───────────────────────────────────────────────────
+const profitabilityRules = Object.freeze([
   // ============================================================
   // GROSS_MARGIN_DECLINE
   // ============================================================
-  {
+  Object.freeze({
     id: 'GROSS_MARGIN_DECLINE',
     type: DECISION_TYPES.GROSS_MARGIN_DECLINE,
     category: DECISION_CATEGORIES.PROFITABILITY,
@@ -30,59 +48,90 @@ const profitabilityRules = [
     defaultTitle: 'Gross Margin Declining',
     defaultSummary: 'Gross margin has dropped by more than 5%.',
     defaultRecommendation: 'Review pricing and cost of goods sold immediately.',
-    requiredFields: ['currentGrossMargin', 'previousGrossMargin', 'revenue', 'cogs'],
+    requiredFields: Object.freeze([
+      'currentGrossMargin',
+      'previousGrossMargin',
+      'revenue',
+      'cogs',
+    ]),
 
     async evaluate(data) {
-      const { currentGrossMargin, previousGrossMargin, revenue, cogs, productId, productName } = data;
+      data = safeData(data);
+      const currentGrossMargin = toNumber(data.currentGrossMargin);
+      const previousGrossMargin = toNumber(data.previousGrossMargin);
+      const revenue = toNumber(data.revenue);
+      const cogs = toNumber(data.cogs);
+      const productName = data.productName || 'Overall Business';
+      const productId = data.productId || 'unknown';
 
-      if (previousGrossMargin) {
+      if (previousGrossMargin > 0) {
         const decline = previousGrossMargin - currentGrossMargin;
         const declinePercent = (decline / previousGrossMargin) * 100;
 
         if (decline > 0.05) {
-          const severity = decline > 0.10 ? DECISION_SEVERITY.CRITICAL : DECISION_SEVERITY.WARNING;
-          const urgency = decline > 0.08 ? 'SHORT_TERM' : 'MEDIUM_TERM';
+          const severity =
+            decline > 0.1
+              ? DECISION_SEVERITY.CRITICAL
+              : DECISION_SEVERITY.WARNING;
+          const urgency =
+            decline > 0.08
+              ? DECISION_TIMEFRAME.SHORT_TERM
+              : DECISION_TIMEFRAME.MEDIUM_TERM;
 
-          return {
+          return Object.freeze({
             triggered: true,
-            evidence: {
-              currentGrossMargin: (currentGrossMargin * 100).toFixed(1),
-              previousGrossMargin: (previousGrossMargin * 100).toFixed(1),
-              decline: (decline * 100).toFixed(1),
+            severity,
+            evidence: Object.freeze({
+              currentGrossMargin: pct(currentGrossMargin),
+              previousGrossMargin: pct(previousGrossMargin),
+              decline: pct(decline),
               declinePercent: declinePercent.toFixed(1),
               revenue,
               cogs,
-              productName: productName || 'Overall Business'
-            },
-            impact: {
+              productName,
+              productId,
+            }),
+            impact: Object.freeze({
               financialImpact: revenue * decline,
-              description: `Gross margin declined ${(decline * 100).toFixed(1)}% (${declinePercent.toFixed(1)}% drop)`
-            },
+              description: `Gross margin declined ${pct(
+                decline
+              )}% (${declinePercent.toFixed(1)}% drop)`,
+            }),
             urgency,
-            currentState: { currentGrossMargin, previousGrossMargin },
+            currentState: Object.freeze({
+              currentGrossMargin,
+              previousGrossMargin,
+            }),
             expectedImpact: 'Restored gross margin levels',
-            risks: ['Continued margin erosion', 'Profitability decline'],
-            relatedEntity: productId ? 'PRODUCT' : 'BUSINESS',
-            relatedEntityId: productId || '1'
-          };
+            risks: Object.freeze([
+              'Continued margin erosion',
+              'Profitability decline',
+            ]),
+            relatedEntity:
+              productId !== 'unknown'
+                ? DECISION_ENTITY.PRODUCT
+                : DECISION_ENTITY.BUSINESS,
+            relatedEntityId: productId !== 'unknown' ? productId : 'global',
+          });
         }
       }
 
-      return { triggered: false };
+      return Object.freeze({ triggered: false });
     },
 
     generateRecommendation(evidence) {
+      if (!evidence) return this.defaultRecommendation;
       if (evidence.productName && evidence.productName !== 'Overall Business') {
         return `${evidence.productName} gross margin declined from ${evidence.previousGrossMargin}% to ${evidence.currentGrossMargin}% (${evidence.declinePercent}% drop). Review pricing, supplier costs, and production efficiency.`;
       }
       return `Overall gross margin declined from ${evidence.previousGrossMargin}% to ${evidence.currentGrossMargin}% (${evidence.declinePercent}% drop). Review pricing strategy and supplier costs.`;
-    }
-  },
+    },
+  }),
 
   // ============================================================
   // NET_PROFIT_DECLINE
   // ============================================================
-  {
+  Object.freeze({
     id: 'NET_PROFIT_DECLINE',
     type: DECISION_TYPES.NET_PROFIT_DECLINE,
     category: DECISION_CATEGORIES.PROFITABILITY,
@@ -92,113 +141,155 @@ const profitabilityRules = [
     defaultTitle: 'Net Profit Declining',
     defaultSummary: 'Net profit has decreased significantly.',
     defaultRecommendation: 'Analyze expense growth and operational efficiency.',
-    requiredFields: ['currentProfit', 'previousProfit', 'revenue', 'expenses'],
+    requiredFields: Object.freeze([
+      'currentProfit',
+      'previousProfit',
+      'revenue',
+      'expenses',
+    ]),
 
     async evaluate(data) {
-      const { currentProfit, previousProfit, revenue, expenses, revenueGrowth } = data;
+      data = safeData(data);
+      const currentProfit = toNumber(data.currentProfit);
+      const previousProfit = toNumber(data.previousProfit);
+      const revenue = toNumber(data.revenue);
+      const expenses = toNumber(data.expenses);
+      const revenueGrowth =
+        data.revenueGrowth != null ? toNumber(data.revenueGrowth) : null;
 
       if (previousProfit > 0) {
-        const profitDecline = (previousProfit - currentProfit) / previousProfit;
+        const profitDecline =
+          (previousProfit - currentProfit) / previousProfit;
 
         if (profitDecline > 0.2) {
-          const severity = profitDecline > 0.4 ? DECISION_SEVERITY.CRITICAL : DECISION_SEVERITY.WARNING;
+          const severity =
+            profitDecline > 0.4
+              ? DECISION_SEVERITY.CRITICAL
+              : DECISION_SEVERITY.WARNING;
+          const urgency =
+            profitDecline > 0.3
+              ? DECISION_TIMEFRAME.SHORT_TERM
+              : DECISION_TIMEFRAME.MEDIUM_TERM;
 
-          return {
+          return Object.freeze({
             triggered: true,
-            evidence: {
+            severity,
+            evidence: Object.freeze({
               currentProfit,
               previousProfit,
               profitDecline: (profitDecline * 100).toFixed(1),
               revenue,
               expenses,
-              revenueGrowth: revenueGrowth ? (revenueGrowth * 100).toFixed(1) : 'unknown'
-            },
-            impact: {
+              revenueGrowth: revenueGrowth != null ? pct(revenueGrowth) : 'unknown', // FIXED: removed stray 'revenue' line
+            }),
+            impact: Object.freeze({
               financialImpact: previousProfit - currentProfit,
-              description: `Profit declined by ${(profitDecline * 100).toFixed(1)}%`
-            },
-            urgency: profitDecline > 0.3 ? 'SHORT_TERM' : 'MEDIUM_TERM',
-            currentState: { currentProfit, previousProfit },
+              description: `Profit declined by ${(profitDecline * 100).toFixed(
+                1
+              )}%`,
+            }),
+            urgency,
+            currentState: Object.freeze({ currentProfit, previousProfit }),
             expectedImpact: 'Restored profitability and efficiency',
-            risks: ['Continued profit decline', 'Cash flow pressure'],
-            relatedEntity: 'BUSINESS',
-            relatedEntityId: '1'
-          };
+            risks: Object.freeze([
+              'Continued profit decline',
+              'Cash flow pressure',
+            ]),
+            relatedEntity: DECISION_ENTITY.BUSINESS,
+            relatedEntityId: 'global',
+          });
         }
       }
 
-      return { triggered: false };
+      return Object.freeze({ triggered: false });
     },
 
     generateRecommendation(evidence) {
-      let recommendation = `Net profit declined ${evidence.profitDecline}% (from ₦${evidence.previousProfit.toLocaleString()} to ₦${evidence.currentProfit.toLocaleString()}).`;
-      
+      if (!evidence) return this.defaultRecommendation;
+      let recommendation = `Net profit declined ${
+        evidence.profitDecline
+      }% (from ${NGN.format(evidence.previousProfit)} to ${NGN.format(
+        evidence.currentProfit
+      )}).`;
       if (evidence.revenueGrowth !== 'unknown') {
         recommendation += ` Revenue grew ${evidence.revenueGrowth}% during this period.`;
       }
-      
-      recommendation += ' Review expense categories and operational efficiency to identify the cause.';
+      recommendation +=
+        ' Review expense categories and operational efficiency to identify the cause.';
       return recommendation;
-    }
-  },
+    },
+  }),
 
   // ============================================================
   // REVENUE_GROWTH_PROFIT_DECLINE
   // ============================================================
-  {
+  Object.freeze({
     id: 'REVENUE_GROWTH_PROFIT_DECLINE',
     type: DECISION_TYPES.REVENUE_GROWTH_PROFIT_DECLINE,
     category: DECISION_CATEGORIES.PROFITABILITY,
     name: 'Revenue Growth, Profit Decline',
-    severity: DECISION_SEVERITY.HIGH,
+    severity: DECISION_SEVERITY.WARNING,
     minConfidence: 75,
     defaultTitle: 'Revenue Growing but Profit Falling',
     defaultSummary: 'Revenue is increasing but profit is declining.',
     defaultRecommendation: 'Review cost structure and pricing strategy.',
-    requiredFields: ['revenueGrowth', 'profitGrowth', 'revenue', 'profit'],
+    requiredFields: Object.freeze([
+      'revenueGrowth',
+      'profitGrowth',
+      'revenue',
+      'profit',
+    ]),
 
     async evaluate(data) {
-      const { revenueGrowth, profitGrowth, revenue, profit, period = 'month' } = data;
+      data = safeData(data);
+      const revenueGrowth = toNumber(data.revenueGrowth);
+      const profitGrowth = toNumber(data.profitGrowth);
+      const revenue = toNumber(data.revenue);
+      const profit = toNumber(data.profit);
+      const period = data.period || 'month';
 
-      // Revenue is growing (> 5%) but profit is declining (< -5%)
       if (revenueGrowth > 0.05 && profitGrowth < -0.05) {
         const gap = revenueGrowth - profitGrowth;
 
-        return {
+        return Object.freeze({
           triggered: true,
-          evidence: {
-            revenueGrowth: (revenueGrowth * 100).toFixed(1),
-            profitGrowth: (profitGrowth * 100).toFixed(1),
-            gap: (gap * 100).toFixed(1),
+          severity: DECISION_SEVERITY.WARNING,
+          evidence: Object.freeze({
+            revenueGrowth: pct(revenueGrowth),
+            profitGrowth: pct(profitGrowth),
+            gap: pct(gap),
             revenue,
             profit,
-            period
-          },
-          impact: {
+            period,
+          }),
+          impact: Object.freeze({
             financialImpact: profit,
-            description: `Revenue up ${(revenueGrowth * 100).toFixed(1)}% but profit down ${(profitGrowth * 100).toFixed(1)}%`
-          },
-          urgency: 'HIGH',
-          currentState: { revenueGrowth, profitGrowth },
+            description: `Revenue up ${pct(
+              revenueGrowth
+            )}% but profit down ${Math.abs(profitGrowth * 100).toFixed(1)}%`,
+          }),
+          urgency: DECISION_TIMEFRAME.SHORT_TERM,
+          currentState: Object.freeze({ revenueGrowth, profitGrowth }),
           expectedImpact: 'Aligned revenue and profit growth',
-          risks: ['Margin erosion', 'Inefficient operations'],
-          relatedEntity: 'BUSINESS',
-          relatedEntityId: '1'
-        };
+          risks: Object.freeze(['Margin erosion', 'Inefficient operations']),
+          relatedEntity: DECISION_ENTITY.BUSINESS,
+          relatedEntityId: 'global',
+        });
       }
 
-      return { triggered: false };
+      return Object.freeze({ triggered: false });
     },
 
     generateRecommendation(evidence) {
+      if (!evidence) return this.defaultRecommendation;
       return `Revenue grew ${evidence.revenueGrowth}% but profit declined ${evidence.profitGrowth}% (gap: ${evidence.gap}%). This suggests costs are growing faster than revenue. Review expense categories, pricing, and operational efficiency.`;
-    }
-  },
+    },
+  }),
 
   // ============================================================
   // PRODUCT_PROFITABILITY_ALERT
   // ============================================================
-  {
+  Object.freeze({
     id: 'PRODUCT_PROFITABILITY_ALERT',
     type: DECISION_TYPES.PRODUCT_PROFITABILITY_ALERT,
     category: DECISION_CATEGORIES.PROFITABILITY,
@@ -208,53 +299,73 @@ const profitabilityRules = [
     defaultTitle: 'Product Below Average Margin',
     defaultSummary: 'Product margin is below the business average.',
     defaultRecommendation: 'Review product pricing and cost structure.',
-    requiredFields: ['productMargin', 'averageMargin', 'productName', 'productRevenue'],
+    requiredFields: Object.freeze([
+      'productMargin',
+      'averageMargin',
+      'productName',
+      'productRevenue',
+    ]),
 
     async evaluate(data) {
-      const { productMargin, averageMargin, productName, productId, productRevenue } = data;
+      data = safeData(data);
+      const productMargin = toNumber(data.productMargin);
+      const averageMargin = toNumber(data.averageMargin);
+      const productRevenue = toNumber(data.productRevenue);
+      const productName = data.productName || 'Item';
+      const productId = data.productId || 'unknown';
 
-      if (averageMargin && productMargin) {
+      if (averageMargin > 0 && productMargin >= 0) {
         const gap = averageMargin - productMargin;
-        const gapPercent = averageMargin > 0 ? (gap / averageMargin) * 100 : 0;
+        const gapPercent = (gap / averageMargin) * 100;
 
         if (gap > 0.05 && gapPercent > 20) {
-          return {
+          const urgency =
+            gapPercent > 40
+              ? DECISION_TIMEFRAME.SHORT_TERM
+              : DECISION_TIMEFRAME.MEDIUM_TERM;
+
+          return Object.freeze({
             triggered: true,
-            evidence: {
-              productMargin: (productMargin * 100).toFixed(1),
-              averageMargin: (averageMargin * 100).toFixed(1),
-              gap: (gap * 100).toFixed(1),
+            severity: DECISION_SEVERITY.INFO,
+            evidence: Object.freeze({
+              productMargin: pct(productMargin),
+              averageMargin: pct(averageMargin),
+              gap: pct(gap),
               gapPercent: gapPercent.toFixed(1),
-              productName: productName || 'Item',
-              productRevenue
-            },
-            impact: {
-              financialImpact: productRevenue ? productRevenue * gap : null,
-              description: `${productName || 'Product'} margin ${(gap * 100).toFixed(1)}% below average (${gapPercent.toFixed(1)}% less)`
-            },
-            urgency: gapPercent > 40 ? 'SHORT_TERM' : 'MEDIUM_TERM',
-            currentState: { productMargin, averageMargin },
+              productName,
+              productRevenue,
+            }),
+            impact: Object.freeze({
+              financialImpact:
+                productRevenue > 0 ? productRevenue * gap : null,
+              description: `${productName} margin ${pct(
+                gap
+              )}% below average (${gapPercent.toFixed(1)}% less)`,
+            }),
+            urgency,
+            currentState: Object.freeze({ productMargin, averageMargin }),
             expectedImpact: 'Improved product profitability',
-            risks: ['Continued underperformance'],
-            relatedEntity: 'PRODUCT',
-            relatedEntityId: productId || 'unknown'
-          };
+            risks: Object.freeze(['Continued underperformance']),
+            relatedEntity: DECISION_ENTITY.PRODUCT,
+            relatedEntityId: productId,
+          });
         }
       }
 
-      return { triggered: false };
+      return Object.freeze({ triggered: false });
     },
 
     generateRecommendation(evidence) {
+      if (!evidence) return this.defaultRecommendation;
       const name = evidence.productName || 'This product';
       return `${name} margin (${evidence.productMargin}%) is ${evidence.gap}% below the business average (${evidence.averageMargin}%). Review pricing, costs, and sales volume. Consider whether this product should be promoted, improved, or discontinued.`;
-    }
-  },
+    },
+  }),
 
   // ============================================================
   // MARGIN_IMPROVEMENT_OPPORTUNITY
   // ============================================================
-  {
+  Object.freeze({
     id: 'MARGIN_IMPROVEMENT_OPPORTUNITY',
     type: DECISION_TYPES.MARGIN_IMPROVEMENT_OPPORTUNITY,
     category: DECISION_CATEGORIES.PROFITABILITY,
@@ -264,43 +375,55 @@ const profitabilityRules = [
     defaultTitle: 'Margin Improvement Opportunity',
     defaultSummary: 'Margins are trending upward.',
     defaultRecommendation: 'Identify and replicate success factors.',
-    requiredFields: ['marginTrend', 'currentMargin', 'previousMargin'],
+    requiredFields: Object.freeze([
+      'marginTrend',
+      'currentMargin',
+      'previousMargin',
+    ]),
 
     async evaluate(data) {
-      const { marginTrend, currentMargin, previousMargin, period = 'month' } = data;
+      data = safeData(data);
+      const marginTrend = toNumber(data.marginTrend);
+      const currentMargin = toNumber(data.currentMargin);
+      const previousMargin = toNumber(data.previousMargin);
+      const period = data.period || 'month';
 
       if (marginTrend > 0.02) {
         const improvement = currentMargin - previousMargin;
 
-        return {
+        return Object.freeze({
           triggered: true,
-          evidence: {
-            marginTrend: (marginTrend * 100).toFixed(1),
-            currentMargin: (currentMargin * 100).toFixed(1),
-            previousMargin: (previousMargin * 100).toFixed(1),
-            improvement: (improvement * 100).toFixed(1),
-            period
-          },
-          impact: {
+          severity: DECISION_SEVERITY.OPPORTUNITY,
+          evidence: Object.freeze({
+            marginTrend: pct(marginTrend),
+            currentMargin: pct(currentMargin),
+            previousMargin: pct(previousMargin),
+            improvement: pct(improvement),
+            period,
+          }),
+          impact: Object.freeze({
             financialImpact: null,
-            description: `Margin improving at ${(marginTrend * 100).toFixed(1)}% per ${period}`
-          },
-          urgency: 'MEDIUM_TERM',
-          currentState: { marginTrend, currentMargin },
+            description: `Margin improving at ${pct(
+              marginTrend
+            )}% per ${period}`,
+          }),
+          urgency: DECISION_TIMEFRAME.MEDIUM_TERM,
+          currentState: Object.freeze({ marginTrend, currentMargin }),
           expectedImpact: 'Continued margin improvement',
-          risks: ['Trend may not be sustainable'],
-          relatedEntity: 'BUSINESS',
-          relatedEntityId: '1'
-        };
+          risks: Object.freeze(['Trend may not be sustainable']),
+          relatedEntity: DECISION_ENTITY.BUSINESS,
+          relatedEntityId: 'global',
+        });
       }
 
-      return { triggered: false };
+      return Object.freeze({ triggered: false });
     },
 
     generateRecommendation(evidence) {
+      if (!evidence) return this.defaultRecommendation;
       return `Margins are trending upward (${evidence.marginTrend}% per ${evidence.period}) from ${evidence.previousMargin}% to ${evidence.currentMargin}%. Identify what's driving this improvement and replicate across other products or areas.`;
-    }
-  }
-];
+    },
+  }),
+]);
 
 module.exports = profitabilityRules;
