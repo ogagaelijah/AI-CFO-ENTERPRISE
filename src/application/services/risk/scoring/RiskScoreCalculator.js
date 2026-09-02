@@ -39,6 +39,7 @@ class RiskScoreCalculator {
       const components = this._calculateComponents(riskItems, metrics);
       const rawScore = this._calculateWeightedScore(components);
       const overallScore = this._clamp(Math.round(rawScore), 0, 100);
+      const severity = this._getScoreBand(overallScore); // ADDED
 
       const riskCounts = this._countRisksByScore(riskItems);
       const breakdown = this._buildBreakdown(riskItems);
@@ -46,6 +47,7 @@ class RiskScoreCalculator {
 
       const result = Object.freeze({
         overallScore,
+        severity, // ADDED
         businessHealthScore: 100 - overallScore,
         scoreBand: this._getScoreBand(overallScore),
         components: Object.freeze(components),
@@ -172,6 +174,7 @@ class RiskScoreCalculator {
   _createEmptyScore() {
     return Object.freeze({
       overallScore: 0,
+      severity: 'LOW', // ADDED
       businessHealthScore: 100,
       scoreBand: 'LOW',
       components: Object.freeze({
@@ -195,6 +198,7 @@ class RiskScoreCalculator {
   _createFallbackScore(error) {
     return Object.freeze({
       overallScore: 75,
+      severity: 'HIGH', // ADDED
       businessHealthScore: 25,
       scoreBand: 'HIGH',
       components: Object.freeze({}),

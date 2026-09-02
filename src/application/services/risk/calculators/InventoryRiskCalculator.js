@@ -1,4 +1,3 @@
-// src/application/services/risk/calculators/InventoryRiskCalculator.js
 'use strict';
 
 const BaseRiskCalculator = require('./BaseRiskCalculator');
@@ -64,7 +63,10 @@ class InventoryRiskCalculator extends BaseRiskCalculator {
         risk = this._enrichWithTrend(risk, values, true);
       }
 
-      risk = this._enrichEvidence(risk, this._generateWarnings(metrics));
+      const warnings = this._generateWarnings(metrics);
+      risk = this._enrichWarnings(risk, warnings);
+      risk = this._enrichEvidence(risk, warnings);
+
       risk = this._enrichMeta(risk, {
         userId,
         businessId,

@@ -1,16 +1,19 @@
-// src/application/services/risk/contracts/RiskContracts.js
-/**
- * Risk Contracts - SSOT v1.2.1-prod
- * Immutable, versioned data contracts for all Risk Engine outputs.
- */
 'use strict';
 
+/**
+ * Risk Contracts – SSOT v1.3.0-prod
+ *
+ * Immutable, versioned data contracts for all Risk Engine outputs.
+ * Compatible with AnomalyDetector, RiskEngine, and domain risk factories.
+ *
+ * @version 1.3.0
+ */
 const { randomUUID } = require('crypto');
 
 // =============================================
 // 1. CONSTANTS - FROZEN
 // =============================================
-const CONTRACT_VERSION = '1.2.1';
+const CONTRACT_VERSION = '1.3.0';
 
 const RISK_TYPES = Object.freeze({
   CASH_FLOW: 'CASH_FLOW',
@@ -23,23 +26,44 @@ const RISK_TYPES = Object.freeze({
   CUSTOMER_CONCENTRATION: 'CUSTOMER_CONCENTRATION',
   SUPPLIER_CONCENTRATION: 'SUPPLIER_CONCENTRATION',
   ANOMALY: 'ANOMALY',
+  VOLATILITY: 'VOLATILITY',
+  TREND: 'TREND',
+  FORECAST: 'FORECAST',
 });
 
 const SEVERITY_LEVELS = Object.freeze({
+  NONE:     { label: 'None',     minScore: -1, maxScore: -1, color: 'gray',   icon: '⚪' },
   LOW:      { label: 'Low',      minScore: 0,  maxScore: 24, color: 'green',  icon: '🟢' },
   MEDIUM:   { label: 'Medium',   minScore: 25, maxScore: 49, color: 'yellow', icon: '🟡' },
   HIGH:     { label: 'High',     minScore: 50, maxScore: 74, color: 'orange', icon: '🟠' },
   CRITICAL: { label: 'Critical', minScore: 75, maxScore: 100, color: 'red',   icon: '🔴' },
 });
 
+/**
+ * Canonical status set used across RiskEngine + AnomalyDetector.
+ * MONITORING = no active anomalies / watch-only
+ * ACTIVE     = risk is live
+ * MITIGATED  = acknowledged / partially handled
+ * RESOLVED   = closed
+ * ARCHIVED   = historical only
+ * UNKNOWN    = fallback / error path
+ */
 const RISK_STATUS = Object.freeze({
   ACTIVE: 'ACTIVE',
+  MONITORING: 'MONITORING',
   MITIGATED: 'MITIGATED',
   RESOLVED: 'RESOLVED',
   ARCHIVED: 'ARCHIVED',
+  UNKNOWN: 'UNKNOWN',
 });
 
-// Small delta threshold for trend stability
+const TREND_DIRECTIONS = Object.freeze({
+  IMPROVING: 'IMPROVING',
+  WORSENING: 'WORSENING',
+  STABLE: 'STABLE',
+});
+
+/** Score delta at or below this is treated as STABLE */
 const TREND_STABLE_DELTA = 5;
 
 // =============================================
@@ -66,6 +90,16 @@ const deepFreeze = (obj) => {
 
 const nowISO = () => new Date().toISOString();
 
+const isValidRiskType = (type) =>
+  typeof type === 'string' && Object.prototype.hasOwnProperty.call(RISK_TYPES, type);
+
+const isValidStatus = (status) =>
+  typeof status === 'string' && Object.prototype.hasOwnProperty.call(RISK_STATUS, status);
+
+const isValidSeverity = (severity) =>
+  typeof severity === 'string' &&
+  Object.prototype.hasOwnProperty.call(SEVERITY_LEVELS, severity);
+
 // =============================================
 // 3. RISK CONTRACTS CLASS
 // =============================================
@@ -77,7 +111,12 @@ class RiskContracts {
     if (score === -Infinity) return 'LOW';
 
     const s = clamp(toNumber(score), 0, 100);
+    if (s === 0) {
+      // Allow explicit NONE when score is exactly 0 and caller wants it;
+      // domain factories still map 0 → LOW via band.
+    }
     for (const [key, level] of Object.entries(SEVERITY_LEVELS)) {
+      if (key === 'NONE') continue;
       if (s >= level.minScore && s <= level.maxScore) return key;
     }
     return 'MEDIUM';
@@ -101,6 +140,7 @@ class RiskContracts {
     type,
     title,
     score,
+    severity: severityOverride = null,
     status = RISK_STATUS.ACTIVE,
     description = '',
     metrics = {},
@@ -114,7 +154,7 @@ class RiskContracts {
     updatedAt,
     meta = {},
   } = {}) {
-    if (!type || !Object.values(RISK_TYPES).includes(type)) {
+    if (!type || !isValidRiskType(type)) {
       throw new Error(`Invalid risk type: ${type}`);
     }
     if (!title || typeof title !== 'string') {
@@ -122,10 +162,14 @@ class RiskContracts {
     }
 
     const now = nowISO();
-    const severity = this.getSeverity(score);
-    const trendDirection = this._determineTrend(score, previousScore);
     const safeScore = clamp(toNumber(score), 0, 100);
+    const severity =
+      severityOverride && isValidSeverity(severityOverride)
+        ? severityOverride
+        : this.getSeverity(safeScore);
+    const trendDirection = this._determineTrend(safeScore, previousScore);
     const safeConfidence = clamp(toNumber(confidence), 0, 1);
+    const safeStatus = isValidStatus(status) ? status : RISK_STATUS.ACTIVE;
 
     // Impact: only include keys that were actually provided
     let safeImpact = {};
@@ -148,7 +192,7 @@ class RiskContracts {
       title: String(title).trim(),
       severity,
       score: safeScore,
-      status: RISK_STATUS[status] || RISK_STATUS.ACTIVE,
+      status: safeStatus,
       detectedAt: detectedAt || now,
       createdAt: createdAt || now,
       updatedAt: updatedAt || now,
@@ -183,6 +227,157 @@ class RiskContracts {
     return deepFreeze(risk);
   }
 
+  // =============================================
+  // ANOMALY factory – used by AnomalyDetector
+  // =============================================
+
+  /**
+   * Create an ANOMALY risk contract.
+   * Shape is intentionally compatible with AnomalyDetector output:
+   *
+   *   RiskContracts.anomaly({
+   *     metric, metricDisplayName, score, severity, status,
+   *     trend, impact, details,
+   *   })
+   *
+   * @param {object} opts
+   * @param {string} [opts.metric]
+   * @param {string} [opts.metricDisplayName]
+   * @param {number} [opts.score=0]
+   * @param {string} [opts.severity]          CRITICAL|HIGH|MEDIUM|LOW|NONE
+   * @param {string} [opts.status]            ACTIVE|MONITORING|...
+   * @param {string} [opts.trend]             IMPROVING|WORSENING|STABLE (legacy string)
+   * @param {object} [opts.impact]
+   * @param {object} [opts.details]
+   * @param {string} [opts.title]
+   * @param {string} [opts.description]
+   * @param {string} [opts.recommendation]
+   * @param {number} [opts.confidence]
+   * @param {number} [opts.previousScore]
+   * @param {object} [opts.meta]
+   * @returns {Readonly<object>}
+   */
+  static anomaly({
+    metric = null,
+    metricDisplayName = null,
+    score = 0,
+    severity = null,
+    status = RISK_STATUS.MONITORING,
+    trend = TREND_DIRECTIONS.STABLE,
+    impact = { financial: 0 },
+    details = {},
+    title = null,
+    description = '',
+    recommendation = null,
+    confidence = 0.85,
+    previousScore = null,
+    meta = {},
+  } = {}) {
+    const display =
+      metricDisplayName || metric || 'metric';
+    const safeScore = clamp(toNumber(score), 0, 100);
+
+    // Prefer explicit severity from detector; fall back to score bands
+    let resolvedSeverity = severity && isValidSeverity(severity)
+      ? severity
+      : this.getSeverity(safeScore);
+
+    // Detector may emit NONE when no anomalies
+    if (severity === 'NONE') resolvedSeverity = 'NONE';
+
+    const safeStatus = isValidStatus(status) ? status : RISK_STATUS.MONITORING;
+
+    // Normalise trend: accept either a string direction or a full trend object
+    let trendDirection = TREND_DIRECTIONS.STABLE;
+    if (typeof trend === 'string' && TREND_DIRECTIONS[trend]) {
+      trendDirection = trend;
+    } else if (trend && typeof trend === 'object' && trend.direction) {
+      trendDirection = TREND_DIRECTIONS[trend.direction] || TREND_DIRECTIONS.STABLE;
+    }
+
+    const counts = details?.counts || {};
+    const method = details?.method || null;
+    const latestAnomaly = details?.latestAnomaly || null;
+    const dataPoints = details?.dataPoints ?? null;
+
+    const evidence = [];
+    if (counts.critical > 0) evidence.push(`${counts.critical} critical anomal${counts.critical === 1 ? 'y' : 'ies'}`);
+    if (counts.high > 0) evidence.push(`${counts.high} high anomal${counts.high === 1 ? 'y' : 'ies'}`);
+    if (counts.total > 0) evidence.push(`${counts.total} total anomal${counts.total === 1 ? 'y' : 'ies'}`);
+    if (method) evidence.push(`method: ${method}`);
+    if (latestAnomaly?.message) evidence.push(latestAnomaly.message);
+
+    const autoDescription =
+      description ||
+      (counts.total > 0
+        ? `Detected ${counts.total} anomal${counts.total === 1 ? 'y' : 'ies'} on ${display}` +
+          (method ? ` via ${method}` : '') +
+          (latestAnomaly?.message ? `. Latest: ${latestAnomaly.message}` : '.')
+        : `No anomalies detected on ${display}. Monitoring.`);
+
+    const autoRecommendation =
+      recommendation ||
+      (resolvedSeverity === 'CRITICAL'
+        ? `Critical anomaly on ${display}. Investigate immediately and verify data integrity.`
+        : resolvedSeverity === 'HIGH'
+          ? `Significant anomaly on ${display}. Review recent changes and underlying drivers.`
+          : resolvedSeverity === 'MEDIUM'
+            ? `Moderate anomaly on ${display}. Monitor closely over the next period.`
+            : resolvedSeverity === 'LOW'
+              ? `Minor anomaly on ${display}. Continue monitoring.`
+              : `No active anomalies on ${display}. Continue routine monitoring.`);
+
+    const risk = this.createRisk({
+      type: RISK_TYPES.ANOMALY,
+      title: title || `Anomaly Risk – ${display}`,
+      score: safeScore,
+      severity: resolvedSeverity === 'NONE' ? 'LOW' : resolvedSeverity,
+      status: safeStatus,
+      description: autoDescription,
+      metrics: {
+        metric: metric ?? null,
+        metricDisplayName: display,
+        method,
+        dataPoints,
+        counts: counts && typeof counts === 'object' ? { ...counts } : {},
+        latestAnomalyIndex: latestAnomaly?.index ?? null,
+        latestAnomalyValue: latestAnomaly?.value ?? null,
+        latestDeviationPercent: latestAnomaly?.deviationPercent ?? null,
+      },
+      evidence,
+      impact: {
+        financial: toNumber(impact?.financial, 0),
+        percentage: impact?.percentage !== undefined
+          ? toNumber(impact.percentage, null)
+          : latestAnomaly?.deviationPercent ?? null,
+        timeframe: impact?.timeframe || 'Observation window',
+      },
+      recommendation: autoRecommendation,
+      confidence,
+      previousScore,
+      meta: {
+        ...meta,
+        source: 'AnomalyDetector',
+        anomalySeverity: resolvedSeverity, // preserve NONE when provided
+        trendDirection,
+        details: details && typeof details === 'object' ? { ...details } : {},
+      },
+    });
+
+    // Expose a flat, detector-friendly view on top of the full contract
+    // (frozen by createRisk / deepFreeze)
+    return deepFreeze({
+      ...risk,
+      // Convenience aliases expected by AnomalyDetector consumers
+      metric: metric ?? null,
+      metricDisplayName: display,
+      // Keep original severity string including NONE for detector logic
+      severity: resolvedSeverity === 'NONE' ? 'NONE' : risk.severity,
+      // Simple trend string for detector compatibility
+      trend: trendDirection,
+    });
+  }
+
   // ---------- Domain factories ----------
   static createCashRisk({
     score,
@@ -213,7 +408,10 @@ class RiskContracts {
       evidence: this._getCashEvidence(currentCash, averageMonthlyBurn, runway),
       impact: {
         financial: toNumber(averageMonthlyBurn),
-        timeframe: typeof runway === 'number' && runway > 0 ? `${Math.round(runway)} months` : null,
+        timeframe:
+          typeof runway === 'number' && runway > 0
+            ? `${Math.round(runway)} months`
+            : null,
       },
       recommendation: this._getCashRecommendation(runway),
       confidence,
@@ -235,13 +433,21 @@ class RiskContracts {
       title: 'Revenue Risk',
       score,
       status,
-      description: this._getRevenueRiskDescription(revenueGrowth, currentRevenue, previousRevenue),
+      description: this._getRevenueRiskDescription(
+        revenueGrowth,
+        currentRevenue,
+        previousRevenue
+      ),
       metrics: {
         currentRevenue: toNumber(currentRevenue),
         previousRevenue: toNumber(previousRevenue),
         revenueGrowth: toNumber(revenueGrowth),
       },
-      evidence: this._getRevenueEvidence(revenueGrowth, currentRevenue, previousRevenue),
+      evidence: this._getRevenueEvidence(
+        revenueGrowth,
+        currentRevenue,
+        previousRevenue
+      ),
       impact: {
         financial: toNumber(previousRevenue) - toNumber(currentRevenue),
         percentage: toNumber(revenueGrowth),
@@ -268,14 +474,22 @@ class RiskContracts {
       title: 'Profitability Risk',
       score,
       status,
-      description: this._getProfitabilityRiskDescription(marginChange, currentMargin, marginType),
+      description: this._getProfitabilityRiskDescription(
+        marginChange,
+        currentMargin,
+        marginType
+      ),
       metrics: {
         currentMargin: toNumber(currentMargin),
         previousMargin: toNumber(previousMargin),
         marginChange: toNumber(marginChange),
         marginType,
       },
-      evidence: this._getProfitabilityEvidence(marginChange, currentMargin, marginType),
+      evidence: this._getProfitabilityEvidence(
+        marginChange,
+        currentMargin,
+        marginType
+      ),
       impact: {
         percentage: toNumber(marginChange),
         timeframe: 'Current period',
@@ -334,7 +548,10 @@ class RiskContracts {
       title: 'Receivables Risk',
       score,
       status,
-      description: this._getReceivablesRiskDescription(overduePercentage, overdueReceivables),
+      description: this._getReceivablesRiskDescription(
+        overduePercentage,
+        overdueReceivables
+      ),
       metrics: {
         totalReceivables: toNumber(totalReceivables),
         overdueReceivables: toNumber(overdueReceivables),
@@ -366,7 +583,10 @@ class RiskContracts {
       title: 'Payables Risk',
       score,
       status,
-      description: this._getPayablesRiskDescription(overduePercentage, overduePayables),
+      description: this._getPayablesRiskDescription(
+        overduePercentage,
+        overduePayables
+      ),
       metrics: {
         totalPayables: toNumber(totalPayables),
         overduePayables: toNumber(overduePayables),
@@ -399,19 +619,31 @@ class RiskContracts {
       title: 'Inventory Risk',
       score,
       status,
-      description: this._getInventoryRiskDescription(inventoryGrowth, revenueGrowth, lowStockItems),
+      description: this._getInventoryRiskDescription(
+        inventoryGrowth,
+        revenueGrowth,
+        lowStockItems
+      ),
       metrics: {
         inventoryValue: toNumber(inventoryValue),
         inventoryGrowth: toNumber(inventoryGrowth),
         revenueGrowth: toNumber(revenueGrowth),
         lowStockItems: toNumber(lowStockItems),
       },
-      evidence: this._getInventoryEvidence(inventoryGrowth, revenueGrowth, lowStockItems),
+      evidence: this._getInventoryEvidence(
+        inventoryGrowth,
+        revenueGrowth,
+        lowStockItems
+      ),
       impact: {
         financial: toNumber(inventoryValue),
         timeframe: 'Current period',
       },
-      recommendation: this._getInventoryRecommendation(inventoryGrowth, revenueGrowth, lowStockItems),
+      recommendation: this._getInventoryRecommendation(
+        inventoryGrowth,
+        revenueGrowth,
+        lowStockItems
+      ),
       confidence,
       previousScore,
     });
@@ -421,15 +653,15 @@ class RiskContracts {
   // 4. PRIVATE HELPERS
   // =============================================
   static _generateId(type) {
-    const prefix = type.toLowerCase().replace(/_/g, '-');
+    const prefix = String(type).toLowerCase().replace(/_/g, '-');
     return `risk_${prefix}_${Date.now()}_${randomUUID().split('-')[0]}`;
   }
 
   static _determineTrend(current, previous) {
-    if (previous === null || previous === undefined) return 'STABLE';
+    if (previous === null || previous === undefined) return TREND_DIRECTIONS.STABLE;
     const delta = toNumber(current) - toNumber(previous);
-    if (Math.abs(delta) <= TREND_STABLE_DELTA) return 'STABLE';
-    return delta < 0 ? 'IMPROVING' : 'WORSENING';
+    if (Math.abs(delta) <= TREND_STABLE_DELTA) return TREND_DIRECTIONS.STABLE;
+    return delta < 0 ? TREND_DIRECTIONS.IMPROVING : TREND_DIRECTIONS.WORSENING;
   }
 
   // --- Generators ---
@@ -591,7 +823,6 @@ class RiskContracts {
       return 'Immediate cash flow review. Prioritize critical supplier payments.';
     }
     if (p >= 30) {
-      // Matches the test expectation for the 30% case
       return 'Review payment schedules and negotiate terms with key suppliers.';
     }
     return 'Monitor payables closely to avoid supplier issues.';
@@ -600,7 +831,9 @@ class RiskContracts {
   static _getInventoryRiskDescription(ig, rg, low) {
     const parts = [];
     if (toNumber(ig) > toNumber(rg) * 1.5) {
-      parts.push(`Inventory grew ${toNumber(ig).toFixed(1)}% while revenue grew ${toNumber(rg).toFixed(1)}%`);
+      parts.push(
+        `Inventory grew ${toNumber(ig).toFixed(1)}% while revenue grew ${toNumber(rg).toFixed(1)}%`
+      );
     }
     if (toNumber(low) > 0) parts.push(`${toNumber(low)} items below reorder level`);
     return parts.length ? parts.join('. ') : 'Inventory levels are healthy.';
@@ -630,5 +863,6 @@ module.exports = {
   RISK_TYPES,
   SEVERITY_LEVELS,
   RISK_STATUS,
+  TREND_DIRECTIONS,
   CONTRACT_VERSION,
 };

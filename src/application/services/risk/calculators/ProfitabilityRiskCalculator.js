@@ -1,4 +1,3 @@
-// src/application/services/risk/calculators/ProfitabilityRiskCalculator.js
 'use strict';
 
 const BaseRiskCalculator = require('./BaseRiskCalculator');
@@ -59,7 +58,10 @@ class ProfitabilityRiskCalculator extends BaseRiskCalculator {
         risk = this._enrichWithTrend(risk, values);
       }
 
-      risk = this._enrichEvidence(risk, this._generateWarnings(metrics, validatedMarginType));
+      const warnings = this._generateWarnings(metrics, validatedMarginType);
+      risk = this._enrichWarnings(risk, warnings);
+      risk = this._enrichEvidence(risk, warnings);
+
       risk = this._enrichMeta(risk, {
         userId,
         businessId,

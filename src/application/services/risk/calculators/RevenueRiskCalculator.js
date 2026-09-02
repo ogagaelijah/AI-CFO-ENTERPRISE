@@ -1,4 +1,3 @@
-// src/application/services/risk/calculators/RevenueRiskCalculator.js
 'use strict';
 
 const BaseRiskCalculator = require('./BaseRiskCalculator');
@@ -52,7 +51,10 @@ class RevenueRiskCalculator extends BaseRiskCalculator {
         risk = this._enrichWithTrend(risk, values); // rising revenue = IMPROVING
       }
 
-      risk = this._enrichEvidence(risk, this._generateWarnings(metrics));
+      const warnings = this._generateWarnings(metrics);
+      risk = this._enrichWarnings(risk, warnings);
+      risk = this._enrichEvidence(risk, warnings);
+
       risk = this._enrichMeta(risk, {
         userId,
         businessId,

@@ -1,4 +1,3 @@
-// src/application/services/risk/calculators/BaseRiskCalculator.js
 'use strict';
 
 const { RiskContracts, RISK_STATUS } = require('../contracts');
@@ -96,6 +95,13 @@ class BaseRiskCalculator {
     return Object.freeze({
       ...risk,
       evidence: Object.freeze([...risk.evidence, ...extraEvidence]),
+    });
+  }
+
+  _enrichWarnings(risk, warnings = []) {
+    return Object.freeze({
+      ...risk,
+      warnings: Object.freeze(Array.isArray(warnings) ? [...warnings] : []),
     });
   }
 
