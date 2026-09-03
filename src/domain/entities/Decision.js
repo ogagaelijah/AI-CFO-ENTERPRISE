@@ -5,7 +5,7 @@
  * Immutable, SSOT-backed business recommendation.
  * Production-ready for scale (multi-process safe ID, deep freeze, strict validation).
  *
- * @version 1.3.1-prod
+ * @version 1.3.2-prod
  */
 
 const { randomUUID } = require('crypto');
@@ -117,6 +117,30 @@ class Decision {
       : null;
     this._expiredAt = params.expiredAt ? new Date(params.expiredAt) : null;
 
+    // Optional diagnostic / enrichment fields (frozen, never part of core validation)
+    this._scoring =
+      params.scoring != null && typeof params.scoring === 'object'
+        ? Object.freeze({ ...params.scoring })
+        : params.scoring != null
+          ? params.scoring
+          : undefined;
+
+    this._impactResult =
+      params.impactResult != null && typeof params.impactResult === 'object'
+        ? Object.freeze({ ...params.impactResult })
+        : params.impactResult != null
+          ? params.impactResult
+          : undefined;
+
+    this._scenarios =
+      params.scenarios != null
+        ? Object.freeze(
+            Array.isArray(params.scenarios)
+              ? [...params.scenarios]
+              : { ...params.scenarios }
+          )
+        : undefined;
+
     Object.freeze(this);
   }
 
@@ -149,6 +173,15 @@ class Decision {
   get dismissReason() { return this._dismissReason; }
   get acknowledgedAt() { return this._acknowledgedAt; }
   get expiredAt() { return this._expiredAt; }
+
+  /** Scoring metadata produced by DecisionScoringService (optional) */
+  get scoring() { return this._scoring; }
+
+  /** Impact calculation result (optional) */
+  get impactResult() { return this._impactResult; }
+
+  /** Scenario analysis result (optional) */
+  get scenarios() { return this._scenarios; }
 
   /**
    * Dedup key: type:entity:entityId
@@ -241,6 +274,9 @@ class Decision {
       status: this._status,
       isExpired: this.isExpired(),
       createdAt: this._createdAt.toISOString(),
+      scoring: this._scoring,
+      impactResult: this._impactResult,
+      scenarios: this._scenarios,
     };
   }
 
@@ -276,6 +312,10 @@ class Decision {
         ? this._acknowledgedAt.toISOString()
         : null,
       expiredAt: this._expiredAt ? this._expiredAt.toISOString() : null,
+      // Preserve enrichment fields so subsequent `new Decision({...toJSON()})` keeps them
+      scoring: this._scoring,
+      impactResult: this._impactResult,
+      scenarios: this._scenarios,
     };
   }
 
