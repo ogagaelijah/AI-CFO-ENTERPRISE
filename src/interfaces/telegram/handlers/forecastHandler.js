@@ -3,7 +3,7 @@
 const { getSessionManager } = require('../sessionManager');
 const UserRepository = require('../../../infrastructure/database/sqlite/repositories/UserRepository');
 const BusinessRepository = require('../../../infrastructure/database/sqlite/repositories/BusinessRepository');
-const GetForecastUseCase = require('../../../application/useCases/reports/GetForecastUseCase');
+const ForecastOrchestrator = require('../../../application/services/forecast/ForecastOrchestrator');
 const SaleRepository = require('../../../infrastructure/database/sqlite/repositories/SaleRepository');
 const IncomeRepository = require('../../../infrastructure/database/sqlite/repositories/IncomeRepository');
 const PurchaseRepository = require('../../../infrastructure/database/sqlite/repositories/PurchaseRepository');
@@ -19,10 +19,8 @@ const incomeRepo = new IncomeRepository();
 const purchaseRepo = new PurchaseRepository();
 const expenseRepo = new ExpenseRepository();
 
-const forecastUseCase = new GetForecastUseCase({
+const forecastOrchestrator = new ForecastOrchestrator({
     saleRepository: saleRepo,
-    incomeRepository: incomeRepo,
-    purchaseRepository: purchaseRepo,
     expenseRepository: expenseRepo,
 });
 
@@ -117,11 +115,10 @@ async function generateForecastReport(ctx, businessId, userId, months) {
     try {
         await ctx.reply(`⏳ Generating ${months}-month forecast...`);
 
-        const result = await forecastUseCase.execute({
-            businessId,
-            userId,
-            months,
-            lookbackMonths: 12,
+        const result = await forecastOrchestrator.generate({
+            userId: String(userId),
+            businessId: String(businessId),
+            horizon: months === 3 ? '90D' : months === 6 ? '180D' : '365D',
         });
 
         if (!result.success) {
@@ -176,11 +173,10 @@ async function generateSeasonalityReport(ctx, businessId, userId) {
     try {
         await ctx.reply('⏳ Analyzing seasonal patterns...');
 
-        const result = await forecastUseCase.execute({
-            businessId,
-            userId,
-            months: 3,
-            lookbackMonths: 12,
+        const result = await forecastOrchestrator.generate({
+            userId: String(userId),
+            businessId: String(businessId),
+            horizon: '365D',
         });
 
         if (!result.seasonality || result.seasonality.length === 0) {

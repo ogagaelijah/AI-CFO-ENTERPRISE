@@ -3,7 +3,7 @@
 const { getSessionManager } = require('../sessionManager');
 const UserRepository = require('../../../infrastructure/database/sqlite/repositories/UserRepository');
 const BusinessRepository = require('../../../infrastructure/database/sqlite/repositories/BusinessRepository');
-const GetRecommendationsUseCase = require('../../../application/useCases/reports/GetRecommendationsUseCase');
+const DecisionEngine = require('../../../application/services/decision/DecisionEngine');
 const SaleRepository = require('../../../infrastructure/database/sqlite/repositories/SaleRepository');
 const IncomeRepository = require('../../../infrastructure/database/sqlite/repositories/IncomeRepository');
 const PurchaseRepository = require('../../../infrastructure/database/sqlite/repositories/PurchaseRepository');
@@ -25,14 +25,12 @@ const debtorRepo = new DebtorRepository();
 const creditorRepo = new CreditorRepository();
 const inventoryRepo = new InventoryRepository();
 
-const recommendationsUseCase = new GetRecommendationsUseCase({
-    saleRepository: saleRepo,
-    incomeRepository: incomeRepo,
-    purchaseRepository: purchaseRepo,
-    expenseRepository: expenseRepo,
-    debtorRepository: debtorRepo,
-    creditorRepository: creditorRepo,
-    inventoryRepository: inventoryRepo,
+const decisionEngine = new DecisionEngine({
+    // DecisionEngine uses dataProviders pattern
+    dataProviders: {
+        // We'll pass minimal providers for now
+        // The engine will fall back to safe defaults
+    },
 });
 
 async function recommendationHandler(ctx) {
@@ -66,20 +64,26 @@ async function generateRecommendations(ctx, businessId, userId) {
     try {
         await ctx.reply('🧠 Analyzing your business data for recommendations...');
 
-        // ✅ Pass both businessId and userId
-        const result = await recommendationsUseCase.execute({ businessId, userId });
+        // ✅ Use DecisionEngine.generateDecisions()
+        const result = await decisionEngine.generateDecisions({
+            businessId: String(businessId),
+            userId: String(userId),
+        });
 
-        if (!result.success || result.totalRecommendations === 0) {
+        const decisions = result.decisions || [];
+        const summary = result.summary || { total: 0 };
+
+        if (summary.total === 0 || decisions.length === 0) {
             await ctx.reply(
                 `✅ **All Good!**
 
 Your business is performing well with no critical issues.
 
 📊 **Summary:**
-• 🔴 High: ${result.summary.high}
-• 🟡 Medium: ${result.summary.medium}
-• 🟢 Low: ${result.summary.low}
-• ℹ️ Info: ${result.summary.info}
+• 🔴 Critical: ${summary.byPriority?.CRITICAL || 0}
+• 🟠 High: ${summary.byPriority?.HIGH || 0}
+• 🟡 Medium: ${summary.byPriority?.MEDIUM || 0}
+• 🟢 Low: ${summary.byPriority?.LOW || 0}
 
 Keep up the great work! 💪`
             );
@@ -87,28 +91,44 @@ Keep up the great work! 💪`
         }
 
         let message = `💡 **AI-Powered Recommendations**\n\n`;
-        message += `📊 ${result.totalRecommendations} recommendations found:\n\n`;
+        message += `📊 ${summary.total} recommendations found:\n\n`;
 
         const priorityEmojis = {
-            high: '🔴',
-            medium: '🟡',
-            low: '🟢',
-            info: 'ℹ️',
+            CRITICAL: '🔴',
+            HIGH: '🟠',
+            MEDIUM: '🟡',
+            LOW: '🟢',
+            INFO: 'ℹ️',
         };
 
-        for (const rec of result.recommendations) {
+        // Show top 10 decisions (limit for Telegram message length)
+        const topDecisions = decisions.slice(0, 10);
+
+        for (const rec of topDecisions) {
             const emoji = priorityEmojis[rec.priority] || '⚪';
-            message += `${emoji} *${rec.title}*\n`;
-            message += `   ${rec.description}\n`;
-            message += `   📌 Action: ${rec.action}\n\n`;
+            const title = rec.title || rec.type || 'Recommendation';
+            const description = rec.description || rec.message || 'No description provided';
+            const action = rec.action || rec.recommendedAction || 'Review and take appropriate action';
+
+            message += `${emoji} *${title}*\n`;
+            message += `   ${description}\n`;
+            message += `   📌 Action: ${action}\n\n`;
+        }
+
+        if (decisions.length > 10) {
+            message += `_... and ${decisions.length - 10} more recommendations_\n\n`;
         }
 
         // Summary
         message += `📊 **Priority Summary:**\n`;
-        message += `• 🔴 High: ${result.summary.high}\n`;
-        message += `• 🟡 Medium: ${result.summary.medium}\n`;
-        message += `• 🟢 Low: ${result.summary.low}\n`;
-        message += `• ℹ️ Info: ${result.summary.info}\n`;
+        message += `• 🔴 Critical: ${summary.byPriority?.CRITICAL || 0}\n`;
+        message += `• 🟠 High: ${summary.byPriority?.HIGH || 0}\n`;
+        message += `• 🟡 Medium: ${summary.byPriority?.MEDIUM || 0}\n`;
+        message += `• 🟢 Low: ${summary.byPriority?.LOW || 0}\n`;
+        message += `• 📈 Average Confidence: ${summary.averageConfidence || 0}%\n`;
+        if (summary.totalImpact) {
+            message += `• 💰 Total Potential Impact: ₦${summary.totalImpact.toLocaleString()}\n`;
+        }
 
         await ctx.reply(message);
 

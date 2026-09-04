@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { Menu, X, LogOut, Home, Bell, Sun, Moon, Settings } from 'lucide-react';
-import { INDUSTRY_CONFIGS, COMMON_NAV_ITEMS, STAT_COLORS } from '../config/industryConfig';
+import { INDUSTRY_CONFIGS, STAT_COLORS } from '../config/industryConfig';
 import { useDashboardData } from '../hooks/useDashboardData';
 
 // Normalize industry keys to match config
@@ -39,20 +39,10 @@ const Dashboard = () => {
 
   const { stats, isLoading } = useDashboardData(userIndustry);
 
-  // Build navItems with Reports pointing to /reports and Settings pointing to /settings
+  // Build navItems: Dashboard + industry sidebar (which already has all items grouped)
   const navItems = [
     { icon: Home, label: 'Dashboard', href: '/dashboard', active: true },
     ...(industryConfig.sidebar || []),
-    // Override Reports and Settings to use React Router links
-    ...COMMON_NAV_ITEMS.map(item => {
-      if (item.label === 'Reports') {
-        return { ...item, href: '/reports' };
-      }
-      if (item.label === 'Settings') {
-        return { ...item, href: '/settings' };
-      }
-      return item;
-    }),
   ];
 
   const handleLogout = () => {
@@ -82,20 +72,47 @@ const Dashboard = () => {
           <span className="text-xs font-medium text-gray-500 dark:text-gray-400">ENTERPRISE</span>
         </div>
         <nav className="flex-1 space-y-0.5 overflow-y-auto">
-          {navItems.map((item, index) => (
-            <Link
-              key={index}
-              to={item.href}
-              className={`flex items-center space-x-3 px-4 py-2.5 rounded-lg transition ${
-                item.active
-                  ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-gold-400 font-medium'
-                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700'
-              }`}
-            >
-              <item.icon className="w-5 h-5" />
-              <span className="text-sm">{item.label}</span>
-            </Link>
-          ))}
+          {navItems.map((item, index) => {
+            // Check if this is a section divider
+            if (item.type === 'section') {
+              // Color coding for section headers
+              let sectionColor = 'text-gray-400 dark:text-gray-500';
+              let sectionBg = 'bg-transparent';
+              if (item.label.includes('TRANSACTIONS')) {
+                sectionColor = 'text-blue-600 dark:text-blue-400';
+                sectionBg = 'bg-blue-50 dark:bg-blue-900/20';
+              } else if (item.label.includes('INTELLIGENCE')) {
+                sectionColor = 'text-purple-600 dark:text-purple-400';
+                sectionBg = 'bg-purple-50 dark:bg-purple-900/20';
+              } else if (item.label.includes('ACCOUNT')) {
+                sectionColor = 'text-emerald-600 dark:text-emerald-400';
+                sectionBg = 'bg-emerald-50 dark:bg-emerald-900/20';
+              }
+              return (
+                <div 
+                  key={index} 
+                  className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider ${sectionColor} ${sectionBg} select-none`}
+                >
+                  {item.label}
+                </div>
+              );
+            }
+            // Regular navigation link
+            return (
+              <Link
+                key={index}
+                to={item.href}
+                className={`flex items-center space-x-3 px-4 py-2.5 rounded-lg transition ${
+                  item.active
+                    ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-gold-400 font-medium'
+                    : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700'
+                }`}
+              >
+                {item.icon && <item.icon className="w-5 h-5" />}
+                <span className="text-sm">{item.label}</span>
+              </Link>
+            );
+          })}
         </nav>
         <div className="border-t border-gray-200 dark:border-slate-700 pt-4 mt-4">
           <button
@@ -182,21 +199,45 @@ const Dashboard = () => {
                 </button>
               </div>
               <nav className="space-y-0.5">
-                {navItems.map((item, index) => (
-                  <Link
-                    key={index}
-                    to={item.href}
-                    className={`flex items-center space-x-3 px-4 py-2.5 rounded-lg transition ${
-                      item.active
-                        ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-gold-400 font-medium'
-                        : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700'
-                    }`}
-                    onClick={closeMenu}
-                  >
-                    <item.icon className="w-5 h-5" />
-                    <span className="text-sm">{item.label}</span>
-                  </Link>
-                ))}
+                {navItems.map((item, index) => {
+                  if (item.type === 'section') {
+                    let sectionColor = 'text-gray-400 dark:text-gray-500';
+                    let sectionBg = 'bg-transparent';
+                    if (item.label.includes('TRANSACTIONS')) {
+                      sectionColor = 'text-blue-600 dark:text-blue-400';
+                      sectionBg = 'bg-blue-50 dark:bg-blue-900/20';
+                    } else if (item.label.includes('INTELLIGENCE')) {
+                      sectionColor = 'text-purple-600 dark:text-purple-400';
+                      sectionBg = 'bg-purple-50 dark:bg-purple-900/20';
+                    } else if (item.label.includes('ACCOUNT')) {
+                      sectionColor = 'text-emerald-600 dark:text-emerald-400';
+                      sectionBg = 'bg-emerald-50 dark:bg-emerald-900/20';
+                    }
+                    return (
+                      <div 
+                        key={index} 
+                        className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider ${sectionColor} ${sectionBg} select-none`}
+                      >
+                        {item.label}
+                      </div>
+                    );
+                  }
+                  return (
+                    <Link
+                      key={index}
+                      to={item.href}
+                      className={`flex items-center space-x-3 px-4 py-2.5 rounded-lg transition ${
+                        item.active
+                          ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-gold-400 font-medium'
+                          : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700'
+                      }`}
+                      onClick={closeMenu}
+                    >
+                      {item.icon && <item.icon className="w-5 h-5" />}
+                      <span className="text-sm">{item.label}</span>
+                    </Link>
+                  );
+                })}
               </nav>
               <div className="border-t border-gray-200 dark:border-slate-700 pt-4 mt-4">
                 <button

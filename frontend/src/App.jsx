@@ -21,6 +21,9 @@ import Purchases from './pages/Purchases';
 import Creditors from './pages/Creditors';
 import Suppliers from './pages/Suppliers';
 import Customers from './pages/Customers';
+import Analytics from './pages/Analytics';
+import Risk from './pages/Risk';
+import Decisions from './pages/Decisions';
 
 function App() {
   return (
@@ -136,6 +139,30 @@ function App() {
               element={
                 <ProtectedRoute>
                   <Customers />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/analytics"
+              element={
+                <ProtectedRoute>
+                  <Analytics />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/risk"
+              element={
+                <ProtectedRoute>
+                  <Risk />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/decisions"
+              element={
+                <ProtectedRoute>
+                  <Decisions />
                 </ProtectedRoute>
               }
             />

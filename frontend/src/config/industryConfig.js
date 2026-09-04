@@ -4,7 +4,8 @@ import {
   Home as HomeIcon, GraduationCap, Truck as TruckIcon,
   TrendingUp, TrendingDown, DollarSign, ShoppingCart, 
   Package, Users, CreditCard, Building2, BarChart3,
-  FileText, Calendar, Brain, Layers, Lightbulb, Settings
+  FileText, Calendar, Brain, Layers, Lightbulb, Settings,
+  AlertTriangle
 } from 'lucide-react';
 
 export const INDUSTRY_CONFIGS = {
@@ -28,6 +29,7 @@ export const INDUSTRY_CONFIGS = {
     ],
     features: ['Sales', 'Inventory', 'Debtors', 'Creditors', 'Customers', 'Suppliers', 'Reports'],
     sidebar: [
+      { type: 'section', label: '━━━ TRANSACTIONS ━━━' },
       { icon: TrendingUp, label: 'Sales', href: '/sales' },
       { icon: DollarSign, label: 'Income', href: '/income' },
       { icon: TrendingDown, label: 'Expenses', href: '/expenses' },
@@ -37,6 +39,18 @@ export const INDUSTRY_CONFIGS = {
       { icon: CreditCard, label: 'Creditors', href: '/creditors' },
       { icon: Building2, label: 'Customers', href: '/customers' },
       { icon: TruckIcon, label: 'Suppliers', href: '/suppliers' },
+
+      { type: 'section', label: '━━━ INTELLIGENCE ━━━' },
+      { icon: BarChart3, label: 'Analytics', href: '/analytics' },
+      { icon: FileText, label: 'Reports', href: '/reports' },
+      { icon: Calendar, label: 'Forecast', href: '/forecast' },
+      { icon: AlertTriangle, label: 'Risk', href: '/risk' },
+      { icon: Lightbulb, label: 'Decisions', href: '/decisions' },
+
+      { type: 'section', label: '━━━ ACCOUNT ━━━' },
+      { icon: Brain, label: 'AI Assistant', href: '/ai' },
+      { icon: Layers, label: 'Subscription', href: '/subscription' },
+      { icon: Settings, label: 'Settings', href: '/settings' },
     ],
   },
   'MANUFACTURING': {
@@ -59,6 +73,7 @@ export const INDUSTRY_CONFIGS = {
     ],
     features: ['Sales', 'Raw Materials', 'Production', 'Inventory', 'Suppliers', 'Reports'],
     sidebar: [
+      { type: 'section', label: '━━━ TRANSACTIONS ━━━' },
       { icon: TrendingUp, label: 'Sales', href: '/sales' },
       { icon: DollarSign, label: 'Income', href: '/income' },
       { icon: TrendingDown, label: 'Expenses', href: '/expenses' },
@@ -69,6 +84,18 @@ export const INDUSTRY_CONFIGS = {
       { icon: Users, label: 'Debtors', href: '/debtors' },
       { icon: CreditCard, label: 'Creditors', href: '/creditors' },
       { icon: TruckIcon, label: 'Suppliers', href: '/suppliers' },
+
+      { type: 'section', label: '━━━ INTELLIGENCE ━━━' },
+      { icon: BarChart3, label: 'Analytics', href: '/analytics' },
+      { icon: FileText, label: 'Reports', href: '/reports' },
+      { icon: Calendar, label: 'Forecast', href: '/forecast' },
+      { icon: AlertTriangle, label: 'Risk', href: '/risk' },
+      { icon: Lightbulb, label: 'Decisions', href: '/decisions' },
+
+      { type: 'section', label: '━━━ ACCOUNT ━━━' },
+      { icon: Brain, label: 'AI Assistant', href: '/ai' },
+      { icon: Layers, label: 'Subscription', href: '/subscription' },
+      { icon: Settings, label: 'Settings', href: '/settings' },
     ],
   },
   'CONSTRUCTION': {
@@ -91,6 +118,7 @@ export const INDUSTRY_CONFIGS = {
     ],
     features: ['Projects', 'Materials', 'Project Billing', 'Suppliers', 'Reports'],
     sidebar: [
+      { type: 'section', label: '━━━ TRANSACTIONS ━━━' },
       { icon: Building, label: 'Projects', href: '/projects' },
       { icon: DollarSign, label: 'Income', href: '/income' },
       { icon: TrendingDown, label: 'Expenses', href: '/expenses' },
@@ -98,6 +126,18 @@ export const INDUSTRY_CONFIGS = {
       { icon: Users, label: 'Debtors', href: '/debtors' },
       { icon: CreditCard, label: 'Creditors', href: '/creditors' },
       { icon: TruckIcon, label: 'Suppliers', href: '/suppliers' },
+
+      { type: 'section', label: '━━━ INTELLIGENCE ━━━' },
+      { icon: BarChart3, label: 'Analytics', href: '/analytics' },
+      { icon: FileText, label: 'Reports', href: '/reports' },
+      { icon: Calendar, label: 'Forecast', href: '/forecast' },
+      { icon: AlertTriangle, label: 'Risk', href: '/risk' },
+      { icon: Lightbulb, label: 'Decisions', href: '/decisions' },
+
+      { type: 'section', label: '━━━ ACCOUNT ━━━' },
+      { icon: Brain, label: 'AI Assistant', href: '/ai' },
+      { icon: Layers, label: 'Subscription', href: '/subscription' },
+      { icon: Settings, label: 'Settings', href: '/settings' },
     ],
   },
   'HEALTHCARE': {
@@ -120,6 +160,7 @@ export const INDUSTRY_CONFIGS = {
     ],
     features: ['Patient Visits', 'Medical Supplies', 'Patients', 'Billing', 'Reports'],
     sidebar: [
+      { type: 'section', label: '━━━ TRANSACTIONS ━━━' },
       { icon: Stethoscope, label: 'Visits', href: '/visits' },
       { icon: Users, label: 'Patients', href: '/patients' },
       { icon: DollarSign, label: 'Income', href: '/income' },
@@ -128,6 +169,18 @@ export const INDUSTRY_CONFIGS = {
       { icon: Users, label: 'Debtors', href: '/debtors' },
       { icon: CreditCard, label: 'Creditors', href: '/creditors' },
       { icon: TruckIcon, label: 'Suppliers', href: '/suppliers' },
+
+      { type: 'section', label: '━━━ INTELLIGENCE ━━━' },
+      { icon: BarChart3, label: 'Analytics', href: '/analytics' },
+      { icon: FileText, label: 'Reports', href: '/reports' },
+      { icon: Calendar, label: 'Forecast', href: '/forecast' },
+      { icon: AlertTriangle, label: 'Risk', href: '/risk' },
+      { icon: Lightbulb, label: 'Decisions', href: '/decisions' },
+
+      { type: 'section', label: '━━━ ACCOUNT ━━━' },
+      { icon: Brain, label: 'AI Assistant', href: '/ai' },
+      { icon: Layers, label: 'Subscription', href: '/subscription' },
+      { icon: Settings, label: 'Settings', href: '/settings' },
     ],
   },
   'CONSULTANCY': {
@@ -150,6 +203,7 @@ export const INDUSTRY_CONFIGS = {
     ],
     features: ['Clients', 'Billable Hours', 'Projects', 'Invoices', 'Reports'],
     sidebar: [
+      { type: 'section', label: '━━━ TRANSACTIONS ━━━' },
       { icon: Briefcase, label: 'Projects', href: '/projects' },
       { icon: Users, label: 'Clients', href: '/clients' },
       { icon: DollarSign, label: 'Income', href: '/income' },
@@ -158,6 +212,18 @@ export const INDUSTRY_CONFIGS = {
       { icon: Users, label: 'Debtors', href: '/debtors' },
       { icon: CreditCard, label: 'Creditors', href: '/creditors' },
       { icon: TruckIcon, label: 'Suppliers', href: '/suppliers' },
+
+      { type: 'section', label: '━━━ INTELLIGENCE ━━━' },
+      { icon: BarChart3, label: 'Analytics', href: '/analytics' },
+      { icon: FileText, label: 'Reports', href: '/reports' },
+      { icon: Calendar, label: 'Forecast', href: '/forecast' },
+      { icon: AlertTriangle, label: 'Risk', href: '/risk' },
+      { icon: Lightbulb, label: 'Decisions', href: '/decisions' },
+
+      { type: 'section', label: '━━━ ACCOUNT ━━━' },
+      { icon: Brain, label: 'AI Assistant', href: '/ai' },
+      { icon: Layers, label: 'Subscription', href: '/subscription' },
+      { icon: Settings, label: 'Settings', href: '/settings' },
     ],
   },
   'REAL_ESTATE': {
@@ -180,6 +246,7 @@ export const INDUSTRY_CONFIGS = {
     ],
     features: ['Properties', 'Tenants', 'Rent Collection', 'Maintenance', 'Reports'],
     sidebar: [
+      { type: 'section', label: '━━━ TRANSACTIONS ━━━' },
       { icon: HomeIcon, label: 'Properties', href: '/properties' },
       { icon: Users, label: 'Tenants', href: '/tenants' },
       { icon: DollarSign, label: 'Rent', href: '/rent' },
@@ -188,6 +255,18 @@ export const INDUSTRY_CONFIGS = {
       { icon: Users, label: 'Debtors', href: '/debtors' },
       { icon: CreditCard, label: 'Creditors', href: '/creditors' },
       { icon: TruckIcon, label: 'Suppliers', href: '/suppliers' },
+
+      { type: 'section', label: '━━━ INTELLIGENCE ━━━' },
+      { icon: BarChart3, label: 'Analytics', href: '/analytics' },
+      { icon: FileText, label: 'Reports', href: '/reports' },
+      { icon: Calendar, label: 'Forecast', href: '/forecast' },
+      { icon: AlertTriangle, label: 'Risk', href: '/risk' },
+      { icon: Lightbulb, label: 'Decisions', href: '/decisions' },
+
+      { type: 'section', label: '━━━ ACCOUNT ━━━' },
+      { icon: Brain, label: 'AI Assistant', href: '/ai' },
+      { icon: Layers, label: 'Subscription', href: '/subscription' },
+      { icon: Settings, label: 'Settings', href: '/settings' },
     ],
   },
   'EDUCATION': {
@@ -210,6 +289,7 @@ export const INDUSTRY_CONFIGS = {
     ],
     features: ['Students', 'Classes', 'School Fees', 'Exams', 'Reports'],
     sidebar: [
+      { type: 'section', label: '━━━ TRANSACTIONS ━━━' },
       { icon: Users, label: 'Students', href: '/students' },
       { icon: GraduationCap, label: 'Classes', href: '/classes' },
       { icon: DollarSign, label: 'Fees', href: '/fees' },
@@ -217,7 +297,18 @@ export const INDUSTRY_CONFIGS = {
       { icon: TrendingDown, label: 'Expenses', href: '/expenses' },
       { icon: Users, label: 'Debtors', href: '/debtors' },
       { icon: CreditCard, label: 'Creditors', href: '/creditors' },
-      // ❌ REMOVED: Suppliers
+
+      { type: 'section', label: '━━━ INTELLIGENCE ━━━' },
+      { icon: BarChart3, label: 'Analytics', href: '/analytics' },
+      { icon: FileText, label: 'Reports', href: '/reports' },
+      { icon: Calendar, label: 'Forecast', href: '/forecast' },
+      { icon: AlertTriangle, label: 'Risk', href: '/risk' },
+      { icon: Lightbulb, label: 'Decisions', href: '/decisions' },
+
+      { type: 'section', label: '━━━ ACCOUNT ━━━' },
+      { icon: Brain, label: 'AI Assistant', href: '/ai' },
+      { icon: Layers, label: 'Subscription', href: '/subscription' },
+      { icon: Settings, label: 'Settings', href: '/settings' },
     ],
   },
   'LOGISTICS': {
@@ -240,22 +331,35 @@ export const INDUSTRY_CONFIGS = {
     ],
     features: ['Vehicles', 'Drivers', 'Trips', 'Trip Revenue', 'Reports'],
     sidebar: [
+      { type: 'section', label: '━━━ TRANSACTIONS ━━━' },
       { icon: TruckIcon, label: 'Trips', href: '/trips' },
       { icon: TruckIcon, label: 'Vehicles', href: '/vehicles' },
       { icon: Users, label: 'Drivers', href: '/drivers' },
       { icon: DollarSign, label: 'Income', href: '/income' },
       { icon: TrendingDown, label: 'Expenses', href: '/expenses' },
       { icon: Users, label: 'Debtors', href: '/debtors' },
-      // ❌ REMOVED: Creditors
-      // ❌ REMOVED: Suppliers
+
+      { type: 'section', label: '━━━ INTELLIGENCE ━━━' },
+      { icon: BarChart3, label: 'Analytics', href: '/analytics' },
+      { icon: FileText, label: 'Reports', href: '/reports' },
+      { icon: Calendar, label: 'Forecast', href: '/forecast' },
+      { icon: AlertTriangle, label: 'Risk', href: '/risk' },
+      { icon: Lightbulb, label: 'Decisions', href: '/decisions' },
+
+      { type: 'section', label: '━━━ ACCOUNT ━━━' },
+      { icon: Brain, label: 'AI Assistant', href: '/ai' },
+      { icon: Layers, label: 'Subscription', href: '/subscription' },
+      { icon: Settings, label: 'Settings', href: '/settings' },
     ],
   },
 };
 
 export const COMMON_NAV_ITEMS = [
-  { icon: BarChart3, label: 'Reports', href: '/reports' },
+  { icon: BarChart3, label: 'Analytics', href: '/analytics' },
+  { icon: FileText, label: 'Reports', href: '/reports' },
   { icon: Calendar, label: 'Forecast', href: '/forecast' },
-  { icon: Lightbulb, label: 'Recommendations', href: '/recommendations' },
+  { icon: AlertTriangle, label: 'Risk', href: '/risk' },
+  { icon: Lightbulb, label: 'Decisions', href: '/decisions' },
   { icon: Brain, label: 'AI Assistant', href: '/ai' },
   { icon: Layers, label: 'Subscription', href: '/subscription' },
   { icon: Settings, label: 'Settings', href: '/settings' },
