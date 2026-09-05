@@ -45,7 +45,6 @@ class DailyReportService {
         this.inventoryRepository = inventoryRepository;
         this.paymentRepository = paymentRepository;
 
-        // Initialize calculators
         this.revenueCalculator = revenueCalculator || new RevenueCalculator({
             saleRepository: this.saleRepository,
         });
@@ -79,26 +78,17 @@ class DailyReportService {
         this.comparisonCalculator = comparisonCalculator || new ComparisonCalculator();
     }
 
-    /**
-     * Safely get array from repository result
-     */
     _safeArray(result) {
-        return Array.isArray(result)? result : [];
+        return Array.isArray(result) ? result : [];
     }
 
-    /**
-     * Safely get number
-     */
     _safeNumber(value) {
         const num = Number(value);
-        return isNaN(num)? 0 : num;
+        return isNaN(num) ? 0 : num;
     }
 
-    /**
-     * Generate Daily Report
-     */
     async generate({ userId, businessId, date }) {
-        const targetDate = date? new Date(date) : new Date();
+        const targetDate = date ? new Date(date) : new Date();
         const dateStr = targetDate.toISOString().split('T')[0];
 
         // Previous day
@@ -107,10 +97,9 @@ class DailyReportService {
         const prevDateStr = prevDate.toISOString().split('T')[0];
 
         // =============================================
-        // TODAY'S DATA (from calculators)
+        // TODAY'S DATA
         // =============================================
 
-        // 1. Revenue
         const todayRevenue = await this.revenueCalculator.calculate({
             userId,
             businessId,
@@ -118,7 +107,6 @@ class DailyReportService {
             endDate: dateStr,
         });
 
-        // 2. COGS
         const todayCogs = await this.cogsCalculator.calculate({
             userId,
             businessId,
@@ -126,17 +114,36 @@ class DailyReportService {
             endDate: dateStr,
         });
 
-        // 3. Profit
+        // Get expenses and other income safely
+        let todayExpensesList = [];
+        let todayIncomeList = [];
+
+        try {
+            const expensesResult = await this.expenseRepository.findByDateRange(userId, dateStr, dateStr);
+            todayExpensesList = this._safeArray(expensesResult);
+        } catch (e) { /* ignore */ }
+
+        try {
+            const incomeResult = await this.incomeRepository.findByDateRange(userId, dateStr, dateStr);
+            todayIncomeList = this._safeArray(incomeResult);
+        } catch (e) { /* ignore */ }
+
+        const todayTotalExpenses = todayExpensesList.reduce((sum, e) => sum + this._safeNumber(e.amount), 0);
+        const todayOtherIncome = todayIncomeList.reduce((sum, i) => sum + this._safeNumber(i.amount), 0);
+        const todayPureSales = this._safeNumber(todayRevenue.totalRevenue);
+        const todayCombinedRevenue = todayPureSales + todayOtherIncome;
+
         const todayProfit = await this.profitCalculator.calculate({
             userId,
             businessId,
             startDate: dateStr,
             endDate: dateStr,
-            revenueData: { totalRevenue: todayRevenue.totalRevenue },
+            revenueData: { totalRevenue: todayPureSales },
             cogsData: { totalCogs: todayCogs.totalCogs },
+            expenseData: { total: todayTotalExpenses },
+            incomeData: { total: todayOtherIncome },
         });
 
-        // 4. Cash
         const todayCash = await this.cashCalculator.calculate({
             userId,
             businessId,
@@ -144,21 +151,19 @@ class DailyReportService {
             endDate: dateStr,
         });
 
-        // 5. AR
         const todayAr = await this.arCalculator.calculate({
             userId,
             businessId,
             asAtDate: dateStr,
         });
 
-        // 6. AP
         const todayAp = await this.apCalculator.calculate({
             userId,
             businessId,
             asAtDate: dateStr,
         });
 
-        // 7. Inventory
+        // Inventory – include low-stock items list
         const todayInventory = await this.inventoryCalculator.calculate({
             userId,
             businessId,
@@ -167,7 +172,7 @@ class DailyReportService {
         });
 
         // =============================================
-        // YESTERDAY'S DATA (for comparison)
+        // YESTERDAY'S DATA
         // =============================================
 
         const prevRevenue = await this.revenueCalculator.calculate({
@@ -184,22 +189,42 @@ class DailyReportService {
             endDate: prevDateStr,
         });
 
+        let prevExpensesList = [];
+        let prevIncomeList = [];
+
+        try {
+            const expensesResult = await this.expenseRepository.findByDateRange(userId, prevDateStr, prevDateStr);
+            prevExpensesList = this._safeArray(expensesResult);
+        } catch (e) { /* ignore */ }
+
+        try {
+            const incomeResult = await this.incomeRepository.findByDateRange(userId, prevDateStr, prevDateStr);
+            prevIncomeList = this._safeArray(incomeResult);
+        } catch (e) { /* ignore */ }
+
+        const prevTotalExpenses = prevExpensesList.reduce((sum, e) => sum + this._safeNumber(e.amount), 0);
+        const prevOtherIncome = prevIncomeList.reduce((sum, i) => sum + this._safeNumber(i.amount), 0);
+        const prevPureSales = this._safeNumber(prevRevenue.totalRevenue);
+        const prevCombinedRevenue = prevPureSales + prevOtherIncome;
+
         const prevProfit = await this.profitCalculator.calculate({
             userId,
             businessId,
             startDate: prevDateStr,
             endDate: prevDateStr,
-            revenueData: { totalRevenue: prevRevenue.totalRevenue },
+            revenueData: { totalRevenue: prevPureSales },
             cogsData: { totalCogs: prevCogs.totalCogs },
+            expenseData: { total: prevTotalExpenses },
+            incomeData: { total: prevOtherIncome },
         });
 
         // =============================================
-        // COMPARE TODAY VS YESTERDAY
+        // COMPARE TODAY VS YESTERDAY (using combined revenue)
         // =============================================
 
         const revenueComparison = this.comparisonCalculator.compareValues(
-            todayRevenue.totalRevenue || 0,
-            prevRevenue.totalRevenue || 0,
+            todayCombinedRevenue,
+            prevCombinedRevenue,
             'Revenue'
         );
 
@@ -210,13 +235,11 @@ class DailyReportService {
         );
 
         // =============================================
-        // GET TODAY'S TRANSACTIONS (with safety checks)
+        // TODAY'S TRANSACTIONS
         // =============================================
 
         let todaySales = [];
         let todayPurchases = [];
-        let todayExpenses = [];
-        let todayIncome = [];
 
         try {
             const salesResult = await this.saleRepository.findByDateRange(userId, dateStr, dateStr);
@@ -228,40 +251,26 @@ class DailyReportService {
             todayPurchases = this._safeArray(purchasesResult);
         } catch (e) { /* ignore */ }
 
-        try {
-            const expensesResult = await this.expenseRepository.findByDateRange(userId, dateStr, dateStr);
-            todayExpenses = this._safeArray(expensesResult);
-        } catch (e) { /* ignore */ }
-
-        try {
-            const incomeResult = await this.incomeRepository.findByDateRange(userId, dateStr, dateStr);
-            todayIncome = this._safeArray(incomeResult);
-        } catch (e) { /* ignore */ }
-
-        // =============================================
-        // BUILD KEY TRANSACTIONS
-        // =============================================
-
         const keyTransactions = [
-           ...todaySales.map(s => ({
+            ...todaySales.map(s => ({
                 type: 'SALE',
                 description: s.item_name || 'Sale',
                 amount: this._safeNumber(s.total_price),
                 date: s.sale_date || dateStr,
             })),
-           ...todayIncome.map(i => ({
+            ...todayIncomeList.map(i => ({
                 type: 'INCOME',
                 description: i.source || 'Income',
                 amount: this._safeNumber(i.amount),
                 date: i.created_at || dateStr,
             })),
-           ...todayExpenses.map(e => ({
+            ...todayExpensesList.map(e => ({
                 type: 'EXPENSE',
                 description: e.category || 'Expense',
                 amount: this._safeNumber(e.amount),
                 date: e.created_at || dateStr,
             })),
-           ...todayPurchases.map(p => ({
+            ...todayPurchases.map(p => ({
                 type: 'PURCHASE',
                 description: p.item_name || 'Purchase',
                 amount: this._safeNumber(p.total_cost),
@@ -269,11 +278,10 @@ class DailyReportService {
             })),
         ].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 10);
 
-        // =============================================
-        // CALCULATE TOTALS
-        // =============================================
-
-        const todayPurchasesTotal = todayPurchases.reduce((sum, p) => sum + this._safeNumber(p.total_cost), 0);
+        const todayPurchasesTotal = todayPurchases.reduce(
+            (sum, p) => sum + this._safeNumber(p.total_cost),
+            0
+        );
 
         // =============================================
         // RETURN REPORT
@@ -283,15 +291,16 @@ class DailyReportService {
             date: dateStr,
             previousDate: prevDateStr,
             today: {
-                revenue: todayRevenue.totalRevenue || 0,
+                // ✅ Now includes Other Income (consistent with Weekly)
+                revenue: todayCombinedRevenue,
                 cogs: todayCogs.totalCogs || 0,
                 grossProfit: todayProfit.grossProfit || 0,
                 grossMargin: todayProfit.grossMargin || 0,
-                expenses: todayProfit.totalExpenses || 0, // Fixed: was todayProfit.expenses
+                expenses: todayTotalExpenses,
                 netProfit: todayProfit.netProfit || 0,
                 netMargin: todayProfit.netMargin || 0,
                 purchases: todayPurchasesTotal,
-                income: todayProfit.totalIncome || 0, // PERMANENT FIX: Use SSOT from ProfitCalculator
+                income: todayOtherIncome,
                 cash: {
                     opening: todayCash.openingCash || 0,
                     closing: todayCash.closingCash || 0,
@@ -308,16 +317,19 @@ class DailyReportService {
                     totalItems: todayInventory.totalItems || 0,
                     totalValue: todayInventory.totalCostValue || 0,
                     lowStockCount: todayInventory.lowStockCount || 0,
+                    lowStockItems: todayInventory.lowStockItems || [],
                 },
             },
             comparison: {
                 revenueChange: revenueComparison.percentageChange,
                 netProfitChange: profitComparison.percentageChange,
+                revenueAbsoluteChange: revenueComparison.absoluteChange,
+                netProfitAbsoluteChange: profitComparison.absoluteChange,
                 previousDay: {
-                    revenue: prevRevenue.totalRevenue || 0,
+                    revenue: prevCombinedRevenue,
                     grossProfit: prevProfit.grossProfit || 0,
                     netProfit: prevProfit.netProfit || 0,
-                    expenses: prevProfit.totalExpenses || 0, // Fixed: was prevProfit.expenses
+                    expenses: prevTotalExpenses,
                     purchases: 0,
                 },
             },

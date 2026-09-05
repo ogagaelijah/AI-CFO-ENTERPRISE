@@ -1,9 +1,18 @@
 // frontend/src/pages/Reports.jsx
-
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import api from '../services/api';
 import { Calendar, RefreshCw } from 'lucide-react';
+import { reportApi } from '../services/reportService';
+import {
+  mapDailyReport,
+  mapWeeklyReport,
+  mapMonthlyReport,
+  mapYearlyReport,
+  mapExecutiveReport,
+  mapProfitLossReport,
+  mapCashFlowReport,
+  mapBalanceSheetReport,
+} from '../services/reportMappers';
 
 // Import report components
 import ExecutiveReport from '../components/Reports/ExecutiveReport';
@@ -15,16 +24,16 @@ import YearlyReport from '../components/Reports/YearlyReport';
 import CashFlowReport from '../components/Reports/CashFlowReport';
 import BalanceSheetReport from '../components/Reports/BalanceSheetReport';
 
-// Report configuration
+// Report configuration with ID → Mapper mapping
 const REPORT_TYPES = [
-  { id: 'executive', label: 'Executive Report', component: ExecutiveReport },
-  { id: 'pl', label: 'Profit & Loss', component: ProfitLossReport },
-  { id: 'cashflow', label: 'Cash Flow', component: CashFlowReport },
-  { id: 'balance-sheet', label: 'Balance Sheet', component: BalanceSheetReport },
-  { id: 'daily', label: 'Daily Report', component: DailyReport },
-  { id: 'weekly', label: 'Weekly Report', component: WeeklyReport },
-  { id: 'monthly', label: 'Monthly Report', component: MonthlyReport },
-  { id: 'yearly', label: 'Yearly Report', component: YearlyReport },
+  { id: 'executive', label: 'Executive Report', component: ExecutiveReport, mapper: mapExecutiveReport },
+  { id: 'pl', label: 'Profit & Loss', component: ProfitLossReport, mapper: mapProfitLossReport },
+  { id: 'cashflow', label: 'Cash Flow', component: CashFlowReport, mapper: mapCashFlowReport },
+  { id: 'balance-sheet', label: 'Balance Sheet', component: BalanceSheetReport, mapper: mapBalanceSheetReport },
+  { id: 'daily', label: 'Daily Report', component: DailyReport, mapper: mapDailyReport },
+  { id: 'weekly', label: 'Weekly Report', component: WeeklyReport, mapper: mapWeeklyReport },
+  { id: 'monthly', label: 'Monthly Report', component: MonthlyReport, mapper: mapMonthlyReport },
+  { id: 'yearly', label: 'Yearly Report', component: YearlyReport, mapper: mapYearlyReport },
 ];
 
 const CURRENCY_SYMBOL = '₦';
@@ -35,10 +44,10 @@ const Reports = () => {
   const [activeReport, setActiveReport] = useState('executive');
   const [reportData, setReportData] = useState(null);
   const [error, setError] = useState('');
-  
+
   const today = new Date().toISOString().split('T')[0];
   const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
-  
+
   const [period, setPeriod] = useState({
     startDate: firstDayOfMonth,
     endDate: today,
@@ -47,7 +56,7 @@ const Reports = () => {
   const [balanceSheetDate, setBalanceSheetDate] = useState(today);
 
   const getCurrentReport = () => {
-    return REPORT_TYPES.find(r => r.id === activeReport) || REPORT_TYPES[0];
+    return REPORT_TYPES.find((r) => r.id === activeReport) || REPORT_TYPES[0];
   };
 
   const fetchReport = useCallback(async () => {
@@ -56,60 +65,61 @@ const Reports = () => {
       setError('');
 
       const report = getCurrentReport();
-      let endpoint = '';
-      let params = { businessId: user?.businessId || user?.id };
+      const businessId = user?.businessId || user?.id;
+      let response;
+      let rawData;
 
+      // ✅ Use reportApi instead of direct api.get()
       switch (report.id) {
         case 'executive':
-          endpoint = '/reports/executive';
-          params.startDate = period.startDate;
-          params.endDate = period.endDate;
+          response = await reportApi.getExecutive(period.startDate, period.endDate);
+          rawData = response.data?.data;
           break;
         case 'pl':
-          endpoint = '/reports/pl';
-          params.startDate = period.startDate;
-          params.endDate = period.endDate;
+          response = await reportApi.getPL(period.startDate, period.endDate);
+          rawData = response.data?.data;
           break;
         case 'cashflow':
-          endpoint = '/reports/cashflow';
-          params.startDate = period.startDate;
-          params.endDate = period.endDate;
+          response = await reportApi.getCashFlow(period.startDate, period.endDate);
+          rawData = response.data?.data;
           break;
         case 'balance-sheet':
-          endpoint = '/reports/balance-sheet';
-          params.asAtDate = balanceSheetDate;
+          response = await reportApi.getBalanceSheet(balanceSheetDate);
+          rawData = response.data?.data;
           break;
         case 'daily':
-          endpoint = '/reports/daily';
-          params.date = date;
+          response = await reportApi.getDaily(date);
+          rawData = response.data?.data;
           break;
         case 'weekly':
-          endpoint = '/reports/weekly';
-          params.date = date;
+          response = await reportApi.getWeekly(date);
+          rawData = response.data?.data;
           break;
         case 'monthly':
-          endpoint = '/reports/monthly';
-          params.date = date;
+          response = await reportApi.getMonthly(date);
+          rawData = response.data?.data;
           break;
         case 'yearly':
-          endpoint = '/reports/yearly';
-          params.date = date;
+          response = await reportApi.getYearly(date);
+          rawData = response.data?.data;
           break;
         default:
-          endpoint = '/reports/executive';
+          response = await reportApi.getExecutive(period.startDate, period.endDate);
+          rawData = response.data?.data;
       }
 
-      const response = await api.get(endpoint, { params });
-      
-      if (response.data?.success) {
-        setReportData(response.data.data);
+      if (response.data?.success && rawData) {
+        // ✅ Apply the mapper to transform backend → frontend format
+        const mappedData = report.mapper(rawData);
+        setReportData(mappedData);
       } else {
         setError(response.data?.message || 'Failed to load report');
+        setReportData(null);
       }
-
     } catch (error) {
       console.error('Error fetching report:', error);
       setError(error.response?.data?.message || 'Failed to load report');
+      setReportData(null);
     } finally {
       setLoading(false);
     }
@@ -165,6 +175,7 @@ const Reports = () => {
         </div>
       )}
 
+      {/* Report Type Buttons */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
         <div className="flex flex-wrap gap-2">
           {REPORT_TYPES.map((type) => (
@@ -183,6 +194,7 @@ const Reports = () => {
         </div>
       </div>
 
+      {/* Date Filters */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center space-x-2">
@@ -246,6 +258,7 @@ const Reports = () => {
         </div>
       </div>
 
+      {/* Report Output */}
       {reportData && (
         <ReportComponent data={reportData} formatCurrency={formatCurrency} formatPercentage={formatPercentage} />
       )}

@@ -61,12 +61,12 @@ class WeeklyReportService {
     }
 
     _safeArray(result) {
-        return Array.isArray(result)? result : [];
+        return Array.isArray(result) ? result : [];
     }
 
     _safeNumber(value) {
         const num = Number(value);
-        return isNaN(num)? 0 : num;
+        return isNaN(num) ? 0 : num;
     }
 
     _round2(value) {
@@ -91,7 +91,7 @@ class WeeklyReportService {
         const month = date.getMonth();
         const day = date.getDate();
         const dayOfWeek = date.getDay();
-        const diff = dayOfWeek === 0? 6 : dayOfWeek - 1; // Monday start
+        const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Monday start
         return new Date(year, month, day - diff, 0, 0, 0, 0);
     }
 
@@ -103,7 +103,7 @@ class WeeklyReportService {
     }
 
     async generate({ userId, businessId, date }) {
-        const targetDate = date? this._parseDate(date) : new Date();
+        const targetDate = date ? this._parseDate(date) : new Date();
         targetDate.setHours(0, 0, 0, 0);
 
         const currentWeekStart = this._getWeekStart(targetDate);
@@ -120,15 +120,27 @@ class WeeklyReportService {
         // =============================================
         // 1. CURRENT WEEK DATA ENGINE CALLS
         // =============================================
-        const [currentRevenue, currentCogs, currentExpenses, currentIncome] = await Promise.all([
+        const [currentRevenue, currentCogs] = await Promise.all([
             this.revenueCalculator.calculate({ userId, businessId, startDate: currentStartStr, endDate: currentEndStr }),
             this.cogsCalculator.calculate({ userId, businessId, startDate: currentStartStr, endDate: currentEndStr }),
-            this.expenseRepository.findByDateRange(userId, currentStartStr, currentEndStr).catch(() => []),
-            this.incomeRepository.findByDateRange(userId, currentStartStr, currentEndStr).catch(() => [])
         ]);
 
-        const currentTotalExpenses = this._safeArray(currentExpenses).reduce((s, e) => s + this._safeNumber(e.amount), 0);
-        const currentTotalOtherIncome = this._safeArray(currentIncome).reduce((s, i) => s + this._safeNumber(i.amount), 0);
+        // Safe repository calls
+        let currentExpenses = [];
+        let currentIncome = [];
+
+        try {
+            const expensesResult = await this.expenseRepository.findByDateRange(userId, currentStartStr, currentEndStr);
+            currentExpenses = this._safeArray(expensesResult);
+        } catch (e) { /* ignore */ }
+
+        try {
+            const incomeResult = await this.incomeRepository.findByDateRange(userId, currentStartStr, currentEndStr);
+            currentIncome = this._safeArray(incomeResult);
+        } catch (e) { /* ignore */ }
+
+        const currentTotalExpenses = currentExpenses.reduce((s, e) => s + this._safeNumber(e.amount), 0);
+        const currentTotalOtherIncome = currentIncome.reduce((s, i) => s + this._safeNumber(i.amount), 0);
         const currentPureRevenue = this._safeNumber(currentRevenue.totalRevenue);
         const currentTotalCogs = this._safeNumber(currentCogs.totalCogs);
 
@@ -154,15 +166,27 @@ class WeeklyReportService {
         // =============================================
         // 2. HISTORICAL COMPARATIVE DATA WINDOW (PREVIOUS WEEK)
         // =============================================
-        const [prevRevenue, prevCogs, prevExpenses, prevIncome] = await Promise.all([
+        const [prevRevenue, prevCogs] = await Promise.all([
             this.revenueCalculator.calculate({ userId, businessId, startDate: prevStartStr, endDate: prevEndStr }),
             this.cogsCalculator.calculate({ userId, businessId, startDate: prevStartStr, endDate: prevEndStr }),
-            this.expenseRepository.findByDateRange(userId, prevStartStr, prevEndStr).catch(() => []),
-            this.incomeRepository.findByDateRange(userId, prevStartStr, prevEndStr).catch(() => [])
         ]);
 
-        const prevTotalExpenses = this._safeArray(prevExpenses).reduce((s, e) => s + this._safeNumber(e.amount), 0);
-        const prevTotalOtherIncome = this._safeArray(prevIncome).reduce((s, i) => s + this._safeNumber(i.amount), 0);
+        // Safe repository calls for previous week
+        let prevExpenses = [];
+        let prevIncome = [];
+
+        try {
+            const expensesResult = await this.expenseRepository.findByDateRange(userId, prevStartStr, prevEndStr);
+            prevExpenses = this._safeArray(expensesResult);
+        } catch (e) { /* ignore */ }
+
+        try {
+            const incomeResult = await this.incomeRepository.findByDateRange(userId, prevStartStr, prevEndStr);
+            prevIncome = this._safeArray(incomeResult);
+        } catch (e) { /* ignore */ }
+
+        const prevTotalExpenses = prevExpenses.reduce((s, e) => s + this._safeNumber(e.amount), 0);
+        const prevTotalOtherIncome = prevIncome.reduce((s, i) => s + this._safeNumber(i.amount), 0);
         const prevPureRevenue = this._safeNumber(prevRevenue.totalRevenue);
         const prevTotalCogs = this._safeNumber(prevCogs.totalCogs);
 
@@ -190,9 +214,9 @@ class WeeklyReportService {
         }
 
         const topProducts = Object.entries(productSalesMap)
-           .map(([name, amount]) => ({ name, amount }))
-           .sort((a, b) => b.amount - a.amount)
-           .slice(0, 5);
+            .map(([name, amount]) => ({ name, amount }))
+            .sort((a, b) => b.amount - a.amount)
+            .slice(0, 5);
 
         const customerSalesMap = {};
         for (const sale of sales) {
@@ -202,21 +226,21 @@ class WeeklyReportService {
         }
 
         const topCustomers = Object.entries(customerSalesMap)
-           .map(([name, amount]) => ({ name, amount }))
-           .sort((a, b) => b.amount - a.amount)
-           .slice(0, 5);
+            .map(([name, amount]) => ({ name, amount }))
+            .sort((a, b) => b.amount - a.amount)
+            .slice(0, 5);
 
         const expenseDrivers = {};
-        for (const expense of this._safeArray(currentExpenses)) {
+        for (const expense of currentExpenses) {
             const key = expense.category || 'Other';
             if (!expenseDrivers[key]) expenseDrivers[key] = 0;
             expenseDrivers[key] += this._safeNumber(expense.amount);
         }
 
         const topExpenses = Object.entries(expenseDrivers)
-           .map(([category, amount]) => ({ category, amount }))
-           .sort((a, b) => b.amount - a.amount)
-           .slice(0, 5);
+            .map(([category, amount]) => ({ category, amount }))
+            .sort((a, b) => b.amount - a.amount)
+            .slice(0, 5);
 
         // =============================================
         // 4. BUSINESS ACCOUNTING FORMULATIONS
@@ -229,16 +253,16 @@ class WeeklyReportService {
         const prevNetProfit = prevGrossProfit - prevTotalExpenses + prevTotalOtherIncome;
         const prevCombinedRevenue = prevPureRevenue + prevTotalOtherIncome;
 
-        const grossMargin = currentPureRevenue > 0? (currentGrossProfit / currentPureRevenue) * 100 : 0;
-        const netMargin = currentCombinedRevenue > 0? (currentNetProfit / currentCombinedRevenue) * 100 : 0;
+        const grossMargin = currentPureRevenue > 0 ? (currentGrossProfit / currentPureRevenue) * 100 : 0;
+        const netMargin = currentCombinedRevenue > 0 ? (currentNetProfit / currentCombinedRevenue) * 100 : 0;
 
         // Week over Week (WoW) Analytics Engine Calculations
         const revenueChange = prevCombinedRevenue > 0
-           ? ((currentCombinedRevenue - prevCombinedRevenue) / prevCombinedRevenue) * 100
+            ? ((currentCombinedRevenue - prevCombinedRevenue) / prevCombinedRevenue) * 100
             : 0;
 
-        const profitChange = prevNetProfit!== 0
-           ? ((currentNetProfit - prevNetProfit) / Math.abs(prevNetProfit)) * 100
+        const profitChange = prevNetProfit !== 0
+            ? ((currentNetProfit - prevNetProfit) / Math.abs(prevNetProfit)) * 100
             : 0;
 
         // =============================================
@@ -277,6 +301,12 @@ class WeeklyReportService {
             topProducts,
             topCustomers,
             topExpenses,
+            inventory: {
+                totalItems: currentInventory.totalItems || 0,
+                totalValue: currentInventory.totalCostValue || 0,
+                lowStockCount: currentInventory.lowStockCount || 0,
+                lowStockItems: currentInventory.lowStockItems || [],
+            },
             transactions: sales,
             keyRisks
         };

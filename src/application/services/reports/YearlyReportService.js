@@ -10,10 +10,10 @@ const InventoryCalculator = require('./calculators/InventoryCalculator');
 const ComparisonCalculator = require('./calculators/ComparisonCalculator');
 
 /**
- * Yearly Report Service - Refactored to use canonical calculators
+ * Yearly Report Service - Strategic annual perspective
  * 
- * Strategic analysis report
- * Shows YoY comparisons, Balance Sheet, Strategic Insights
+ * Provides annual performance summary with YoY comparisons,
+ * strategic insights, major risks, and opportunities.
  * 
  * All data flows through canonical calculators (single source of truth)
  */
@@ -45,7 +45,6 @@ class YearlyReportService {
         this.inventoryRepository = inventoryRepository;
         this.paymentRepository = paymentRepository;
 
-        // Initialize calculators
         this.revenueCalculator = revenueCalculator || new RevenueCalculator({
             saleRepository: this.saleRepository,
         });
@@ -79,24 +78,19 @@ class YearlyReportService {
         this.comparisonCalculator = comparisonCalculator || new ComparisonCalculator();
     }
 
-    /**
-     * Safely get array from repository result
-     */
     _safeArray(result) {
         return Array.isArray(result) ? result : [];
     }
 
-    /**
-     * Safely get number
-     */
     _safeNumber(value) {
         const num = Number(value);
         return isNaN(num) ? 0 : num;
     }
 
-    /**
-     * Parse date string to local Date
-     */
+    _round2(value) {
+        return Math.round((value || 0) * 100) / 100;
+    }
+
     _parseDate(dateStr) {
         if (!dateStr) return new Date();
         const parts = dateStr.split('T')[0].split('-');
@@ -108,9 +102,6 @@ class YearlyReportService {
         );
     }
 
-    /**
-     * Format date to YYYY-MM-DD
-     */
     _formatDateStr(date) {
         const year = date.getFullYear();
         const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -122,18 +113,15 @@ class YearlyReportService {
         const targetDate = date ? this._parseDate(date) : new Date();
         const year = targetDate.getFullYear();
 
-        // Current year
-        const yearStart = new Date(year, 0, 1);
-        const yearEnd = new Date(year, 11, 31);
-        const yearStartStr = this._formatDateStr(yearStart);
-        const yearEndStr = this._formatDateStr(yearEnd);
+        const currentYearStart = new Date(year, 0, 1);
+        const currentYearEnd = new Date(year, 11, 31);
+        const currentStartStr = this._formatDateStr(currentYearStart);
+        const currentEndStr = this._formatDateStr(currentYearEnd);
 
-        // Previous year
-        const prevYear = year - 1;
-        const prevYearStart = new Date(prevYear, 0, 1);
-        const prevYearEnd = new Date(prevYear, 11, 31);
-        const prevYearStartStr = this._formatDateStr(prevYearStart);
-        const prevYearEndStr = this._formatDateStr(prevYearEnd);
+        const prevYearStart = new Date(year - 1, 0, 1);
+        const prevYearEnd = new Date(year - 1, 11, 31);
+        const prevStartStr = this._formatDateStr(prevYearStart);
+        const prevEndStr = this._formatDateStr(prevYearEnd);
 
         // =============================================
         // CURRENT YEAR DATA
@@ -142,216 +130,249 @@ class YearlyReportService {
         const currentRevenue = await this.revenueCalculator.calculate({
             userId,
             businessId,
-            startDate: yearStartStr,
-            endDate: yearEndStr,
+            startDate: currentStartStr,
+            endDate: currentEndStr,
         });
 
         const currentCogs = await this.cogsCalculator.calculate({
             userId,
             businessId,
-            startDate: yearStartStr,
-            endDate: yearEndStr,
+            startDate: currentStartStr,
+            endDate: currentEndStr,
         });
+
+        let currentExpensesList = [];
+        let currentIncomeList = [];
+
+        try {
+            const result = await this.expenseRepository.findByDateRange(userId, currentStartStr, currentEndStr);
+            currentExpensesList = this._safeArray(result);
+        } catch (e) { /* ignore */ }
+
+        try {
+            const result = await this.incomeRepository.findByDateRange(userId, currentStartStr, currentEndStr);
+            currentIncomeList = this._safeArray(result);
+        } catch (e) { /* ignore */ }
+
+        const currentTotalExpenses = currentExpensesList.reduce((s, e) => s + this._safeNumber(e.amount), 0);
+        const currentOtherIncome = currentIncomeList.reduce((s, i) => s + this._safeNumber(i.amount), 0);
+        const currentPureSales = this._safeNumber(currentRevenue.totalRevenue);
+        const currentCombinedRevenue = currentPureSales + currentOtherIncome;
 
         const currentProfit = await this.profitCalculator.calculate({
             userId,
             businessId,
-            startDate: yearStartStr,
-            endDate: yearEndStr,
-            revenueData: { totalRevenue: currentRevenue.totalRevenue },
+            startDate: currentStartStr,
+            endDate: currentEndStr,
+            revenueData: { totalRevenue: currentPureSales },
             cogsData: { totalCogs: currentCogs.totalCogs },
+            expenseData: { total: currentTotalExpenses },
+            incomeData: { total: currentOtherIncome },
         });
 
         const [currentCash, currentAr, currentAp, currentInventory] = await Promise.all([
-            this.cashCalculator.calculate({ userId, businessId, startDate: yearStartStr, endDate: yearEndStr }),
-            this.arCalculator.calculate({ userId, businessId, asAtDate: yearEndStr }),
-            this.apCalculator.calculate({ userId, businessId, asAtDate: yearEndStr }),
+            this.cashCalculator.calculate({ userId, businessId, startDate: currentStartStr, endDate: currentEndStr }),
+            this.arCalculator.calculate({ userId, businessId, asAtDate: currentEndStr }),
+            this.apCalculator.calculate({ userId, businessId, asAtDate: currentEndStr }),
             this.inventoryCalculator.calculate({ userId, businessId, includeDetails: false, lowStockThreshold: 5 }),
         ]);
 
         // =============================================
-        // PREVIOUS YEAR DATA
+        // PREVIOUS YEAR DATA (for YoY comparison)
         // =============================================
 
         const prevRevenue = await this.revenueCalculator.calculate({
             userId,
             businessId,
-            startDate: prevYearStartStr,
-            endDate: prevYearEndStr,
+            startDate: prevStartStr,
+            endDate: prevEndStr,
         });
 
         const prevCogs = await this.cogsCalculator.calculate({
             userId,
             businessId,
-            startDate: prevYearStartStr,
-            endDate: prevYearEndStr,
+            startDate: prevStartStr,
+            endDate: prevEndStr,
         });
+
+        let prevExpensesList = [];
+        let prevIncomeList = [];
+
+        try {
+            const result = await this.expenseRepository.findByDateRange(userId, prevStartStr, prevEndStr);
+            prevExpensesList = this._safeArray(result);
+        } catch (e) { /* ignore */ }
+
+        try {
+            const result = await this.incomeRepository.findByDateRange(userId, prevStartStr, prevEndStr);
+            prevIncomeList = this._safeArray(result);
+        } catch (e) { /* ignore */ }
+
+        const prevTotalExpenses = prevExpensesList.reduce((s, e) => s + this._safeNumber(e.amount), 0);
+        const prevOtherIncome = prevIncomeList.reduce((s, i) => s + this._safeNumber(i.amount), 0);
+        const prevPureSales = this._safeNumber(prevRevenue.totalRevenue);
+        const prevCombinedRevenue = prevPureSales + prevOtherIncome;
 
         const prevProfit = await this.profitCalculator.calculate({
             userId,
             businessId,
-            startDate: prevYearStartStr,
-            endDate: prevYearEndStr,
-            revenueData: { totalRevenue: prevRevenue.totalRevenue },
+            startDate: prevStartStr,
+            endDate: prevEndStr,
+            revenueData: { totalRevenue: prevPureSales },
             cogsData: { totalCogs: prevCogs.totalCogs },
+            expenseData: { total: prevTotalExpenses },
+            incomeData: { total: prevOtherIncome },
         });
 
         // =============================================
-        // COMPARISONS
+        // CALCULATIONS
         // =============================================
 
-        const revenueComparison = this.comparisonCalculator.compareValues(
-            currentRevenue.totalRevenue || 0,
-            prevRevenue.totalRevenue || 0,
-            'Revenue'
-        );
-
-        const profitComparison = this.comparisonCalculator.compareValues(
-            currentProfit.netProfit || 0,
-            prevProfit.netProfit || 0,
-            'Net Profit'
-        );
-
-        const marginComparison = this.comparisonCalculator.compareValues(
-            currentProfit.grossMargin || 0,
-            prevProfit.grossMargin || 0,
-            'Gross Margin'
-        );
-
-        // =============================================
-        // PERMANENT FIX: Calculate netMargin using productRevenue
-        // =============================================
-        const productRevenue = currentRevenue.totalRevenue || 0;
+        const grossProfit = currentPureSales - this._safeNumber(currentCogs.totalCogs);
+        const grossMargin = currentPureSales > 0 ? (grossProfit / currentPureSales) * 100 : 0;
         const netProfit = currentProfit.netProfit || 0;
-        const netMargin = productRevenue > 0 ? (netProfit / productRevenue) * 100 : 0;
+        const netMargin = currentCombinedRevenue > 0 ? (netProfit / currentCombinedRevenue) * 100 : 0;
 
         // =============================================
-        // FINANCIAL RATIOS
+        // YEAR-OVER-YEAR COMPARISONS
         // =============================================
 
-        const ratios = {
-            grossMargin: currentProfit.grossMargin || 0,
-            netMargin: netMargin,
-            expenseRatio: productRevenue > 0 ? (currentProfit.totalExpenses / productRevenue) * 100 : 0,
-        };
+        // Check if previous year has data
+        const hasPriorYearData = prevCombinedRevenue > 0 || prevProfit.netProfit !== 0;
+
+        let revenueChange = 0;
+        let revenueAbsoluteChange = 0;
+        let profitChange = 0;
+        let profitAbsoluteChange = 0;
+
+        if (hasPriorYearData) {
+            const revenueComparison = this.comparisonCalculator.compareValues(
+                currentCombinedRevenue,
+                prevCombinedRevenue,
+                'Revenue'
+            );
+            const profitComparison = this.comparisonCalculator.compareValues(
+                currentProfit.netProfit || 0,
+                prevProfit.netProfit || 0,
+                'Net Profit'
+            );
+
+            revenueChange = revenueComparison.percentageChange || 0;
+            revenueAbsoluteChange = revenueComparison.absoluteChange || 0;
+            profitChange = profitComparison.percentageChange || 0;
+            profitAbsoluteChange = profitComparison.absoluteChange || 0;
+        }
 
         // =============================================
-        // MAJOR RISKS & OPPORTUNITIES
+        // CURRENT YEAR SALES FOR ANALYSIS
+        // =============================================
+
+        const currentSales = this._safeArray(currentRevenue.sales);
+
+        // =============================================
+        // PROFESSIONAL STRATEGIC INSIGHTS
+        // =============================================
+
+        const strategicInsights = [];
+
+        if (hasPriorYearData && revenueChange > 5) {
+            strategicInsights.push(`Revenue grew ${revenueChange.toFixed(1)}% year-over-year, indicating healthy business growth and market demand. This momentum should be sustained through continued customer acquisition and retention strategies.`);
+        } else if (hasPriorYearData && revenueChange > 0 && revenueChange <= 5) {
+            strategicInsights.push(`Revenue grew ${revenueChange.toFixed(1)}% year-over-year. While positive, the growth rate suggests opportunity for accelerated expansion through targeted marketing and sales initiatives.`);
+        } else if (hasPriorYearData && revenueChange < 0) {
+            strategicInsights.push(`Revenue declined ${Math.abs(revenueChange).toFixed(1)}% year-over-year. This trend requires strategic review of market positioning, competitive landscape, and sales effectiveness.`);
+        } else if (!hasPriorYearData) {
+            strategicInsights.push(`This is the first year of tracked data for ${year}. Establishing baseline performance metrics will enable meaningful year-over-year comparisons in future periods.`);
+        }
+
+        if (netProfit > 0 && netMargin > 20) {
+            strategicInsights.push(`Net profit margin of ${this._round2(netMargin)}% demonstrates strong operational efficiency and healthy profitability. Consider reinvesting in growth initiatives to maximize returns.`);
+        } else if (netProfit > 0 && netMargin > 10) {
+            strategicInsights.push(`Net profit margin of ${this._round2(netMargin)}% indicates solid profitability. Focus on optimizing costs to improve margins and increase shareholder value.`);
+        } else if (netProfit > 0 && netMargin <= 10) {
+            strategicInsights.push(`Net profit margin of ${this._round2(netMargin)}% is thin. Strategic focus on cost optimization and revenue growth is recommended to strengthen profitability.`);
+        } else if (netProfit < 0) {
+            strategicInsights.push(`The business is currently unprofitable with a net loss of ₦${Math.abs(netProfit).toLocaleString()}. Strategic restructuring, expense reduction, and revenue enhancement initiatives are critical.`);
+        }
+
+        if (currentInventory.lowStockCount > 0) {
+            strategicInsights.push(`${currentInventory.lowStockCount} inventory items are below reorder level. Implementing optimized inventory management practices will improve operational efficiency and customer satisfaction.`);
+        }
+
+        if (currentAr.overdueAmount > 0) {
+            strategicInsights.push(`Overdue receivables of ₦${currentAr.overdueAmount.toLocaleString()} represent tied-up working capital. Strengthening collections processes will improve cash flow and financial flexibility.`);
+        }
+
+        if (currentTotalExpenses > currentPureSales * 0.4 && currentPureSales > 0) {
+            strategicInsights.push(`Operating expenses represent ${this._round2((currentTotalExpenses / currentPureSales) * 100)}% of revenue. Strategic cost optimization could significantly improve profitability.`);
+        }
+
+        // =============================================
+        // PROFESSIONAL MAJOR RISKS
         // =============================================
 
         const majorRisks = [];
+
+        if (hasPriorYearData && revenueChange < -5) {
+            majorRisks.push(`Revenue declined ${Math.abs(revenueChange).toFixed(1)}% year-over-year. This sustained decline may indicate market share erosion, competitive pressure, or changing customer preferences requiring strategic intervention.`);
+        }
+
+        if (netProfit < 0) {
+            majorRisks.push(`The business is operating at a net loss of ₦${Math.abs(netProfit).toLocaleString()}. Without corrective action, this trajectory may threaten business sustainability and operational continuity.`);
+        }
+
+        if (currentAr.overdueAmount > 0) {
+            majorRisks.push(`Significant overdue receivables of ₦${currentAr.overdueAmount.toLocaleString()} pose a liquidity risk. These funds represent tied-up capital that could otherwise support business operations and growth.`);
+        }
+
+        if (currentInventory.lowStockCount > 0) {
+            majorRisks.push(`${currentInventory.lowStockCount} inventory items below reorder level present a potential revenue risk. Stockouts may result in lost sales, customer dissatisfaction, and competitive disadvantage.`);
+        }
+
+        if (netMargin > 0 && netMargin < 5) {
+            majorRisks.push(`Net margin of ${this._round2(netMargin)}% is below sustainable thresholds. Profitability erosion may limit future investment capacity and business resilience.`);
+        }
+
+        if (currentTotalExpenses > currentPureSales * 0.6 && currentPureSales > 0) {
+            majorRisks.push(`Operating expenses (${this._round2((currentTotalExpenses / currentPureSales) * 100)}% of revenue) are elevated. Expense management is critical to maintaining profitability and operational sustainability.`);
+        }
+
+        // =============================================
+        // PROFESSIONAL MAJOR OPPORTUNITIES
+        // =============================================
+
         const majorOpportunities = [];
 
-        if (revenueComparison.percentageChange !== null && revenueComparison.percentageChange < 0) {
-            majorRisks.push(`Revenue declined by ${Math.abs(revenueComparison.percentageChange).toFixed(1)}% year-over-year.`);
+        if (hasPriorYearData && revenueChange > 0) {
+            majorOpportunities.push(`Revenue growth of ${revenueChange.toFixed(1)}% indicates positive market demand. Leverage this momentum through expanded marketing, product development, and customer acquisition strategies.`);
         }
 
-        if (currentAr.overdueAmount > 0) {
-            majorRisks.push(`Significant overdue receivables: ₦${currentAr.overdueAmount.toLocaleString()}.`);
+        if (!hasPriorYearData) {
+            majorOpportunities.push(`As this is the first year of tracked data, establish robust reporting and analytics to enable data-driven decision-making and performance optimization going forward.`);
         }
 
-        if (currentInventory.lowStockCount > 0) {
-            majorRisks.push(`${currentInventory.lowStockCount} items below reorder level.`);
+        if (netProfit > 0 && netMargin > 15) {
+            majorOpportunities.push(`Strong net margin of ${this._round2(netMargin)}% provides financial capacity for strategic investments in growth, innovation, and market expansion.`);
         }
 
-        if (currentProfit.netProfit < 0) {
-            majorRisks.push('Business is operating at a loss for the year.');
+        if (currentInventory.lowStockCount === 0 && currentInventory.totalItems > 0) {
+            majorOpportunities.push(`Inventory levels are well-maintained with no low-stock items. This operational efficiency positions the business well for consistent customer satisfaction and revenue generation.`);
         }
 
-        if (revenueComparison.percentageChange !== null && revenueComparison.percentageChange > 0) {
-            majorOpportunities.push(`Revenue grew by ${revenueComparison.percentageChange.toFixed(1)}% year-over-year.`);
+        if (currentAr.overdueAmount === 0 && currentAr.totalOutstanding > 0) {
+            majorOpportunities.push(`All receivables are current with no overdue amounts. This disciplined collections approach strengthens cash flow and financial stability.`);
         }
 
-        if (currentProfit.netProfit > 0) {
-            majorOpportunities.push('Business is profitable with a positive net margin.');
+        if (currentSales.length > 0) {
+            const avgTransactionValue = currentCombinedRevenue / currentSales.length;
+            if (avgTransactionValue > 10000) {
+                majorOpportunities.push(`High average transaction value of ₦${Math.round(avgTransactionValue).toLocaleString()} suggests strong customer purchasing power. Focus on upselling and cross-selling to maximize revenue per customer.`);
+            }
         }
 
-        if (currentProfit.grossMargin > 50) {
-            majorOpportunities.push(`Strong gross margin of ${currentProfit.grossMargin.toFixed(1)}% — good pricing power.`);
+        if (netProfit > 0) {
+            majorOpportunities.push(`Sustained profitability provides a foundation for strategic growth. Consider reinvesting profits into areas with highest growth potential and operational improvement.`);
         }
-
-        // =============================================
-        // STRATEGIC INSIGHTS
-        // =============================================
-
-        const strategicInsights = [
-            `Revenue ${revenueComparison.percentageChange !== null && revenueComparison.percentageChange >= 0 ? 'increased' : 'decreased'} by ${Math.abs(revenueComparison.percentageChange !== null ? revenueComparison.percentageChange : 0).toFixed(1)}% year-over-year.`,
-            `Net profit margin is ${netMargin.toFixed(1)}%.`,
-        ];
-
-        // =============================================
-        // RECOMMENDATIONS
-        // =============================================
-
-        const recommendations = [];
-        if (revenueComparison.percentageChange !== null && revenueComparison.percentageChange < 0) {
-            recommendations.push('Review business strategy to reverse revenue decline.');
-        }
-        if (currentAr.overdueAmount > 0) {
-            recommendations.push('Implement stricter credit policies for customers.');
-        }
-        if (currentInventory.lowStockCount > 0) {
-            recommendations.push('Optimize inventory reorder levels to prevent stockouts.');
-        }
-        if (netMargin < 10 && netMargin > 0) {
-            recommendations.push('Review expense structure to improve net margin.');
-        }
-
-        // =============================================
-        // GET TOP PRODUCTS
-        // =============================================
-
-        let currentSales = this._safeArray(currentRevenue.sales);
-
-        const productSales = {};
-        for (const sale of currentSales) {
-            const key = sale.item_name || 'Unknown';
-            if (!productSales[key]) productSales[key] = 0;
-            productSales[key] += this._safeNumber(sale.total_price);
-        }
-
-        const topProducts = Object.entries(productSales)
-            .map(([name, amount]) => ({ name, amount }))
-            .sort((a, b) => b.amount - a.amount)
-            .slice(0, 5);
-
-        // =============================================
-        // TOP CUSTOMERS
-        // =============================================
-
-        const customerSales = {};
-        for (const sale of currentSales) {
-            const key = sale.customer_name || 'Unknown';
-            if (!customerSales[key]) customerSales[key] = 0;
-            customerSales[key] += this._safeNumber(sale.total_price);
-        }
-
-        const topCustomers = Object.entries(customerSales)
-            .map(([name, amount]) => ({ name, amount }))
-            .sort((a, b) => b.amount - a.amount)
-            .slice(0, 5);
-
-        // =============================================
-        // TOP EXPENSES
-        // =============================================
-
-        let currentExpenses = [];
-        try {
-            const result = await this.expenseRepository.findByDateRange(userId, yearStartStr, yearEndStr);
-            currentExpenses = this._safeArray(result);
-        } catch (e) { /* ignore */ }
-
-        const expenseDrivers = {};
-        for (const expense of currentExpenses) {
-            const key = expense.category || 'Other';
-            if (!expenseDrivers[key]) expenseDrivers[key] = 0;
-            expenseDrivers[key] += this._safeNumber(expense.amount);
-        }
-
-        const topExpenses = Object.entries(expenseDrivers)
-            .map(([category, amount]) => ({ category, amount }))
-            .sort((a, b) => b.amount - a.amount)
-            .slice(0, 5);
 
         // =============================================
         // RETURN REPORT
@@ -360,110 +381,47 @@ class YearlyReportService {
         return {
             year,
             period: {
-                start: yearStartStr,
-                end: yearEndStr,
+                start: currentStartStr,
+                end: currentEndStr,
             },
+            revenue: currentCombinedRevenue,
+            grossProfit: this._round2(grossProfit),
+            grossMargin: this._round2(grossMargin),
+            expenses: currentTotalExpenses,
+            netProfit: this._round2(netProfit),
+            netMargin: this._round2(netMargin),
+
             executiveSummary: {
-                totalRevenue: productRevenue,
-                netProfit: netProfit,
-                netMargin: netMargin,
-                revenueChange: revenueComparison.percentageChange,
-                profitChange: profitComparison.percentageChange,
+                totalRevenue: currentCombinedRevenue,
+                netProfit: this._round2(netProfit),
+                netMargin: this._round2(netMargin),
             },
             annualKpiDashboard: {
-                revenue: productRevenue,
+                grossMargin: this._round2(grossMargin),
+                netMargin: this._round2(netMargin),
                 cogs: currentCogs.totalCogs || 0,
-                grossProfit: currentProfit.grossProfit || 0,
-                grossMargin: currentProfit.grossMargin || 0,
-                expenses: currentProfit.totalExpenses || 0,
-                netProfit: netProfit,
-                netMargin: netMargin,
+                expenses: currentTotalExpenses,
+                grossProfit: this._round2(grossProfit),
             },
-            annualPl: {
-                revenue: {
-                    productSales: productRevenue,
-                    otherRevenue: 0,
-                    totalRevenue: productRevenue,
-                },
-                cogs: {
-                    total: currentCogs.totalCogs || 0,
-                },
-                grossProfit: {
-                    amount: currentProfit.grossProfit || 0,
-                    margin: currentProfit.grossMargin || 0,
-                },
-                operatingExpenses: {
-                    total: currentProfit.totalExpenses || 0,
-                    topExpenses,
-                },
-                netProfit: {
-                    amount: netProfit,
-                    margin: netMargin,
-                },
-            },
-            cashFlow: {
-                opening: currentCash.openingCash || 0,
-                closing: currentCash.closingCash || 0,
-            },
-            balanceSheet: {
-                cash: currentCash.closingCash || 0,
-                receivables: currentAr.totalOutstanding || 0,
-                inventory: currentInventory.totalCostValue || 0,
-                payables: currentAp.totalOutstanding || 0,
-            },
-            trends: {
-                revenue: {
-                    currentYear: productRevenue,
-                    previousYear: prevRevenue.totalRevenue || 0,
-                    change: revenueComparison.percentageChange,
-                },
-                profit: {
-                    currentYear: netProfit,
-                    previousYear: prevProfit.netProfit || 0,
-                    change: profitComparison.percentageChange,
-                },
-                margin: {
-                    currentYear: currentProfit.grossMargin || 0,
-                    previousYear: prevProfit.grossMargin || 0,
-                    change: marginComparison.absoluteChange,
+            yearOverYear: {
+                revenueChange: revenueChange,
+                profitChange: profitChange,
+                revenueAbsoluteChange: revenueAbsoluteChange,
+                profitAbsoluteChange: profitAbsoluteChange,
+                hasPriorYearData: hasPriorYearData,
+                previousYear: {
+                    revenue: prevCombinedRevenue || 0,
+                    netProfit: prevProfit.netProfit || 0,
                 },
             },
             inventory: {
                 totalItems: currentInventory.totalItems || 0,
                 totalValue: currentInventory.totalCostValue || 0,
-                potentialProfit: currentInventory.totalPotentialProfit || 0,
                 lowStockCount: currentInventory.lowStockCount || 0,
-            },
-            receivables: {
-                totalOutstanding: currentAr.totalOutstanding || 0,
-                activeCount: currentAr.activeCount || 0,
-                overdueCount: currentAr.overdueCount || 0,
-                overdueAmount: currentAr.overdueAmount || 0,
-            },
-            payables: {
-                totalOutstanding: currentAp.totalOutstanding || 0,
-                activeCount: currentAp.activeCount || 0,
-                overdueCount: currentAp.overdueCount || 0,
-                overdueAmount: currentAp.overdueAmount || 0,
-            },
-            financialRatios: ratios,
-            yearOverYear: {
-                revenueChange: revenueComparison.percentageChange,
-                profitChange: profitComparison.percentageChange,
-                marginChange: marginComparison.percentageChange,
-                previousYear: {
-                    revenue: prevRevenue.totalRevenue || 0,
-                    grossProfit: prevProfit.grossProfit || 0,
-                    netProfit: prevProfit.netProfit || 0,
-                },
             },
             majorRisks,
             majorOpportunities,
             strategicInsights,
-            recommendations,
-            topProducts,
-            topCustomers,
-            topExpenses,
         };
     }
 }

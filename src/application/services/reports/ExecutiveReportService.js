@@ -62,12 +62,12 @@ class ExecutiveReportService {
     }
 
     _safeArray(result) {
-        return Array.isArray(result)? result : [];
+        return Array.isArray(result) ? result : [];
     }
 
     _safeNumber(value) {
         const num = Number(value);
-        return isNaN(num)? 0 : num;
+        return isNaN(num) ? 0 : num;
     }
 
     _round2(value) {
@@ -88,112 +88,167 @@ class ExecutiveReportService {
     }
 
     async generate({ userId, businessId, startDate, endDate }) {
-        const start = startDate? this._parseDate(startDate) : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-        const end = endDate? this._parseDate(endDate) : new Date();
+        const start = startDate
+            ? this._parseDate(startDate)
+            : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+        const end = endDate ? this._parseDate(endDate) : new Date();
+
         const startStr = this._formatDateStr(start);
         const endStr = this._formatDateStr(end);
 
-        // 1. Parallel collection for high performance pipeline execution
-        const [revenueData, cogsData, expenses, income] = await Promise.all([
-            this.revenueCalculator.calculate({ userId, businessId, startDate: startStr, endDate: endStr }),
-            this.cogsCalculator.calculate({ userId, businessId, startDate: startStr, endDate: endStr }),
-            this.expenseRepository.findByDateRange(userId, startStr, endStr).catch(() => []),
-            this.incomeRepository.findByDateRange(userId, startStr, endStr).catch(() => [])
+        // 1. Fetch core calculators in parallel
+        const [revenueData, cogsData] = await Promise.all([
+            this.revenueCalculator.calculate({
+                userId,
+                businessId,
+                startDate: startStr,
+                endDate: endStr,
+            }),
+            this.cogsCalculator.calculate({
+                userId,
+                businessId,
+                startDate: startStr,
+                endDate: endStr,
+            }),
         ]);
 
-        const totalOperatingExpenses = this._safeArray(expenses).reduce((s, e) => s + this._safeNumber(e.amount), 0);
-        const totalOtherIncome = this._safeArray(income).reduce((s, i) => s + this._safeNumber(i.amount), 0);
+        // 2. Synchronous repository calls (better-sqlite3 is sync)
+        const expenses = this._safeArray(
+            this.expenseRepository.findByDateRange(userId, startStr, endStr)
+        );
+        const income = this._safeArray(
+            this.incomeRepository.findByDateRange(userId, startStr, endStr)
+        );
+
+        const totalOperatingExpenses = expenses.reduce(
+            (sum, e) => sum + this._safeNumber(e.amount),
+            0
+        );
+        const totalOtherIncome = income.reduce(
+            (sum, i) => sum + this._safeNumber(i.amount),
+            0
+        );
+
         const pureProductRevenue = this._safeNumber(revenueData.totalRevenue);
         const totalCogs = this._safeNumber(cogsData.totalCogs);
 
-        // Calculate single source of truth analytics objects
+        // 3. Profit calculation (single source of truth)
         const profitData = await this.profitCalculator.calculate({
             userId,
             businessId,
             startDate: startStr,
             endDate: endStr,
             revenueData: { totalRevenue: pureProductRevenue },
-            cogsData: { totalCogs: totalCogs },
+            cogsData: { totalCogs },
             expenseData: { total: totalOperatingExpenses },
             incomeData: { total: totalOtherIncome },
         });
 
+        // 4. Supporting metrics in parallel
         const [cashData, arData, apData, inventoryData] = await Promise.all([
-            this.cashCalculator.calculate({ userId, businessId, startDate: startStr, endDate: endStr }),
-            this.arCalculator.calculate({ userId, businessId, asAtDate: endStr }),
-            this.apCalculator.calculate({ userId, businessId, asAtDate: endStr }),
-            this.inventoryCalculator.calculate({ userId, businessId, includeDetails: false, lowStockThreshold: 5 }),
+            this.cashCalculator.calculate({
+                userId,
+                businessId,
+                startDate: startStr,
+                endDate: endStr,
+            }),
+            this.arCalculator.calculate({
+                userId,
+                businessId,
+                asAtDate: endStr,
+            }),
+            this.apCalculator.calculate({
+                userId,
+                businessId,
+                asAtDate: endStr,
+            }),
+            this.inventoryCalculator.calculate({
+                userId,
+                businessId,
+                includeDetails: false,
+                lowStockThreshold: 5,
+            }),
         ]);
 
-        // 2. Compute Top Operational Items
+        // 5. Top products & customers
         const sales = this._safeArray(revenueData.sales);
         const uniqueCustomerSet = new Set();
         const productSales = {};
+        const customerSales = {};
 
         for (const sale of sales) {
-            const key = sale.item_name || 'Unknown';
-            if (!productSales[key]) productSales[key] = 0;
-            productSales[key] += this._safeNumber(sale.total_price);
-            if (sale.customer_name) uniqueCustomerSet.add(sale.customer_name);
+            const productKey = sale.item_name || 'Unknown';
+            productSales[productKey] = (productSales[productKey] || 0) + this._safeNumber(sale.total_price);
+
+            const customerKey = sale.customer_name || 'Unknown';
+            customerSales[customerKey] = (customerSales[customerKey] || 0) + this._safeNumber(sale.total_price);
+
+            if (sale.customer_name) {
+                uniqueCustomerSet.add(sale.customer_name);
+            }
         }
 
         const topProducts = Object.entries(productSales)
-           .map(([name, amount]) => ({ name, amount }))
-           .sort((a, b) => b.amount - a.amount)
-           .slice(0, 5);
-
-        const customerSales = {};
-        for (const sale of sales) {
-            const key = sale.customer_name || 'Unknown';
-            if (!customerSales[key]) customerSales[key] = 0;
-            customerSales[key] += this._safeNumber(sale.total_price);
-        }
+            .map(([name, amount]) => ({ name, amount }))
+            .sort((a, b) => b.amount - a.amount)
+            .slice(0, 5);
 
         const topCustomers = Object.entries(customerSales)
-           .map(([name, amount]) => ({ name, amount }))
-           .sort((a, b) => b.amount - a.amount)
-           .slice(0, 5);
+            .map(([name, amount]) => ({ name, amount }))
+            .sort((a, b) => b.amount - a.amount)
+            .slice(0, 5);
 
-        // 3. Aggregate Top Expenses
+        // 6. Top expense categories
         const expenseDrivers = {};
-        for (const expense of this._safeArray(expenses)) {
+        for (const expense of expenses) {
             const key = expense.category || 'Other';
-            if (!expenseDrivers[key]) expenseDrivers[key] = 0;
-            expenseDrivers[key] += this._safeNumber(expense.amount);
+            expenseDrivers[key] = (expenseDrivers[key] || 0) + this._safeNumber(expense.amount);
         }
 
         const topExpenses = Object.entries(expenseDrivers)
-           .map(([category, amount]) => ({ category, amount }))
-           .sort((a, b) => b.amount - a.amount)
-           .slice(0, 5);
+            .map(([category, amount]) => ({ category, amount }))
+            .sort((a, b) => b.amount - a.amount)
+            .slice(0, 5);
 
-        // 4. Clean Business Accounting Formulation Engine - SSOT
+        // 7. Core accounting calculations (IFRS / GAAP aligned)
         const grossProfit = pureProductRevenue - totalCogs;
         const netProfit = grossProfit - totalOperatingExpenses + totalOtherIncome;
-        const combinedRevenueBase = pureProductRevenue + totalOtherIncome; // Total Revenue per IFRS
+        const combinedRevenueBase = pureProductRevenue + totalOtherIncome;
 
-        const grossMargin = pureProductRevenue > 0? (grossProfit / pureProductRevenue) * 100 : 0;
-        const netMargin = combinedRevenueBase > 0? (netProfit / combinedRevenueBase) * 100 : 0; // Business Standard
-        const expenseRatio = pureProductRevenue > 0? (totalOperatingExpenses / pureProductRevenue) * 100 : 0;
+        const grossMargin = pureProductRevenue > 0
+            ? (grossProfit / pureProductRevenue) * 100
+            : 0;
 
+        const netMargin = combinedRevenueBase > 0
+            ? (netProfit / combinedRevenueBase) * 100
+            : 0;
+
+        const expenseRatio = pureProductRevenue > 0
+            ? (totalOperatingExpenses / pureProductRevenue) * 100
+            : 0;
+
+        // 8. Final structured response
         return {
-            period: { start: startStr, end: endStr },
+            period: {
+                start: startStr,
+                end: endStr,
+            },
             executiveSummary: {
-                revenue: combinedRevenueBase,
-                grossProfit,
+                revenue: this._round2(combinedRevenueBase),
+                grossProfit: this._round2(grossProfit),
                 grossMargin: this._round2(grossMargin),
-                netProfit,
-                netMargin: this._round2(netMargin), // Now 50.82
-                expenses: totalOperatingExpenses,
+                netProfit: this._round2(netProfit),
+                netMargin: this._round2(netMargin),
+                expenses: this._round2(totalOperatingExpenses),
                 cash: this._safeNumber(cashData.closingCash),
                 receivables: this._safeNumber(arData.totalOutstanding),
                 payables: this._safeNumber(apData.totalOutstanding),
                 inventory: this._safeNumber(inventoryData.totalCostValue),
             },
             kpiDashboard: {
-                revenue: combinedRevenueBase,
-                grossProfit,
-                netProfit,
+                revenue: this._round2(combinedRevenueBase),
+                grossProfit: this._round2(grossProfit),
+                netProfit: this._round2(netProfit),
                 totalSales: sales.length,
                 uniqueCustomers: uniqueCustomerSet.size,
             },
@@ -202,7 +257,7 @@ class ExecutiveReportService {
                 topCustomers,
             },
             expenseAnalysis: {
-                total: totalOperatingExpenses,
+                total: this._round2(totalOperatingExpenses),
                 topExpenses,
             },
             cashFlow: {
@@ -221,13 +276,14 @@ class ExecutiveReportService {
             },
             financialRatios: {
                 grossMargin: this._round2(grossMargin),
-                netMargin: this._round2(netMargin), // Now 50.82
-                expenseRatio: this._round2(expenseRatio)
+                netMargin: this._round2(netMargin),
+                expenseRatio: this._round2(expenseRatio),
             },
+            // Permanent API contract fields
             risks: [],
-            insights: [], // Permanent API contract
-            recommendations: [], // Permanent API contract
-            managementActionPlan: [], // Permanent API contract
+            insights: [],
+            recommendations: [],
+            managementActionPlan: [],
         };
     }
 }

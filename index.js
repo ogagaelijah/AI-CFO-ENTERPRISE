@@ -148,13 +148,15 @@ const yearlyReportService = new YearlyReportService({
     profitLossService: profitLossService,
 });
 
-// Executive Report Service
+// ✅ FIXED: Executive Report Service - added missing expenseRepository and incomeRepository
 const executiveReportService = new ExecutiveReportService({
     profitLossService: profitLossService,
     inventoryRepository: inventoryRepo,
     debtorRepository: debtorRepo,
     creditorRepository: creditorRepo,
     saleRepository: saleRepo,
+    expenseRepository: expenseRepo,
+    incomeRepository: incomeRepo,
 });
 
 // =============================================

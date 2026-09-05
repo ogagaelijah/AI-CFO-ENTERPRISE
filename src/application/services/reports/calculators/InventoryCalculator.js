@@ -7,7 +7,7 @@
  * - Total inventory value (at cost)
  * - Total selling value
  * - Potential profit
- * - Low stock count
+ * - Low stock count + list of low-stock items
  * - Inventory by product
  * - Product margins
  */
@@ -18,11 +18,11 @@ class InventoryCalculator {
 
     _safeNumber(value) {
         const num = Number(value);
-        return isNaN(num)? 0 : num;
+        return isNaN(num) ? 0 : num;
     }
 
     _safeArray(result) {
-        return Array.isArray(result)? result : [];
+        return Array.isArray(result) ? result : [];
     }
 
     /**
@@ -31,7 +31,7 @@ class InventoryCalculator {
      * @param {Object} params
      * @param {string|number} params.userId - User ID
      * @param {string|number} params.businessId - Business ID
-     * @param {boolean} [params.includeDetails] - Include product details
+     * @param {boolean} [params.includeDetails] - Include full product details
      * @param {number} [params.lowStockThreshold] - Threshold for low stock (default: 5)
      * @returns {Object} Inventory metrics
      */
@@ -60,11 +60,18 @@ class InventoryCalculator {
         const totalPotentialProfit = totalSellingValue - totalCostValue;
 
         // LOW_STOCK: quantity > 0 AND quantity <= reorder_level
-        const lowStockItems = items.filter(item => {
-            const qty = this._safeNumber(item.quantity);
-            const reorder = this._safeNumber(item.reorder_level) || lowStockThreshold;
-            return qty > 0 && qty <= reorder;
-        });
+        const lowStockItems = items
+            .filter(item => {
+                const qty = this._safeNumber(item.quantity);
+                const reorder = this._safeNumber(item.reorder_level) || lowStockThreshold;
+                return qty > 0 && qty <= reorder;
+            })
+            .map(item => ({
+                name: item.item_name || 'Unknown',
+                quantity: this._safeNumber(item.quantity),
+                reorderLevel: this._safeNumber(item.reorder_level) || lowStockThreshold,
+            }));
+
         const lowStockCount = lowStockItems.length;
 
         // OUT_OF_STOCK: quantity === 0
@@ -81,7 +88,7 @@ class InventoryCalculator {
                 const value = qty * cost;
                 const potentialRevenue = qty * price;
                 const profit = potentialRevenue - value;
-                const margin = potentialRevenue > 0? (profit / potentialRevenue) * 100 : 0;
+                const margin = potentialRevenue > 0 ? (profit / potentialRevenue) * 100 : 0;
 
                 let status = 'IN_STOCK';
                 if (qty === 0) status = 'OUT_OF_STOCK';
@@ -111,10 +118,11 @@ class InventoryCalculator {
             totalSellingValue: Number(totalSellingValue.toFixed(2)),
             totalPotentialProfit: Number(totalPotentialProfit.toFixed(2)),
             lowStockCount,
+            lowStockItems,                 // ← now always returned
             outOfStockCount,
-            averageCostPerItem: totalQuantity > 0? Number((totalCostValue / totalQuantity).toFixed(2)) : 0,
-            averageSellingPrice: totalQuantity > 0? Number((totalSellingValue / totalQuantity).toFixed(2)) : 0,
-            overallMargin: totalSellingValue > 0? Number(((totalPotentialProfit / totalSellingValue) * 100).toFixed(2)) : 0,
+            averageCostPerItem: totalQuantity > 0 ? Number((totalCostValue / totalQuantity).toFixed(2)) : 0,
+            averageSellingPrice: totalQuantity > 0 ? Number((totalSellingValue / totalQuantity).toFixed(2)) : 0,
+            overallMargin: totalSellingValue > 0 ? Number(((totalPotentialProfit / totalSellingValue) * 100).toFixed(2)) : 0,
             details,
         };
     }

@@ -85,11 +85,14 @@ const yearlyReportService = new YearlyReportService({
 });
 
 const executiveReportService = new ExecutiveReportService({
-    profitLossService: profitLossService,
-    inventoryRepository: inventoryRepo,
+    saleRepository: saleRepo,
+    purchaseRepository: purchaseRepo,
+    expenseRepository: expenseRepo,
+    incomeRepository: incomeRepo,
     debtorRepository: debtorRepo,
     creditorRepository: creditorRepo,
-    saleRepository: saleRepo,
+    inventoryRepository: inventoryRepo,
+    paymentRepository: paymentRepo,
 });
 
 const cashFlowService = new CashFlowService({
