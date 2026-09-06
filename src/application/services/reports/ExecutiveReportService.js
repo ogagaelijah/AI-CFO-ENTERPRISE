@@ -18,6 +18,8 @@ const ComparisonCalculator = require('./calculators/ComparisonCalculator');
  * - Net Profit = Gross Profit - Operating Expenses + Other Income
  * - Gross Margin = Gross Profit / Product Sales
  * - Net Margin = Net Profit / Total Revenue <-- Business Standard
+ *
+ * Fully multi-business aware – every data source is filtered by businessId.
  */
 class ExecutiveReportService {
     constructor({
@@ -87,6 +89,28 @@ class ExecutiveReportService {
         return `${year}-${month}-${day}`;
     }
 
+    /**
+     * Simple, deterministic health label
+     */
+    _calculateBusinessHealth(netProfit, cash, netMargin) {
+        if (netProfit > 0 && cash > 0 && netMargin > 10) return 'Good';
+        if (netProfit < 0 || cash < 0) return 'Critical';
+        if (netMargin < 5) return 'Warning';
+        return 'Neutral';
+    }
+
+    /**
+     * Simple score out of 100
+     */
+    _calculateBusinessScore(netProfit, cash, netMargin, grossMargin) {
+        let score = 50;
+        if (netProfit > 0) score += 15;
+        if (cash > 0) score += 15;
+        if (netMargin > 10) score += 10;
+        if (grossMargin > 30) score += 10;
+        return Math.min(100, Math.max(0, Math.round(score)));
+    }
+
     async generate({ userId, businessId, startDate, endDate }) {
         const start = startDate
             ? this._parseDate(startDate)
@@ -112,12 +136,12 @@ class ExecutiveReportService {
             }),
         ]);
 
-        // 2. Synchronous repository calls (better-sqlite3 is sync)
+        // 2. Synchronous repository calls — fully multi-business aware
         const expenses = this._safeArray(
-            this.expenseRepository.findByDateRange(userId, startStr, endStr)
+            this.expenseRepository.findByDateRange(userId, startStr, endStr, businessId)
         );
         const income = this._safeArray(
-            this.incomeRepository.findByDateRange(userId, startStr, endStr)
+            this.incomeRepository.findByDateRange(userId, startStr, endStr, businessId)
         );
 
         const totalOperatingExpenses = expenses.reduce(
@@ -227,28 +251,37 @@ class ExecutiveReportService {
             ? (totalOperatingExpenses / pureProductRevenue) * 100
             : 0;
 
-        // 8. Final structured response
+        // Rounded values
+        const combinedRevenue = this._round2(combinedRevenueBase);
+        const netProfitValue = this._round2(netProfit);
+        const grossProfitValue = this._round2(grossProfit);
+        const grossMarginValue = this._round2(grossMargin);
+        const netMarginValue = this._round2(netMargin);
+        const cashPosition = this._safeNumber(cashData.closingCash);
+
+        // 8. Final structured response (stable production contract)
         return {
+            // ===== Existing fields (backward compatible) =====
             period: {
                 start: startStr,
                 end: endStr,
             },
             executiveSummary: {
-                revenue: this._round2(combinedRevenueBase),
-                grossProfit: this._round2(grossProfit),
-                grossMargin: this._round2(grossMargin),
-                netProfit: this._round2(netProfit),
-                netMargin: this._round2(netMargin),
+                revenue: combinedRevenue,
+                grossProfit: grossProfitValue,
+                grossMargin: grossMarginValue,
+                netProfit: netProfitValue,
+                netMargin: netMarginValue,
                 expenses: this._round2(totalOperatingExpenses),
-                cash: this._safeNumber(cashData.closingCash),
+                cash: cashPosition,
                 receivables: this._safeNumber(arData.totalOutstanding),
                 payables: this._safeNumber(apData.totalOutstanding),
                 inventory: this._safeNumber(inventoryData.totalCostValue),
             },
             kpiDashboard: {
-                revenue: this._round2(combinedRevenueBase),
-                grossProfit: this._round2(grossProfit),
-                netProfit: this._round2(netProfit),
+                revenue: combinedRevenue,
+                grossProfit: grossProfitValue,
+                netProfit: netProfitValue,
                 totalSales: sales.length,
                 uniqueCustomers: uniqueCustomerSet.size,
             },
@@ -262,7 +295,7 @@ class ExecutiveReportService {
             },
             cashFlow: {
                 opening: this._safeNumber(cashData.openingCash),
-                closing: this._safeNumber(cashData.closingCash),
+                closing: cashPosition,
             },
             receivables: {
                 totalOutstanding: this._safeNumber(arData.totalOutstanding),
@@ -275,15 +308,45 @@ class ExecutiveReportService {
                 totalValue: this._safeNumber(inventoryData.totalCostValue),
             },
             financialRatios: {
-                grossMargin: this._round2(grossMargin),
-                netMargin: this._round2(netMargin),
+                grossMargin: grossMarginValue,
+                netMargin: netMarginValue,
                 expenseRatio: this._round2(expenseRatio),
             },
-            // Permanent API contract fields
             risks: [],
             insights: [],
             recommendations: [],
             managementActionPlan: [],
+
+            // ===== New stable contract expected by frontend =====
+            generatedAt: new Date().toISOString(),
+            businessOverview: {
+                revenue: combinedRevenue,
+                netProfit: netProfitValue,
+                businessHealth: this._calculateBusinessHealth(netProfitValue, cashPosition, netMarginValue),
+                businessScore: this._calculateBusinessScore(netProfitValue, cashPosition, netMarginValue, grossMarginValue),
+            },
+            kpiSummary: {
+                grossMargin: grossMarginValue,
+                netMargin: netMarginValue,
+                cashPosition,
+            },
+            businessTrends: {
+                today: 0,
+                thisWeek: 0,
+                thisMonth: 0,
+            },
+            forecast: {
+                next7Days: 0,
+                next30Days: 0,
+                tomorrow: 0,
+                confidence: 0,
+            },
+            profitability: {
+                grossProfit: grossProfitValue,
+                netProfit: netProfitValue,
+            },
+            topProducts,
+            topCustomers,
         };
     }
 }

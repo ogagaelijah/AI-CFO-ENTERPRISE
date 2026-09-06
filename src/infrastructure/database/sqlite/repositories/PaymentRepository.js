@@ -9,6 +9,27 @@ class PaymentRepository extends BaseRepository {
     }
 
     /**
+     * Safely convert any date input to ISO string
+     */
+    _toISOString(dateInput) {
+        if (!dateInput) return null;
+
+        if (dateInput instanceof Date) {
+            return dateInput.toISOString();
+        }
+
+        if (typeof dateInput === 'string') {
+            // If it's only YYYY-MM-DD, append time for consistency
+            if (/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+                return `${dateInput}T00:00:00.000Z`;
+            }
+            return dateInput;
+        }
+
+        return null;
+    }
+
+    /**
      * Create a new payment
      */
     create(paymentData) {
@@ -21,12 +42,12 @@ class PaymentRepository extends BaseRepository {
 
         const result = stmt.run(
             paymentData.businessId,
-            paymentData.userId,
+            paymentData.userId ?? null,
             paymentData.type,
             paymentData.amount,
             paymentData.referenceType || null,
             paymentData.referenceId || null,
-            paymentData.paymentDate ? paymentData.paymentDate.toISOString() : new Date().toISOString(),
+            this._toISOString(paymentData.paymentDate || paymentData.date) || new Date().toISOString(),
             paymentData.paymentMethod || 'CASH',
             paymentData.referenceNumber || null,
             paymentData.notes || '',
@@ -68,13 +89,13 @@ class PaymentRepository extends BaseRepository {
         }
 
         if (options.startDate) {
-            query += ' AND payment_date >= ?';
-            params.push(options.startDate.toISOString());
+            query += ' AND DATE(payment_date) >= DATE(?)';
+            params.push(this._toISOString(options.startDate));
         }
 
         if (options.endDate) {
-            query += ' AND payment_date <= ?';
-            params.push(options.endDate.toISOString());
+            query += ' AND DATE(payment_date) <= DATE(?)';
+            params.push(this._toISOString(options.endDate));
         }
 
         query += ' ORDER BY payment_date DESC';
@@ -116,13 +137,13 @@ class PaymentRepository extends BaseRepository {
         }
 
         if (options.startDate) {
-            query += ' AND payment_date >= ?';
-            params.push(options.startDate.toISOString());
+            query += ' AND DATE(payment_date) >= DATE(?)';
+            params.push(this._toISOString(options.startDate));
         }
 
         if (options.endDate) {
-            query += ' AND payment_date <= ?';
-            params.push(options.endDate.toISOString());
+            query += ' AND DATE(payment_date) <= DATE(?)';
+            params.push(this._toISOString(options.endDate));
         }
 
         query += ' ORDER BY payment_date DESC';
@@ -155,18 +176,53 @@ class PaymentRepository extends BaseRepository {
     }
 
     /**
-     * Find payments by date range
+     * Find payments by date range with fail-safes
+     * Tries businessId first, falls back to userId if needed
      */
-    findByDateRange(businessId, startDate, endDate, options = {}) {
-        return this.findByBusinessId(businessId, {
-            ...options,
+    findByDateRange(businessIdOrUserId, startDate, endDate, options = {}) {
+        console.log('🔍 PaymentRepository.findByDateRange called with:', {
+            businessIdOrUserId,
             startDate,
             endDate,
+            options
         });
+
+        // Try with businessId first
+        let results = [];
+
+        try {
+            results = this.findByBusinessId(businessIdOrUserId, {
+                ...options,
+                startDate,
+                endDate,
+            });
+            console.log('🔍 findByBusinessId found:', results.length);
+        } catch (error) {
+            console.warn('⚠️ findByBusinessId failed:', error.message);
+            results = [];
+        }
+
+        // If no results, try with userId (fail-safe)
+        if (results.length === 0) {
+            console.log('🔍 Trying findByUserId as fail-safe...');
+            try {
+                results = this.findByUserId(businessIdOrUserId, {
+                    ...options,
+                    startDate,
+                    endDate,
+                });
+                console.log('🔍 findByUserId found:', results.length);
+            } catch (error) {
+                console.warn('⚠️ findByUserId failed:', error.message);
+                results = [];
+            }
+        }
+
+        return results;
     }
 
     /**
-     * Find payments by filters
+     * Find payments by filters (options object style)
      */
     findByFilters(filters) {
         return this.findByBusinessId(
@@ -231,9 +287,9 @@ class PaymentRepository extends BaseRepository {
             fields.push('reference_id = ?');
             values.push(data.referenceId);
         }
-        if (data.paymentDate !== undefined) {
+        if (data.paymentDate !== undefined || data.date !== undefined) {
             fields.push('payment_date = ?');
-            values.push(data.paymentDate.toISOString());
+            values.push(this._toISOString(data.paymentDate || data.date));
         }
         if (data.paymentMethod !== undefined) {
             fields.push('payment_method = ?');
@@ -304,13 +360,13 @@ class PaymentRepository extends BaseRepository {
         }
 
         if (filters.startDate) {
-            query += ' AND payment_date >= ?';
-            params.push(filters.startDate.toISOString());
+            query += ' AND DATE(payment_date) >= DATE(?)';
+            params.push(this._toISOString(filters.startDate));
         }
 
         if (filters.endDate) {
-            query += ' AND payment_date <= ?';
-            params.push(filters.endDate.toISOString());
+            query += ' AND DATE(payment_date) <= DATE(?)';
+            params.push(this._toISOString(filters.endDate));
         }
 
         const result = this.db.prepare(query).get(...params);

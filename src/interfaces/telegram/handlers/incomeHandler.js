@@ -3,6 +3,7 @@
 const { getSessionManager } = require('../sessionManager');
 const UserRepository = require('../../../infrastructure/database/sqlite/repositories/UserRepository');
 const IncomeRepository = require('../../../infrastructure/database/sqlite/repositories/IncomeRepository');
+const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository');
 const RecordIncomeUseCase = require('../../../application/useCases/income/RecordIncomeUseCase');
 const { getIncomeKeyboard } = require('../keyboards/dashboardKeyboard');
 const logger = require('../../../shared/utils/logger');
@@ -10,7 +11,10 @@ const logger = require('../../../shared/utils/logger');
 const sessionManager = getSessionManager();
 const userRepo = new UserRepository();
 const incomeRepo = new IncomeRepository();
-const recordIncomeUseCase = new RecordIncomeUseCase(incomeRepo);
+const paymentRepo = new PaymentRepository();
+
+// ✅ paymentRepository is now correctly injected
+const recordIncomeUseCase = new RecordIncomeUseCase(incomeRepo, paymentRepo);
 
 async function incomeHandler(ctx) {
     try {
@@ -24,7 +28,6 @@ async function incomeHandler(ctx) {
         const session = sessionManager.getSession(telegramId);
         const state = session ? session.state : null;
 
-        // ✅ If no state, this is a fresh call - show the menu
         if (!state) {
             await showIncomeMenu(ctx, telegramId, user);
             return;
@@ -54,9 +57,6 @@ async function incomeHandler(ctx) {
     }
 }
 
-// =============================================
-// SHOW INCOME MENU
-// =============================================
 async function showIncomeMenu(ctx, telegramId, user) {
     const summary = await incomeRepo.getIncomeSummary(user.id);
 
@@ -76,11 +76,7 @@ async function showIncomeMenu(ctx, telegramId, user) {
     });
 }
 
-// =============================================
-// RECORD INCOME FLOW - START
-// =============================================
 async function startIncomeFlow(ctx, telegramId) {
-    // ✅ Clear any existing session first
     sessionManager.clearSession(telegramId);
     sessionManager.createSession(telegramId, 'INCOME_WAITING_SOURCE', {});
     await ctx.reply(
@@ -133,7 +129,6 @@ async function handleIncomeCategory(ctx, telegramId, user) {
     const session = sessionManager.getSession(telegramId);
     const category = text.toLowerCase() === 'skip' ? 'Other' : text;
 
-    // ✅ Show confirmation
     sessionManager.setData(telegramId, { ...session.data, category, pendingAction: 'record_income' });
     sessionManager.setState(telegramId, 'INCOME_WAITING_CONFIRMATION');
 
@@ -154,10 +149,10 @@ async function handleIncomeConfirmation(ctx, telegramId, user) {
         try {
             await recordIncomeUseCase.execute({
                 userId: user.id,
+                businessId: user.id,
                 source: session.data.source,
                 amount: session.data.amount,
-                category: session.data.category,
-                description: null,
+                description: session.data.category,
             });
 
             sessionManager.clearSession(telegramId);
@@ -186,9 +181,6 @@ async function handleIncomeConfirmation(ctx, telegramId, user) {
     }
 }
 
-// =============================================
-// VIEW ALL INCOME
-// =============================================
 async function listIncome(ctx) {
     const telegramId = ctx.from.id;
     const user = await userRepo.findByTelegramId(telegramId);
@@ -220,9 +212,6 @@ async function listIncome(ctx) {
     await ctx.reply(`Select an option below:`, { ...getIncomeKeyboard() });
 }
 
-// =============================================
-// INCOME SUMMARY
-// =============================================
 async function incomeSummary(ctx) {
     const telegramId = ctx.from.id;
     const user = await userRepo.findByTelegramId(telegramId);
@@ -244,9 +233,6 @@ async function incomeSummary(ctx) {
     await ctx.reply(`Select an option below:`, { ...getIncomeKeyboard() });
 }
 
-// =============================================
-// TODAY'S INCOME
-// =============================================
 async function incomeToday(ctx) {
     const telegramId = ctx.from.id;
     const user = await userRepo.findByTelegramId(telegramId);

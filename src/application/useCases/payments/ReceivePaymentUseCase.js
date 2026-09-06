@@ -16,12 +16,18 @@ class ReceivePaymentUseCase {
     }
 
     async execute({
+        userId,                 // ← added
         businessId,
         debtorId,
         amount,
         paymentDate = new Date(),
         notes = '',
+        paymentMethod = 'CASH',
     }) {
+        if (!userId) {
+            throw new Error('User ID is required');
+        }
+
         if (!businessId) {
             throw new Error('Business ID is required');
         }
@@ -55,15 +61,17 @@ class ReceivePaymentUseCase {
             throw new Error(`Payment amount (${amount}) exceeds remaining balance (${debtor.balanceRemaining})`);
         }
 
-        // Record payment
+        // Record payment — now with both userId and businessId
         const Payment = require('../../../domain/entities/Payment');
         const payment = new Payment({
+            userId,                 // ← added
             businessId,
             type: 'IN',
             amount,
             referenceType: 'DEBTOR',
             referenceId: debtorId,
-            date: paymentDate,
+            paymentDate,            // ← correct property name
+            paymentMethod,
             notes,
         });
 

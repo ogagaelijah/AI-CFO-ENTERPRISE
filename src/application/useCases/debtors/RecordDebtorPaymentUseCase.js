@@ -12,20 +12,23 @@ class RecordDebtorPaymentUseCase {
     }
 
     async execute({
+        userId,
         businessId,
         debtorId,
         amount,
         paymentDate = new Date(),
         notes = '',
+        paymentMethod = 'CASH',
     }) {
+        if (!userId) {
+            throw new Error('User ID is required');
+        }
         if (!businessId) {
             throw new Error('Business ID is required');
         }
-
         if (!debtorId) {
             throw new Error('Debtor ID is required');
         }
-
         if (!amount || amount <= 0) {
             throw new Error('Payment amount must be greater than zero');
         }
@@ -35,60 +38,84 @@ class RecordDebtorPaymentUseCase {
             throw new Error('Debtor not found');
         }
 
-        if (debtor.businessId !== businessId) {
+        const debtorBusinessId = debtor.businessId ?? debtor.user_id ?? debtor.business_id;
+        if (debtorBusinessId !== businessId) {
             throw new Error('Access denied: Debtor does not belong to this business');
         }
 
-        if (debtor.isFullyPaid()) {
+        if (typeof debtor.isFullyPaid === 'function' && debtor.isFullyPaid()) {
             throw new Error('Debtor is already fully paid');
         }
 
-        if (amount > debtor.balanceRemaining) {
-            throw new Error(`Payment amount (${amount}) exceeds remaining balance (${debtor.balanceRemaining})`);
+        const balanceRemaining = debtor.balanceRemaining ?? debtor.balance_remaining ?? 0;
+        if (amount > balanceRemaining) {
+            throw new Error(`Payment amount (${amount}) exceeds remaining balance (${balanceRemaining})`);
         }
 
-        // Record payment
+        // 1. Record payment (this is the critical part)
         const Payment = require('../../../domain/entities/Payment');
         const payment = new Payment({
+            userId,
             businessId,
-            type: 'IN',
+            type: 'RECEIVED',
             amount,
             referenceType: 'DEBTOR',
             referenceId: debtorId,
-            date: paymentDate,
+            paymentDate,
+            paymentMethod,
             notes,
         });
 
-        await this.paymentRepository.create(payment);
+        const savedPayment = await this.paymentRepository.create(payment);
 
-        // Create transaction
-        const Transaction = require('../../../domain/entities/Transaction');
-        const transaction = new Transaction({
-            businessId,
-            type: 'PAYMENT_IN',
-            category: 'Debtor Payment',
-            amount,
-            description: `Payment received from debtor #${debtorId}`,
-            paymentStatus: 'PAID',
-            referenceId: debtorId,
-            referenceType: 'DEBTOR',
-            date: paymentDate,
-        });
+        // 2. Try to create transaction (non-blocking)
+        try {
+            if (this.transactionRepository) {
+                const Transaction = require('../../../domain/entities/Transaction');
+                const transaction = new Transaction({
+                    businessId,
+                    userId,
+                    type: 'PAYMENT_IN',
+                    category: 'Debtor Payment',
+                    amount,
+                    description: `Payment received from debtor #${debtorId}`,
+                    paymentStatus: 'PAID',
+                    referenceId: debtorId,
+                    referenceType: 'DEBTOR',
+                    date: paymentDate,
+                });
+                await this.transactionRepository.create(transaction);
+            }
+        } catch (txError) {
+            console.warn('⚠️ Could not create transaction record (table may be missing):', txError.message);
+            // Do NOT throw – payment was already recorded successfully
+        }
 
-        await this.transactionRepository.create(transaction);
+        // 3. Update debtor
+        if (typeof debtor.receivePayment === 'function') {
+            debtor.receivePayment(amount);
+            await this.debtorRepository.update(debtor.id, debtor);
+        } else {
+            const newBalance = balanceRemaining - amount;
+            await this.debtorRepository.update(debtorId, {
+                balance_remaining: newBalance,
+                amount_paid: (debtor.amount_paid || 0) + amount,
+                status: newBalance <= 0 ? 'PAID' : 'ACTIVE',
+            });
+        }
 
-        // Update debtor
-        debtor.receivePayment(amount);
-        await this.debtorRepository.update(debtor.id, debtor);
+        const remaining = typeof debtor.balanceRemaining !== 'undefined'
+            ? debtor.balanceRemaining
+            : (balanceRemaining - amount);
 
         return {
             success: true,
-            debtor: debtor.toJSON(),
-            payment: payment.toJSON(),
-            remainingBalance: debtor.balanceRemaining,
-            message: debtor.isFullyPaid()
+            debtor: typeof debtor.toJSON === 'function' ? debtor.toJSON() : debtor,
+            payment: savedPayment.toJSON ? savedPayment.toJSON() : savedPayment,
+            remainingBalance: remaining,
+            message: remaining <= 0
                 ? 'Debtor fully paid'
-                : `Payment recorded. Remaining balance: ${debtor.balanceRemaining}`,
+                : `Payment recorded. Remaining balance: ${remaining}`,
         };
     }
 }

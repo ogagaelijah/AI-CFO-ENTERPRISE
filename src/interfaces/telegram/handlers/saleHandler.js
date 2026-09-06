@@ -7,6 +7,7 @@ const SaleRepository = require('../../../infrastructure/database/sqlite/reposito
 const InventoryRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryRepository');
 const DebtorRepository = require('../../../infrastructure/database/sqlite/repositories/DebtorRepository');
 const CustomerRepository = require('../../../infrastructure/database/sqlite/repositories/CustomerRepository');
+const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository');
 const RecordSaleUseCase = require('../../../application/useCases/sales/RecordSaleUseCase');
 const { getMainMenuKeyboard } = require('../keyboards/dashboardKeyboard');
 const logger = require('../../../shared/utils/logger');
@@ -18,13 +19,15 @@ const saleRepo = new SaleRepository();
 const inventoryRepo = new InventoryRepository();
 const debtorRepo = new DebtorRepository();
 const customerRepo = new CustomerRepository();
+const paymentRepo = new PaymentRepository();
 
-// ✅ Pass customerRepo to RecordSaleUseCase
+// ✅ paymentRepository is now correctly injected
 const recordSaleUseCase = new RecordSaleUseCase(
     saleRepo, 
     inventoryRepo, 
     debtorRepo, 
-    customerRepo
+    customerRepo,
+    paymentRepo
 );
 
 async function saleHandler(ctx) {
@@ -187,8 +190,8 @@ async function handleSaleItem(ctx, telegramId, user) {
         itemName: inventoryItem.item_name,
         inventoryId: inventoryItem.id,
         currentStock: inventoryItem.quantity,
-        unitCost: inventoryItem.cost_price || 0,      // 🆕 Store for display
-        sellingPrice: inventoryItem.selling_price || 0, // 🆕 Store for display
+        unitCost: inventoryItem.cost_price || 0,
+        sellingPrice: inventoryItem.selling_price || 0,
         pendingCheck: false
     });
     sessionManager.setState(telegramId, 'SALE_WAITING_QUANTITY');
@@ -196,8 +199,8 @@ async function handleSaleItem(ctx, telegramId, user) {
     await ctx.reply(
         `📦 **${inventoryItem.item_name}**\n` +
         `Available stock: **${inventoryItem.quantity}** units\n` +
-        `Cost price: ₦${(inventoryItem.cost_price || 0).toLocaleString()}\n` + // 🆕 Show cost
-        `Selling price: ₦${(inventoryItem.selling_price || 0).toLocaleString()}\n\n` + // 🆕 Show selling price
+        `Cost price: ₦${(inventoryItem.cost_price || 0).toLocaleString()}\n` +
+        `Selling price: ₦${(inventoryItem.selling_price || 0).toLocaleString()}\n\n` +
         `Enter the **quantity** to sell:`
     );
 }
@@ -234,7 +237,6 @@ async function handleSaleQuantity(ctx, telegramId, user) {
     sessionManager.setData(telegramId, { ...session.data, quantity });
     sessionManager.setState(telegramId, 'SALE_WAITING_PRICE');
 
-    // 🆕 Suggest selling price if available
     const suggestedPrice = session.data.sellingPrice || 0;
     const priceMessage = suggestedPrice > 0 
         ? `\n💡 Suggested price: ₦${suggestedPrice.toLocaleString()}` 
@@ -283,7 +285,6 @@ async function handleSalePrice(ctx, telegramId, user) {
     });
     sessionManager.setState(telegramId, 'SALE_WAITING_CUSTOMER');
 
-    // 🆕 Show profitability preview
     let profitMessage = '';
     if (session.data.unitCost > 0) {
         profitMessage = 
@@ -406,7 +407,6 @@ async function showSaleConfirmation(ctx, telegramId, user, paymentStatus, amount
         `👤 Customer: ${session.data.customer || 'N/A'}\n` +
         `💳 Payment: ${paymentStatus}\n`;
 
-    // 🆕 Show cost breakdown in confirmation
     if (session.data.unitCost > 0) {
         message +=
             `\n📊 **Cost Breakdown:**\n` +
@@ -480,7 +480,6 @@ async function handleSaleConfirmation(ctx, telegramId, user, business) {
                 `👤 Customer: ${session.data.customer || 'N/A'}\n` +
                 `💳 Payment: ${session.data.paymentStatus}\n`;
 
-            // 🆕 Show cost breakdown in success message
             if (result.unitCost > 0) {
                 message +=
                     `\n📊 **Profitability:**\n` +

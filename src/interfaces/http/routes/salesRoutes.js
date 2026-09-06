@@ -1,4 +1,5 @@
 // src/interfaces/http/routes/salesRoutes.js
+
 const express = require('express');
 const router = express.Router();
 const RecordSaleUseCase = require('../../../application/useCases/sales/RecordSaleUseCase');
@@ -6,6 +7,7 @@ const SaleRepository = require('../../../infrastructure/database/sqlite/reposito
 const InventoryRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryRepository');
 const DebtorRepository = require('../../../infrastructure/database/sqlite/repositories/DebtorRepository');
 const CustomerRepository = require('../../../infrastructure/database/sqlite/repositories/CustomerRepository');
+const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository');
 const { authMiddleware } = require('../middleware/authMiddleware');
 
 // Initialize repositories
@@ -13,13 +15,15 @@ const saleRepo = new SaleRepository();
 const inventoryRepo = new InventoryRepository();
 const debtorRepo = new DebtorRepository();
 const customerRepo = new CustomerRepository();
+const paymentRepo = new PaymentRepository();
 
-// Initialize Use Case
+// Initialize Use Case (paymentRepository is now correctly injected)
 const recordSaleUseCase = new RecordSaleUseCase(
     saleRepo,
     inventoryRepo,
     debtorRepo,
-    customerRepo
+    customerRepo,
+    paymentRepo
 );
 
 // All routes require authentication

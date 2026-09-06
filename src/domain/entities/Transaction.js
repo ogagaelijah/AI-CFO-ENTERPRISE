@@ -4,13 +4,14 @@ class Transaction {
     constructor({
         id,
         businessId,
+        userId,
         type, // SALE, INCOME, PURCHASE, EXPENSE, PAYMENT_IN, PAYMENT_OUT
         category,
         amount,
         description = '',
         paymentStatus = 'N/A', // PAID, PARTIAL, UNPAID, N/A
         referenceId = null,
-        referenceType = null, // SALE, INCOME, PURCHASE, EXPENSE
+        referenceType = null, // SALE, INCOME, PURCHASE, EXPENSE, DEBTOR, CREDITOR
         date = new Date(),
         dueDate = null,
         metadata = {},
@@ -19,6 +20,7 @@ class Transaction {
     }) {
         this.id = id || null;
         this.businessId = businessId;
+        this.userId = userId;
         this.type = type;
         this.category = category;
         this.amount = amount;
@@ -71,6 +73,7 @@ class Transaction {
         return {
             id: this.id,
             businessId: this.businessId,
+            userId: this.userId,
             type: this.type,
             category: this.category,
             amount: this.amount,

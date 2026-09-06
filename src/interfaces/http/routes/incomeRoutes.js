@@ -3,16 +3,18 @@
 const express = require('express');
 const router = express.Router();
 const IncomeRepository = require('../../../infrastructure/database/sqlite/repositories/IncomeRepository');
+const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository');
 const RecordIncomeUseCase = require('../../../application/useCases/income/RecordIncomeUseCase');
 const { authMiddleware } = require('../middleware/authMiddleware');
 
 const incomeRepo = new IncomeRepository();
-const recordIncomeUseCase = new RecordIncomeUseCase(incomeRepo);
+const paymentRepo = new PaymentRepository();
+const recordIncomeUseCase = new RecordIncomeUseCase(incomeRepo, paymentRepo);
 
 router.use(authMiddleware);
 
 // =============================================
-// GET /api/income - Get all income records
+// GET /api/income
 // =============================================
 router.get('/', async (req, res) => {
     try {
@@ -51,7 +53,6 @@ router.get('/', async (req, res) => {
                 }
             }
         });
-
     } catch (error) {
         console.error('❌ Error fetching income:', error);
         res.status(500).json({
@@ -62,12 +63,11 @@ router.get('/', async (req, res) => {
 });
 
 // =============================================
-// GET /api/income/today - Get today's income
+// GET /api/income/today
 // =============================================
 router.get('/today', async (req, res) => {
     try {
         const userId = req.user.id;
-
         const incomes = await incomeRepo.getTodayIncome(userId);
 
         res.json({
@@ -78,7 +78,6 @@ router.get('/today', async (req, res) => {
                 total: incomes.reduce((sum, i) => sum + i.amount, 0)
             }
         });
-
     } catch (error) {
         console.error('❌ Error fetching today income:', error);
         res.status(500).json({
@@ -89,7 +88,7 @@ router.get('/today', async (req, res) => {
 });
 
 // =============================================
-// GET /api/income/summary - Get income summary
+// GET /api/income/summary
 // =============================================
 router.get('/summary', async (req, res) => {
     try {
@@ -112,7 +111,6 @@ router.get('/summary', async (req, res) => {
                 sources_used: 0,
             }
         });
-
     } catch (error) {
         console.error('❌ Error fetching income summary:', error);
         res.status(500).json({
@@ -123,31 +121,24 @@ router.get('/summary', async (req, res) => {
 });
 
 // =============================================
-// POST /api/income - Record new income
+// POST /api/income
 // =============================================
 router.post('/', async (req, res) => {
     try {
         const userId = req.user.id;
+        const businessId = req.user.businessId || userId;
         const { source, amount, description, date } = req.body;
 
-        console.log('💰 Recording income:', { userId, source, amount });
-
         if (!source) {
-            return res.status(400).json({
-                success: false,
-                message: 'Source is required'
-            });
+            return res.status(400).json({ success: false, message: 'Source is required' });
         }
-
         if (!amount || amount <= 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'Amount must be greater than 0'
-            });
+            return res.status(400).json({ success: false, message: 'Amount must be greater than 0' });
         }
 
         const result = await recordIncomeUseCase.execute({
             userId,
+            businessId,
             source,
             amount,
             description: description || '',
@@ -159,7 +150,6 @@ router.post('/', async (req, res) => {
             message: 'Income recorded successfully',
             data: result
         });
-
     } catch (error) {
         console.error('❌ Error recording income:', error);
         res.status(500).json({
@@ -170,7 +160,7 @@ router.post('/', async (req, res) => {
 });
 
 // =============================================
-// GET /api/income/:id - Get single income record
+// GET /api/income/:id
 // =============================================
 router.get('/:id', async (req, res) => {
     try {
@@ -178,37 +168,22 @@ router.get('/:id', async (req, res) => {
         const userId = req.user.id;
 
         const income = await incomeRepo.findById(parseInt(id));
-
         if (!income) {
-            return res.status(404).json({
-                success: false,
-                message: 'Income record not found'
-            });
+            return res.status(404).json({ success: false, message: 'Income record not found' });
         }
-
         if (income.user_id !== userId) {
-            return res.status(403).json({
-                success: false,
-                message: 'Access denied'
-            });
+            return res.status(403).json({ success: false, message: 'Access denied' });
         }
 
-        res.json({
-            success: true,
-            data: income
-        });
-
+        res.json({ success: true, data: income });
     } catch (error) {
         console.error('❌ Error fetching income:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to fetch income'
-        });
+        res.status(500).json({ success: false, message: error.message || 'Failed to fetch income' });
     }
 });
 
 // =============================================
-// PUT /api/income/:id - Update income record
+// PUT /api/income/:id
 // =============================================
 router.put('/:id', async (req, res) => {
     try {
@@ -218,17 +193,10 @@ router.put('/:id', async (req, res) => {
 
         const existing = await incomeRepo.findById(parseInt(id));
         if (!existing) {
-            return res.status(404).json({
-                success: false,
-                message: 'Income record not found'
-            });
+            return res.status(404).json({ success: false, message: 'Income record not found' });
         }
-
         if (existing.user_id !== userId) {
-            return res.status(403).json({
-                success: false,
-                message: 'Access denied'
-            });
+            return res.status(403).json({ success: false, message: 'Access denied' });
         }
 
         const updateData = {};
@@ -239,23 +207,15 @@ router.put('/:id', async (req, res) => {
 
         const updated = await incomeRepo.update(parseInt(id), updateData);
 
-        res.json({
-            success: true,
-            message: 'Income updated successfully',
-            data: updated
-        });
-
+        res.json({ success: true, message: 'Income updated successfully', data: updated });
     } catch (error) {
         console.error('❌ Error updating income:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to update income'
-        });
+        res.status(500).json({ success: false, message: error.message || 'Failed to update income' });
     }
 });
 
 // =============================================
-// DELETE /api/income/:id - Delete income record
+// DELETE /api/income/:id
 // =============================================
 router.delete('/:id', async (req, res) => {
     try {
@@ -264,32 +224,18 @@ router.delete('/:id', async (req, res) => {
 
         const existing = await incomeRepo.findById(parseInt(id));
         if (!existing) {
-            return res.status(404).json({
-                success: false,
-                message: 'Income record not found'
-            });
+            return res.status(404).json({ success: false, message: 'Income record not found' });
         }
-
         if (existing.user_id !== userId) {
-            return res.status(403).json({
-                success: false,
-                message: 'Access denied'
-            });
+            return res.status(403).json({ success: false, message: 'Access denied' });
         }
 
         await incomeRepo.delete(parseInt(id));
 
-        res.json({
-            success: true,
-            message: 'Income record deleted successfully'
-        });
-
+        res.json({ success: true, message: 'Income record deleted successfully' });
     } catch (error) {
         console.error('❌ Error deleting income:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to delete income'
-        });
+        res.status(500).json({ success: false, message: error.message || 'Failed to delete income' });
     }
 });
 

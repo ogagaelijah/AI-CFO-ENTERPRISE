@@ -1,24 +1,36 @@
 // src/interfaces/http/routes/creditorRoutes.js
+
 const express = require('express');
 const router = express.Router();
 const CreditorRepository = require('../../../infrastructure/database/sqlite/repositories/CreditorRepository');
+const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository');
+const TransactionRepository = require('../../../infrastructure/database/sqlite/repositories/TransactionRepository');
+const RecordCreditorPaymentUseCase = require('../../../application/useCases/creditors/RecordCreditorPaymentUseCase');
 const { authMiddleware } = require('../middleware/authMiddleware');
 
-// Initialize repository
+// Initialize repositories
 const creditorRepo = new CreditorRepository();
+const paymentRepo = new PaymentRepository();
+const transactionRepo = new TransactionRepository();
+
+// Initialize Use Case
+const recordCreditorPaymentUseCase = new RecordCreditorPaymentUseCase({
+    creditorRepository: creditorRepo,
+    paymentRepository: paymentRepo,
+    transactionRepository: transactionRepo,
+});
 
 // All routes require authentication
 router.use(authMiddleware);
 
 // =============================================
-// GET /api/creditors - Get all creditors
+// GET /api/creditors
 // =============================================
 router.get('/', async (req, res) => {
     try {
         const userId = req.user.id;
         const { status, limit = 50, offset = 0 } = req.query;
 
-        // Get creditors with filters
         let creditors;
         if (status) {
             creditors = await creditorRepo.findByFilters({
@@ -31,10 +43,7 @@ router.get('/', async (req, res) => {
             creditors = await creditorRepo.findByUserId(userId);
         }
 
-        // Get summary
         const summary = await creditorRepo.getSummary(userId);
-
-        // Get total outstanding
         const totalOutstanding = await creditorRepo.getTotalOutstanding(userId);
 
         res.json({
@@ -58,23 +67,18 @@ router.get('/', async (req, res) => {
                 }
             }
         });
-
     } catch (error) {
         console.error('❌ Error fetching creditors:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to fetch creditors'
-        });
+        res.status(500).json({ success: false, message: error.message || 'Failed to fetch creditors' });
     }
 });
 
 // =============================================
-// GET /api/creditors/active - Get active creditors
+// GET /api/creditors/active
 // =============================================
 router.get('/active', async (req, res) => {
     try {
         const userId = req.user.id;
-
         const creditors = await creditorRepo.findActive(userId);
         const totalOutstanding = await creditorRepo.getTotalOutstanding(userId);
 
@@ -86,84 +90,53 @@ router.get('/active', async (req, res) => {
                 count: creditors.length
             }
         });
-
     } catch (error) {
         console.error('❌ Error fetching active creditors:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to fetch active creditors'
-        });
+        res.status(500).json({ success: false, message: error.message || 'Failed to fetch active creditors' });
     }
 });
 
 // =============================================
-// GET /api/creditors/:id - Get single creditor
+// GET /api/creditors/:id
 // =============================================
 router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
-
         const creditorId = parseInt(id);
+
         if (isNaN(creditorId)) {
-            return res.status(400).json({
-                success: false,
-                message: 'Invalid creditor ID'
-            });
+            return res.status(400).json({ success: false, message: 'Invalid creditor ID' });
         }
 
         const creditor = await creditorRepo.findById(creditorId);
-
         if (!creditor) {
-            return res.status(404).json({
-                success: false,
-                message: 'Creditor not found'
-            });
+            return res.status(404).json({ success: false, message: 'Creditor not found' });
         }
-
         if (creditor.user_id !== userId) {
-            return res.status(403).json({
-                success: false,
-                message: 'Access denied'
-            });
+            return res.status(403).json({ success: false, message: 'Access denied' });
         }
 
-        res.json({
-            success: true,
-            data: creditor
-        });
-
+        res.json({ success: true, data: creditor });
     } catch (error) {
         console.error('❌ Error fetching creditor:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to fetch creditor'
-        });
+        res.status(500).json({ success: false, message: error.message || 'Failed to fetch creditor' });
     }
 });
 
 // =============================================
-// POST /api/creditors - Create a new creditor
+// POST /api/creditors - Create creditor
 // =============================================
 router.post('/', async (req, res) => {
     try {
         const userId = req.user.id;
         const { supplierName, totalOwed, dueDate, notes = '' } = req.body;
 
-        console.log('🏦 Creating creditor:', { userId, supplierName, totalOwed });
-
         if (!supplierName) {
-            return res.status(400).json({
-                success: false,
-                message: 'Supplier name is required'
-            });
+            return res.status(400).json({ success: false, message: 'Supplier name is required' });
         }
-
         if (!totalOwed || totalOwed <= 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'Amount owed must be greater than 0'
-            });
+            return res.status(400).json({ success: false, message: 'Amount owed must be greater than 0' });
         }
 
         const creditor = await creditorRepo.create({
@@ -181,73 +154,54 @@ router.post('/', async (req, res) => {
             message: 'Creditor created successfully',
             data: creditor
         });
-
     } catch (error) {
         console.error('❌ Error creating creditor:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to create creditor'
-        });
+        res.status(500).json({ success: false, message: error.message || 'Failed to create creditor' });
     }
 });
 
 // =============================================
-// POST /api/creditors/:id/payment - Record payment
+// POST /api/creditors/:id/payment - Record payment (NOW USES USE CASE)
 // =============================================
 router.post('/:id/payment', async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
-        const { amount, notes = '' } = req.body;
+        const { amount, notes = '', paymentMethod = 'CASH' } = req.body;
 
         const creditorId = parseInt(id);
         if (isNaN(creditorId)) {
-            return res.status(400).json({
-                success: false,
-                message: 'Invalid creditor ID'
-            });
+            return res.status(400).json({ success: false, message: 'Invalid creditor ID' });
         }
-
         if (!amount || amount <= 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'Payment amount must be greater than 0'
-            });
+            return res.status(400).json({ success: false, message: 'Payment amount must be greater than 0' });
         }
 
-        // Verify creditor exists and belongs to user
-        const existing = await creditorRepo.findById(creditorId);
-        if (!existing) {
-            return res.status(404).json({
-                success: false,
-                message: 'Creditor not found'
-            });
-        }
-
-        if (existing.user_id !== userId) {
-            return res.status(403).json({
-                success: false,
-                message: 'Access denied'
-            });
-        }
-
-        if (amount > existing.balance_remaining) {
-            return res.status(400).json({
-                success: false,
-                message: `Payment amount (₦${amount.toLocaleString()}) exceeds balance (₦${existing.balance_remaining.toLocaleString()})`
-            });
-        }
-
-        const updated = await creditorRepo.recordPayment(creditorId, amount);
-
-        res.json({
-            success: true,
-            message: 'Payment recorded successfully',
-            data: updated
+        const result = await recordCreditorPaymentUseCase.execute({
+            userId,
+            businessId: userId,          // currently userId === businessId in your system
+            creditorId,
+            amount,
+            paymentDate: new Date(),
+            notes,
+            paymentMethod,
         });
 
+        if (result.success) {
+            res.json({
+                success: true,
+                message: result.message,
+                data: {
+                    creditor: result.creditor,
+                    payment: result.payment,
+                    remainingBalance: result.remainingBalance,
+                }
+            });
+        } else {
+            res.status(400).json({ success: false, message: result.message });
+        }
     } catch (error) {
-        console.error('❌ Error recording payment:', error);
+        console.error('❌ Error recording creditor payment:', error);
         res.status(500).json({
             success: false,
             message: error.message || 'Failed to record payment'
@@ -256,60 +210,40 @@ router.post('/:id/payment', async (req, res) => {
 });
 
 // =============================================
-// DELETE /api/creditors/:id - Delete a creditor
+// DELETE /api/creditors/:id
 // =============================================
 router.delete('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
-
         const creditorId = parseInt(id);
+
         if (isNaN(creditorId)) {
-            return res.status(400).json({
-                success: false,
-                message: 'Invalid creditor ID'
-            });
+            return res.status(400).json({ success: false, message: 'Invalid creditor ID' });
         }
 
-        // Verify creditor exists and belongs to user
         const existing = await creditorRepo.findById(creditorId);
         if (!existing) {
-            return res.status(404).json({
-                success: false,
-                message: 'Creditor not found'
-            });
+            return res.status(404).json({ success: false, message: 'Creditor not found' });
         }
-
         if (existing.user_id !== userId) {
-            return res.status(403).json({
-                success: false,
-                message: 'Access denied'
-            });
+            return res.status(403).json({ success: false, message: 'Access denied' });
         }
 
         await creditorRepo.delete(creditorId);
-
-        res.json({
-            success: true,
-            message: 'Creditor deleted successfully'
-        });
-
+        res.json({ success: true, message: 'Creditor deleted successfully' });
     } catch (error) {
         console.error('❌ Error deleting creditor:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to delete creditor'
-        });
+        res.status(500).json({ success: false, message: error.message || 'Failed to delete creditor' });
     }
 });
 
 // =============================================
-// GET /api/creditors/summary - Get creditor summary
+// GET /api/creditors/summary
 // =============================================
 router.get('/summary', async (req, res) => {
     try {
         const userId = req.user.id;
-
         const summary = await creditorRepo.getSummary(userId);
         const totalOutstanding = await creditorRepo.getTotalOutstanding(userId);
 
@@ -320,13 +254,9 @@ router.get('/summary', async (req, res) => {
                 totalOutstanding,
             }
         });
-
     } catch (error) {
         console.error('❌ Error fetching creditor summary:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to fetch creditor summary'
-        });
+        res.status(500).json({ success: false, message: error.message || 'Failed to fetch creditor summary' });
     }
 });
 

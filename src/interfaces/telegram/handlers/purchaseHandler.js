@@ -8,6 +8,7 @@ const InventoryRepository = require('../../../infrastructure/database/sqlite/rep
 const InventoryTransactionRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryTransactionRepository');
 const CreditorRepository = require('../../../infrastructure/database/sqlite/repositories/CreditorRepository');
 const SupplierRepository = require('../../../infrastructure/database/sqlite/repositories/SupplierRepository');
+const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository');
 const RecordPurchaseUseCase = require('../../../application/useCases/purchases/RecordPurchaseUseCase');
 const { getMainMenuKeyboard, getPurchaseKeyboard } = require('../keyboards/dashboardKeyboard');
 const logger = require('../../../shared/utils/logger');
@@ -20,7 +21,9 @@ const inventoryRepo = new InventoryRepository();
 const inventoryTransactionRepo = new InventoryTransactionRepository();
 const creditorRepo = new CreditorRepository();
 const supplierRepo = new SupplierRepository();
+const paymentRepo = new PaymentRepository();
 
+// ✅ paymentRepository is now correctly injected
 const recordPurchaseUseCase = new RecordPurchaseUseCase({
     purchaseRepository: purchaseRepo,
     transactionRepository: null,
@@ -28,6 +31,7 @@ const recordPurchaseUseCase = new RecordPurchaseUseCase({
     inventoryTransactionRepository: inventoryTransactionRepo,
     creditorRepository: creditorRepo,
     supplierRepository: supplierRepo,
+    paymentRepository: paymentRepo,
 });
 
 async function purchaseHandler(ctx) {
@@ -155,11 +159,7 @@ async function handlePurchaseItem(ctx, businessId, telegramId, userId) {
 
     if (!text) {
         sessionManager.setState(telegramId, 'PURCHASE_WAITING_ITEM');
-        await ctx.reply(
-            `🛒 **Record Purchase**
-
-Enter the **item name**:`
-        );
+        await ctx.reply(`🛒 **Record Purchase**\n\nEnter the **item name**:`);
         return;
     }
 
@@ -172,10 +172,7 @@ Enter the **item name**:`
     sessionManager.setData(telegramId, { itemName });
     sessionManager.setState(telegramId, 'PURCHASE_WAITING_QUANTITY');
 
-    await ctx.reply(
-        `📦 **Item:** ${itemName}\n\n` +
-        `Enter the **quantity** purchased:`
-    );
+    await ctx.reply(`📦 **Item:** ${itemName}\n\nEnter the **quantity** purchased:`);
 }
 
 async function handlePurchaseQuantity(ctx, businessId, telegramId, userId) {
@@ -497,11 +494,7 @@ async function handlePurchaseDeleteId(ctx, businessId, telegramId, userId) {
 
     if (!text) {
         sessionManager.setState(telegramId, 'PURCHASE_WAITING_DELETE_ID');
-        await ctx.reply(
-            `🗑️ **Delete Purchase**
-
-Enter the purchase ID to delete:`
-        );
+        await ctx.reply(`🗑️ **Delete Purchase**\n\nEnter the purchase ID to delete:`);
         return;
     }
 
@@ -522,17 +515,14 @@ Enter the purchase ID to delete:`
     sessionManager.setState(telegramId, 'PURCHASE_WAITING_DELETE_CONFIRM');
 
     await ctx.reply(
-        `⚠️ **Confirm Delete**
-
-Are you sure you want to delete this purchase?
-
-📦 Item: ${purchase.item_name}
-🔢 Quantity: ${purchase.quantity}
-💰 Unit Cost: ₦${purchase.unit_cost.toLocaleString()}
-💵 Total Cost: ₦${purchase.total_cost.toLocaleString()}
-🏢 Supplier: ${purchase.supplier_name || 'N/A'}
-
-Reply with **YES** to confirm or **NO** to cancel.`
+        `⚠️ **Confirm Delete**\n\n` +
+        `Are you sure you want to delete this purchase?\n\n` +
+        `📦 Item: ${purchase.item_name}\n` +
+        `🔢 Quantity: ${purchase.quantity}\n` +
+        `💰 Unit Cost: ₦${purchase.unit_cost.toLocaleString()}\n` +
+        `💵 Total Cost: ₦${purchase.total_cost.toLocaleString()}\n` +
+        `🏢 Supplier: ${purchase.supplier_name || 'N/A'}\n\n` +
+        `Reply with **YES** to confirm or **NO** to cancel.`
     );
 }
 
@@ -707,11 +697,7 @@ async function handleButtonClick(ctx, businessId, telegramId, userId) {
     if (data === 'purchase_add') {
         sessionManager.clearSession(telegramId);
         sessionManager.setState(telegramId, 'PURCHASE_WAITING_ITEM');
-        await ctx.editMessageText(
-            `🛒 **Record Purchase**
-
-Enter the **item name**:`
-        );
+        await ctx.editMessageText(`🛒 **Record Purchase**\n\nEnter the **item name**:`);
         return;
     }
 
@@ -733,11 +719,7 @@ Enter the **item name**:`
     if (data === 'purchase_delete') {
         sessionManager.clearSession(telegramId);
         sessionManager.setState(telegramId, 'PURCHASE_WAITING_DELETE_ID');
-        await ctx.editMessageText(
-            `🗑️ **Delete Purchase**
-
-Enter the purchase ID to delete:`
-        );
+        await ctx.editMessageText(`🗑️ **Delete Purchase**\n\nEnter the purchase ID to delete:`);
         return;
     }
 

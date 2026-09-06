@@ -1,6 +1,6 @@
-// frontend/src/services/reportMappers/cashFlowReportMapper.js
+// frontend/src/services/reportMappers/cashFlowMapper.js
 
-import { today, isValidData, toNumber } from './utils';
+import { today, isValidData } from './utils';
 
 export const mapCashFlowReport = (backendData) => {
   if (!isValidData(backendData)) {
@@ -24,29 +24,29 @@ export const mapCashFlowReport = (backendData) => {
     },
     operatingActivities: {
       cashIn: {
-        fromCustomers: toNumber(operatingActivities.cashIn?.fromCustomers),
-        fromDebtors: toNumber(operatingActivities.cashIn?.fromDebtors),
-        fromOtherIncome: toNumber(operatingActivities.cashIn?.fromOtherIncome),
+        fromCustomers: operatingActivities.cashIn?.fromCustomers || 0,
+        fromDebtors: operatingActivities.cashIn?.fromDebtors || 0,
+        fromOtherIncome: operatingActivities.cashIn?.fromOtherIncome || 0,
       },
       cashOut: {
-        toSuppliers: toNumber(operatingActivities.cashOut?.toSuppliers),
-        toCreditors: toNumber(operatingActivities.cashOut?.toCreditors),
-        operatingExpenses: toNumber(operatingActivities.cashOut?.operatingExpenses),
+        toSuppliers: operatingActivities.cashOut?.toSuppliers || 0,
+        toCreditors: operatingActivities.cashOut?.toCreditors || 0,
+        operatingExpenses: operatingActivities.cashOut?.operatingExpenses || 0,
       },
-      netOperatingCash: toNumber(operatingActivities.netOperatingCash),
+      netOperatingCash: operatingActivities.netOperatingCash || 0,
     },
     investingActivities: {
-      purchaseOfEquipment: toNumber(investingActivities.purchaseOfEquipment),
-      netInvestingCash: toNumber(investingActivities.netInvestingCash),
+      purchaseOfEquipment: investingActivities.purchaseOfEquipment || 0,
+      netInvestingCash: investingActivities.netInvestingCash || 0,
     },
     financingActivities: {
-      loansReceived: toNumber(financingActivities.loansReceived),
-      ownerContributions: toNumber(financingActivities.ownerContributions),
-      netFinancingCash: toNumber(financingActivities.netFinancingCash),
+      loansReceived: financingActivities.loansReceived || 0,
+      ownerContributions: financingActivities.ownerContributions || 0,
+      netFinancingCash: financingActivities.netFinancingCash || 0,
     },
-    openingCash: toNumber(openingCash),
-    closingCash: toNumber(closingCash),
-    netChangeInCash: toNumber(netChangeInCash),
+    openingCash: openingCash || 0,
+    closingCash: closingCash || 0,
+    netChangeInCash: netChangeInCash || 0,
   };
 };
 

@@ -3,16 +3,18 @@
 const express = require('express');
 const router = express.Router();
 const ExpenseRepository = require('../../../infrastructure/database/sqlite/repositories/ExpenseRepository');
+const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository');
 const RecordExpenseUseCase = require('../../../application/useCases/expenses/RecordExpenseUseCase');
 const { authMiddleware } = require('../middleware/authMiddleware');
 
 const expenseRepo = new ExpenseRepository();
-const recordExpenseUseCase = new RecordExpenseUseCase(expenseRepo);
+const paymentRepo = new PaymentRepository();
+const recordExpenseUseCase = new RecordExpenseUseCase(expenseRepo, paymentRepo);
 
 router.use(authMiddleware);
 
 // =============================================
-// GET /api/expenses - Get all expenses
+// GET /api/expenses
 // =============================================
 router.get('/', async (req, res) => {
     try {
@@ -51,7 +53,6 @@ router.get('/', async (req, res) => {
                 }
             }
         });
-
     } catch (error) {
         console.error('❌ Error fetching expenses:', error);
         res.status(500).json({
@@ -62,12 +63,11 @@ router.get('/', async (req, res) => {
 });
 
 // =============================================
-// GET /api/expenses/today - Get today's expenses
+// GET /api/expenses/today
 // =============================================
 router.get('/today', async (req, res) => {
     try {
         const userId = req.user.id;
-
         const expenses = await expenseRepo.getTodayExpenses(userId);
 
         res.json({
@@ -78,7 +78,6 @@ router.get('/today', async (req, res) => {
                 total: expenses.reduce((sum, e) => sum + e.amount, 0)
             }
         });
-
     } catch (error) {
         console.error('❌ Error fetching today expenses:', error);
         res.status(500).json({
@@ -89,7 +88,7 @@ router.get('/today', async (req, res) => {
 });
 
 // =============================================
-// GET /api/expenses/summary - Get expense summary
+// GET /api/expenses/summary
 // =============================================
 router.get('/summary', async (req, res) => {
     try {
@@ -112,7 +111,6 @@ router.get('/summary', async (req, res) => {
                 categories_used: 0,
             }
         });
-
     } catch (error) {
         console.error('❌ Error fetching expense summary:', error);
         res.status(500).json({
@@ -123,31 +121,24 @@ router.get('/summary', async (req, res) => {
 });
 
 // =============================================
-// POST /api/expenses - Record new expense
+// POST /api/expenses
 // =============================================
 router.post('/', async (req, res) => {
     try {
         const userId = req.user.id;
+        const businessId = req.user.businessId || userId;
         const { category, amount, description, date } = req.body;
 
-        console.log('📉 Recording expense:', { userId, category, amount });
-
         if (!category) {
-            return res.status(400).json({
-                success: false,
-                message: 'Category is required'
-            });
+            return res.status(400).json({ success: false, message: 'Category is required' });
         }
-
         if (!amount || amount <= 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'Amount must be greater than 0'
-            });
+            return res.status(400).json({ success: false, message: 'Amount must be greater than 0' });
         }
 
         const result = await recordExpenseUseCase.execute({
             userId,
+            businessId,
             category,
             amount,
             description: description || '',
@@ -159,7 +150,6 @@ router.post('/', async (req, res) => {
             message: 'Expense recorded successfully',
             data: result
         });
-
     } catch (error) {
         console.error('❌ Error recording expense:', error);
         res.status(500).json({
@@ -170,7 +160,7 @@ router.post('/', async (req, res) => {
 });
 
 // =============================================
-// GET /api/expenses/:id - Get single expense
+// GET /api/expenses/:id
 // =============================================
 router.get('/:id', async (req, res) => {
     try {
@@ -178,37 +168,22 @@ router.get('/:id', async (req, res) => {
         const userId = req.user.id;
 
         const expense = await expenseRepo.findById(parseInt(id));
-
         if (!expense) {
-            return res.status(404).json({
-                success: false,
-                message: 'Expense record not found'
-            });
+            return res.status(404).json({ success: false, message: 'Expense record not found' });
         }
-
         if (expense.user_id !== userId) {
-            return res.status(403).json({
-                success: false,
-                message: 'Access denied'
-            });
+            return res.status(403).json({ success: false, message: 'Access denied' });
         }
 
-        res.json({
-            success: true,
-            data: expense
-        });
-
+        res.json({ success: true, data: expense });
     } catch (error) {
         console.error('❌ Error fetching expense:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to fetch expense'
-        });
+        res.status(500).json({ success: false, message: error.message || 'Failed to fetch expense' });
     }
 });
 
 // =============================================
-// PUT /api/expenses/:id - Update expense
+// PUT /api/expenses/:id
 // =============================================
 router.put('/:id', async (req, res) => {
     try {
@@ -218,17 +193,10 @@ router.put('/:id', async (req, res) => {
 
         const existing = await expenseRepo.findById(parseInt(id));
         if (!existing) {
-            return res.status(404).json({
-                success: false,
-                message: 'Expense record not found'
-            });
+            return res.status(404).json({ success: false, message: 'Expense record not found' });
         }
-
         if (existing.user_id !== userId) {
-            return res.status(403).json({
-                success: false,
-                message: 'Access denied'
-            });
+            return res.status(403).json({ success: false, message: 'Access denied' });
         }
 
         const updateData = {};
@@ -239,23 +207,15 @@ router.put('/:id', async (req, res) => {
 
         const updated = await expenseRepo.update(parseInt(id), updateData);
 
-        res.json({
-            success: true,
-            message: 'Expense updated successfully',
-            data: updated
-        });
-
+        res.json({ success: true, message: 'Expense updated successfully', data: updated });
     } catch (error) {
         console.error('❌ Error updating expense:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to update expense'
-        });
+        res.status(500).json({ success: false, message: error.message || 'Failed to update expense' });
     }
 });
 
 // =============================================
-// DELETE /api/expenses/:id - Delete expense
+// DELETE /api/expenses/:id
 // =============================================
 router.delete('/:id', async (req, res) => {
     try {
@@ -264,32 +224,18 @@ router.delete('/:id', async (req, res) => {
 
         const existing = await expenseRepo.findById(parseInt(id));
         if (!existing) {
-            return res.status(404).json({
-                success: false,
-                message: 'Expense record not found'
-            });
+            return res.status(404).json({ success: false, message: 'Expense record not found' });
         }
-
         if (existing.user_id !== userId) {
-            return res.status(403).json({
-                success: false,
-                message: 'Access denied'
-            });
+            return res.status(403).json({ success: false, message: 'Access denied' });
         }
 
         await expenseRepo.delete(parseInt(id));
 
-        res.json({
-            success: true,
-            message: 'Expense record deleted successfully'
-        });
-
+        res.json({ success: true, message: 'Expense record deleted successfully' });
     } catch (error) {
         console.error('❌ Error deleting expense:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to delete expense'
-        });
+        res.status(500).json({ success: false, message: error.message || 'Failed to delete expense' });
     }
 });
 

@@ -8,29 +8,42 @@ class TransactionRepository extends BaseRepository {
     }
 
     /**
+     * Safely convert any date input to ISO string
+     */
+    _toISOString(dateInput) {
+        if (!dateInput) return null;
+        if (dateInput instanceof Date) {
+            return dateInput.toISOString();
+        }
+        if (typeof dateInput === 'string') {
+            return dateInput;
+        }
+        return null;
+    }
+
+    /**
      * Create a new transaction
-     * @param {Object} transactionData - Transaction entity data
-     * @returns {Promise<Object>} Created transaction
      */
     create(transactionData) {
         const stmt = this.db.prepare(`
             INSERT INTO transactions (
-                business_id, type, category, amount, description,
+                business_id, user_id, type, category, amount, description,
                 payment_status, reference_id, reference_type, date, due_date, metadata
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         const result = stmt.run(
             transactionData.businessId,
+            transactionData.userId ?? null,
             transactionData.type,
-            transactionData.category,
+            transactionData.category || null,
             transactionData.amount,
             transactionData.description || '',
             transactionData.paymentStatus || 'N/A',
             transactionData.referenceId || null,
             transactionData.referenceType || null,
-            transactionData.date || new Date().toISOString(),
-            transactionData.dueDate || null,
+            this._toISOString(transactionData.date) || new Date().toISOString(),
+            this._toISOString(transactionData.dueDate) || null,
             JSON.stringify(transactionData.metadata || {})
         );
 
@@ -39,8 +52,6 @@ class TransactionRepository extends BaseRepository {
 
     /**
      * Find transaction by ID
-     * @param {string|number} id - Transaction ID
-     * @returns {Promise<Object|null>} Transaction or null
      */
     findById(id) {
         const result = this.db.prepare('SELECT * FROM transactions WHERE id = ?').get(id);
@@ -50,13 +61,15 @@ class TransactionRepository extends BaseRepository {
 
     /**
      * Find transactions by business ID
-     * @param {string|number} businessId - Business ID
-     * @param {Object} options - { limit, offset, type, startDate, endDate }
-     * @returns {Promise<Array>} Array of transactions
      */
     findByBusinessId(businessId, options = {}) {
         let query = 'SELECT * FROM transactions WHERE business_id = ?';
         const params = [businessId];
+
+        if (options.userId) {
+            query += ' AND user_id = ?';
+            params.push(options.userId);
+        }
 
         if (options.type) {
             query += ' AND type = ?';
@@ -65,12 +78,12 @@ class TransactionRepository extends BaseRepository {
 
         if (options.startDate) {
             query += ' AND date >= ?';
-            params.push(options.startDate.toISOString());
+            params.push(this._toISOString(options.startDate));
         }
 
         if (options.endDate) {
             query += ' AND date <= ?';
-            params.push(options.endDate.toISOString());
+            params.push(this._toISOString(options.endDate));
         }
 
         query += ' ORDER BY date DESC';
@@ -91,11 +104,6 @@ class TransactionRepository extends BaseRepository {
 
     /**
      * Find transactions by date range
-     * @param {string|number} businessId - Business ID
-     * @param {Date} startDate - Start date
-     * @param {Date} endDate - End date
-     * @param {Object} options - { type, limit, offset }
-     * @returns {Promise<Array>} Array of transactions
      */
     findByDateRange(businessId, startDate, endDate, options = {}) {
         return this.findByBusinessId(businessId, {
@@ -107,10 +115,6 @@ class TransactionRepository extends BaseRepository {
 
     /**
      * Find transactions by reference
-     * @param {string|number} businessId - Business ID
-     * @param {string} referenceType - SALE, INCOME, PURCHASE, EXPENSE, DEBTOR, CREDITOR
-     * @param {string|number} referenceId - Reference ID
-     * @returns {Promise<Array>} Array of transactions
      */
     findByReference(businessId, referenceType, referenceId) {
         const results = this.db.prepare(`
@@ -124,14 +128,15 @@ class TransactionRepository extends BaseRepository {
 
     /**
      * Update a transaction
-     * @param {string|number} id - Transaction ID
-     * @param {Object} data - Updated data
-     * @returns {Promise<Object>} Updated transaction
      */
     update(id, data) {
         const fields = [];
         const values = [];
 
+        if (data.userId !== undefined) {
+            fields.push('user_id = ?');
+            values.push(data.userId);
+        }
         if (data.type !== undefined) {
             fields.push('type = ?');
             values.push(data.type);
@@ -162,11 +167,11 @@ class TransactionRepository extends BaseRepository {
         }
         if (data.date !== undefined) {
             fields.push('date = ?');
-            values.push(data.date.toISOString());
+            values.push(this._toISOString(data.date));
         }
         if (data.dueDate !== undefined) {
             fields.push('due_date = ?');
-            values.push(data.dueDate ? data.dueDate.toISOString() : null);
+            values.push(this._toISOString(data.dueDate));
         }
         if (data.metadata !== undefined) {
             fields.push('metadata = ?');
@@ -195,8 +200,6 @@ class TransactionRepository extends BaseRepository {
 
     /**
      * Delete a transaction
-     * @param {string|number} id - Transaction ID
-     * @returns {Promise<boolean>} True if deleted
      */
     delete(id) {
         const stmt = this.db.prepare('DELETE FROM transactions WHERE id = ?');
@@ -206,13 +209,15 @@ class TransactionRepository extends BaseRepository {
 
     /**
      * Count transactions by business ID
-     * @param {string|number} businessId - Business ID
-     * @param {Object} filters - { type, startDate, endDate }
-     * @returns {Promise<number>} Count of transactions
      */
     countByBusinessId(businessId, filters = {}) {
         let query = 'SELECT COUNT(*) as count FROM transactions WHERE business_id = ?';
         const params = [businessId];
+
+        if (filters.userId) {
+            query += ' AND user_id = ?';
+            params.push(filters.userId);
+        }
 
         if (filters.type) {
             query += ' AND type = ?';
@@ -221,12 +226,12 @@ class TransactionRepository extends BaseRepository {
 
         if (filters.startDate) {
             query += ' AND date >= ?';
-            params.push(filters.startDate.toISOString());
+            params.push(this._toISOString(filters.startDate));
         }
 
         if (filters.endDate) {
             query += ' AND date <= ?';
-            params.push(filters.endDate.toISOString());
+            params.push(this._toISOString(filters.endDate));
         }
 
         const result = this.db.prepare(query).get(...params);
@@ -235,9 +240,6 @@ class TransactionRepository extends BaseRepository {
 
     /**
      * Get transaction summary by business ID
-     * @param {string|number} businessId - Business ID
-     * @param {Object} options - { startDate, endDate }
-     * @returns {Promise<Object>} Summary with totals by type
      */
     getSummary(businessId, options = {}) {
         let query = `
@@ -250,14 +252,19 @@ class TransactionRepository extends BaseRepository {
         `;
         const params = [businessId];
 
+        if (options.userId) {
+            query += ' AND user_id = ?';
+            params.push(options.userId);
+        }
+
         if (options.startDate) {
             query += ' AND date >= ?';
-            params.push(options.startDate.toISOString());
+            params.push(this._toISOString(options.startDate));
         }
 
         if (options.endDate) {
             query += ' AND date <= ?';
-            params.push(options.endDate.toISOString());
+            params.push(this._toISOString(options.endDate));
         }
 
         query += ' GROUP BY type';
@@ -284,14 +291,13 @@ class TransactionRepository extends BaseRepository {
 
     /**
      * Hydrate database row to entity
-     * @param {Object} row - Database row
-     * @returns {Object} Transaction entity
      */
     _hydrate(row) {
         const Transaction = require('../../../domain/entities/Transaction');
         return new Transaction({
             id: row.id,
             businessId: row.business_id,
+            userId: row.user_id,
             type: row.type,
             category: row.category,
             amount: row.amount,

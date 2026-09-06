@@ -1,15 +1,26 @@
 // src/interfaces/http/routes/debtorRoutes.js
+
 const express = require('express');
 const router = express.Router();
 const DebtorRepository = require('../../../infrastructure/database/sqlite/repositories/DebtorRepository');
+const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository');
+const TransactionRepository = require('../../../infrastructure/database/sqlite/repositories/TransactionRepository');
 const GetDebtorsUseCase = require('../../../application/useCases/debtors/GetDebtorsUseCase');
+const RecordDebtorPaymentUseCase = require('../../../application/useCases/debtors/RecordDebtorPaymentUseCase');
 const { authMiddleware } = require('../middleware/authMiddleware');
 
-// Initialize repository
+// Initialize repositories
 const debtorRepo = new DebtorRepository();
+const paymentRepo = new PaymentRepository();
+const transactionRepo = new TransactionRepository();
 
-// Initialize Use Case
+// Initialize Use Cases
 const getDebtorsUseCase = new GetDebtorsUseCase({ debtorRepository: debtorRepo });
+const recordDebtorPaymentUseCase = new RecordDebtorPaymentUseCase({
+    debtorRepository: debtorRepo,
+    paymentRepository: paymentRepo,
+    transactionRepository: transactionRepo,
+});
 
 // All routes require authentication
 router.use(authMiddleware);
@@ -22,7 +33,6 @@ router.get('/', async (req, res) => {
         const userId = req.user.id;
         const { status, customerType, limit = 50, offset = 0 } = req.query;
 
-        // Get debtors with filters
         const debtors = await debtorRepo.findByFilters({
             businessId: userId,
             status,
@@ -31,15 +41,9 @@ router.get('/', async (req, res) => {
             offset: parseInt(offset),
         });
 
-        // Get summary
         const summary = await debtorRepo.getSummary(userId);
-
-        // Get total outstanding
         const totalOutstanding = await debtorRepo.getTotalOutstanding(userId);
-
-        // Get overdue count
         const overdue = await debtorRepo.findOverdue(userId);
-        const overdueCount = overdue.length;
 
         res.json({
             success: true,
@@ -48,7 +52,7 @@ router.get('/', async (req, res) => {
                 summary: {
                     ...summary,
                     totalOutstanding,
-                    overdueCount,
+                    overdueCount: overdue.length,
                 },
                 pagination: {
                     limit: parseInt(limit),
@@ -57,7 +61,6 @@ router.get('/', async (req, res) => {
                 }
             }
         });
-
     } catch (error) {
         console.error('❌ Error fetching debtors:', error);
         res.status(500).json({
@@ -68,12 +71,11 @@ router.get('/', async (req, res) => {
 });
 
 // =============================================
-// GET /api/debtors/active - Get active debtors
+// GET /api/debtors/active
 // =============================================
 router.get('/active', async (req, res) => {
     try {
         const userId = req.user.id;
-
         const debtors = await debtorRepo.findActive(userId);
         const totalOutstanding = await debtorRepo.getTotalOutstanding(userId);
 
@@ -85,7 +87,6 @@ router.get('/active', async (req, res) => {
                 count: debtors.length
             }
         });
-
     } catch (error) {
         console.error('❌ Error fetching active debtors:', error);
         res.status(500).json({
@@ -96,14 +97,13 @@ router.get('/active', async (req, res) => {
 });
 
 // =============================================
-// GET /api/debtors/overdue - Get overdue debtors
+// GET /api/debtors/overdue
 // =============================================
 router.get('/overdue', async (req, res) => {
     try {
         const userId = req.user.id;
-
         const debtors = await debtorRepo.findOverdue(userId);
-        const totalOverdue = debtors.reduce((sum, d) => sum + d.balance_remaining, 0);
+        const totalOverdue = debtors.reduce((sum, d) => sum + (d.balance_remaining || 0), 0);
 
         res.json({
             success: true,
@@ -113,7 +113,6 @@ router.get('/overdue', async (req, res) => {
                 count: debtors.length
             }
         });
-
     } catch (error) {
         console.error('❌ Error fetching overdue debtors:', error);
         res.status(500).json({
@@ -124,53 +123,36 @@ router.get('/overdue', async (req, res) => {
 });
 
 // =============================================
-// GET /api/debtors/:id - Get single debtor
+// GET /api/debtors/:id
 // =============================================
 router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
-
         const debtorId = parseInt(id);
+
         if (isNaN(debtorId)) {
-            return res.status(400).json({
-                success: false,
-                message: 'Invalid debtor ID'
-            });
+            return res.status(400).json({ success: false, message: 'Invalid debtor ID' });
         }
 
         const debtor = await debtorRepo.findById(debtorId);
-
         if (!debtor) {
-            return res.status(404).json({
-                success: false,
-                message: 'Debtor not found'
-            });
+            return res.status(404).json({ success: false, message: 'Debtor not found' });
         }
 
         if (debtor.user_id !== userId) {
-            return res.status(403).json({
-                success: false,
-                message: 'Access denied'
-            });
+            return res.status(403).json({ success: false, message: 'Access denied' });
         }
 
-        res.json({
-            success: true,
-            data: debtor
-        });
-
+        res.json({ success: true, data: debtor });
     } catch (error) {
         console.error('❌ Error fetching debtor:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to fetch debtor'
-        });
+        res.status(500).json({ success: false, message: error.message || 'Failed to fetch debtor' });
     }
 });
 
 // =============================================
-// POST /api/debtors - Create a new debtor
+// POST /api/debtors - Create debtor
 // =============================================
 router.post('/', async (req, res) => {
     try {
@@ -178,17 +160,10 @@ router.post('/', async (req, res) => {
         const { customerName, totalOwed, dueDate, customerType = 'CUSTOMER', notes = '' } = req.body;
 
         if (!customerName) {
-            return res.status(400).json({
-                success: false,
-                message: 'Customer name is required'
-            });
+            return res.status(400).json({ success: false, message: 'Customer name is required' });
         }
-
         if (!totalOwed || totalOwed <= 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'Amount owed must be greater than 0'
-            });
+            return res.status(400).json({ success: false, message: 'Amount owed must be greater than 0' });
         }
 
         const debtor = await debtorRepo.create({
@@ -207,73 +182,54 @@ router.post('/', async (req, res) => {
             message: 'Debtor created successfully',
             data: debtor
         });
-
     } catch (error) {
         console.error('❌ Error creating debtor:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to create debtor'
-        });
+        res.status(500).json({ success: false, message: error.message || 'Failed to create debtor' });
     }
 });
 
 // =============================================
-// POST /api/debtors/:id/payment - Record payment
+// POST /api/debtors/:id/payment - Record payment (NOW USES USE CASE)
 // =============================================
 router.post('/:id/payment', async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
-        const { amount, notes = '' } = req.body;
+        const { amount, notes = '', paymentMethod = 'CASH' } = req.body;
 
         const debtorId = parseInt(id);
         if (isNaN(debtorId)) {
-            return res.status(400).json({
-                success: false,
-                message: 'Invalid debtor ID'
-            });
+            return res.status(400).json({ success: false, message: 'Invalid debtor ID' });
         }
-
         if (!amount || amount <= 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'Payment amount must be greater than 0'
-            });
+            return res.status(400).json({ success: false, message: 'Payment amount must be greater than 0' });
         }
 
-        // Verify debtor exists and belongs to user
-        const existing = await debtorRepo.findById(debtorId);
-        if (!existing) {
-            return res.status(404).json({
-                success: false,
-                message: 'Debtor not found'
-            });
-        }
-
-        if (existing.user_id !== userId) {
-            return res.status(403).json({
-                success: false,
-                message: 'Access denied'
-            });
-        }
-
-        if (amount > existing.balance_remaining) {
-            return res.status(400).json({
-                success: false,
-                message: `Payment amount (₦${amount.toLocaleString()}) exceeds balance (₦${existing.balance_remaining.toLocaleString()})`
-            });
-        }
-
-        const updated = await debtorRepo.recordPayment(debtorId, amount);
-
-        res.json({
-            success: true,
-            message: 'Payment recorded successfully',
-            data: updated
+        const result = await recordDebtorPaymentUseCase.execute({
+            userId,
+            businessId: userId,          // currently userId === businessId in your system
+            debtorId,
+            amount,
+            paymentDate: new Date(),
+            notes,
+            paymentMethod,
         });
 
+        if (result.success) {
+            res.json({
+                success: true,
+                message: result.message,
+                data: {
+                    debtor: result.debtor,
+                    payment: result.payment,
+                    remainingBalance: result.remainingBalance,
+                }
+            });
+        } else {
+            res.status(400).json({ success: false, message: result.message });
+        }
     } catch (error) {
-        console.error('❌ Error recording payment:', error);
+        console.error('❌ Error recording debtor payment:', error);
         res.status(500).json({
             success: false,
             message: error.message || 'Failed to record payment'
@@ -282,38 +238,25 @@ router.post('/:id/payment', async (req, res) => {
 });
 
 // =============================================
-// DELETE /api/debtors/:id - Delete a debtor
+// DELETE /api/debtors/:id
 // =============================================
 router.delete('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
-
         const debtorId = parseInt(id);
+
         if (isNaN(debtorId)) {
-            return res.status(400).json({
-                success: false,
-                message: 'Invalid debtor ID'
-            });
+            return res.status(400).json({ success: false, message: 'Invalid debtor ID' });
         }
 
-        // Verify debtor exists and belongs to user
         const existing = await debtorRepo.findById(debtorId);
         if (!existing) {
-            return res.status(404).json({
-                success: false,
-                message: 'Debtor not found'
-            });
+            return res.status(404).json({ success: false, message: 'Debtor not found' });
         }
-
         if (existing.user_id !== userId) {
-            return res.status(403).json({
-                success: false,
-                message: 'Access denied'
-            });
+            return res.status(403).json({ success: false, message: 'Access denied' });
         }
-
-        // Only allow deletion if debtor is fully paid
         if (existing.balance_remaining > 0 && existing.status !== 'PAID') {
             return res.status(400).json({
                 success: false,
@@ -322,28 +265,19 @@ router.delete('/:id', async (req, res) => {
         }
 
         await debtorRepo.delete(debtorId);
-
-        res.json({
-            success: true,
-            message: 'Debtor deleted successfully'
-        });
-
+        res.json({ success: true, message: 'Debtor deleted successfully' });
     } catch (error) {
         console.error('❌ Error deleting debtor:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to delete debtor'
-        });
+        res.status(500).json({ success: false, message: error.message || 'Failed to delete debtor' });
     }
 });
 
 // =============================================
-// GET /api/debtors/summary - Get debtor summary
+// GET /api/debtors/summary
 // =============================================
 router.get('/summary', async (req, res) => {
     try {
         const userId = req.user.id;
-
         const summary = await debtorRepo.getSummary(userId);
         const totalOutstanding = await debtorRepo.getTotalOutstanding(userId);
         const overdue = await debtorRepo.findOverdue(userId);
@@ -356,13 +290,9 @@ router.get('/summary', async (req, res) => {
                 overdueCount: overdue.length,
             }
         });
-
     } catch (error) {
         console.error('❌ Error fetching debtor summary:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to fetch debtor summary'
-        });
+        res.status(500).json({ success: false, message: error.message || 'Failed to fetch debtor summary' });
     }
 });
 

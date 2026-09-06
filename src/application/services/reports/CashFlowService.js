@@ -47,7 +47,7 @@ class CashFlowService {
             includeDetails: true,
         });
 
-        // 2. Get all payments for categorization (ensure array)
+        // 2. Get all payments for categorization
         let payments = [];
         try {
             payments = await this.paymentRepository.findByDateRange(
@@ -60,49 +60,71 @@ class CashFlowService {
             payments = [];
         }
 
-        // Ensure payments is always an array
-        if (!payments || !Array.isArray(payments)) {
+        if (!Array.isArray(payments)) {
             payments = [];
         }
 
-        // 3. Categorize payments by reference type
-        const operatingIn = payments
-            .filter(p => (p.type === 'RECEIVED' || p.type === 'IN') && 
-                         ['SALE', 'DEBTOR', 'INCOME'].includes(p.referenceType))
+        // 3. Proper categorization by referenceType
+        const isReceived = (p) => p.type === 'RECEIVED' || p.type === 'IN';
+        const isMade     = (p) => p.type === 'MADE' || p.type === 'OUT';
+
+        // --- CASH IN (Operating) ---
+        const fromCustomers = payments
+            .filter(p => isReceived(p) && p.referenceType === 'SALE')
             .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
 
-        const operatingOut = payments
-            .filter(p => (p.type === 'MADE' || p.type === 'OUT') && 
-                         ['PURCHASE', 'CREDITOR', 'EXPENSE'].includes(p.referenceType))
+        const fromDebtors = payments
+            .filter(p => isReceived(p) && p.referenceType === 'DEBTOR')
             .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
 
-        const netOperatingCash = operatingIn - operatingOut;
+        const fromOtherIncome = payments
+            .filter(p => isReceived(p) && (p.referenceType === 'INCOME' || !p.referenceType))
+            .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
 
-        // 4. Investing Activities (placeholder)
+        // ✅ TOTAL CASH IN (clearly labeled)
+        const totalCashIn = fromCustomers + fromDebtors + fromOtherIncome;
+
+        // --- CASH OUT (Operating) ---
+        const toSuppliers = payments
+            .filter(p => isMade(p) && p.referenceType === 'PURCHASE')
+            .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+
+        const toCreditors = payments
+            .filter(p => isMade(p) && p.referenceType === 'CREDITOR')
+            .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+
+        const operatingExpenses = payments
+            .filter(p => isMade(p) && (p.referenceType === 'EXPENSE' || !p.referenceType))
+            .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+
+        // ✅ TOTAL CASH OUT (clearly labeled)
+        const totalCashOut = toSuppliers + toCreditors + operatingExpenses;
+
+        // ✅ NET OPERATING CASH FLOW (clearly labeled)
+        const netOperatingCash = totalCashIn - totalCashOut;
+
+        // 4. Investing Activities (placeholder for now)
         const investingActivities = {
             purchaseOfEquipment: 0,
             purchaseOfLongTermAssets: 0,
             proceedsFromAssetSales: 0,
         };
-        const netInvestingCash = 
-            investingActivities.proceedsFromAssetSales -
-            investingActivities.purchaseOfEquipment -
-            investingActivities.purchaseOfLongTermAssets;
+        const totalInvestingIn = investingActivities.proceedsFromAssetSales;
+        const totalInvestingOut = investingActivities.purchaseOfEquipment + investingActivities.purchaseOfLongTermAssets;
+        const netInvestingCash = totalInvestingIn - totalInvestingOut;
 
-        // 5. Financing Activities (placeholder)
+        // 5. Financing Activities (placeholder for now)
         const financingActivities = {
             loansReceived: 0,
             loanRepayments: 0,
             ownerContributions: 0,
             ownerWithdrawals: 0,
         };
-        const netFinancingCash = 
-            financingActivities.loansReceived +
-            financingActivities.ownerContributions -
-            financingActivities.loanRepayments -
-            financingActivities.ownerWithdrawals;
+        const totalFinancingIn = financingActivities.loansReceived + financingActivities.ownerContributions;
+        const totalFinancingOut = financingActivities.loanRepayments + financingActivities.ownerWithdrawals;
+        const netFinancingCash = totalFinancingIn - totalFinancingOut;
 
-        // 6. Net change and closing cash
+        // 6. Net change
         const netChangeInCash = netOperatingCash + netInvestingCash + netFinancingCash;
 
         return {
@@ -112,35 +134,44 @@ class CashFlowService {
             },
             operatingActivities: {
                 cashIn: {
-                    fromCustomers: operatingIn,
-                    fromDebtors: 0,
-                    fromOtherIncome: 0,
-                    total: operatingIn,
+                    fromCustomers,
+                    fromDebtors,
+                    fromOtherIncome,
+                    total: totalCashIn,  // ✅ CLEAR TOTAL
+                    label: 'Total Cash In',  // ✅ LABEL
                 },
                 cashOut: {
-                    toSuppliers: 0,
-                    toCreditors: 0,
-                    operatingExpenses: operatingOut,
-                    total: operatingOut,
+                    toSuppliers,
+                    toCreditors,
+                    operatingExpenses,
+                    total: totalCashOut,  // ✅ CLEAR TOTAL
+                    label: 'Total Cash Out',  // ✅ LABEL
                 },
-                netOperatingCash,
+                netOperatingCash,  // ✅ CLEAR RESULT
+                netLabel: 'NET Operating Cash Flow',  // ✅ LABEL
             },
             investingActivities: {
-                purchaseOfEquipment: investingActivities.purchaseOfEquipment,
-                purchaseOfLongTermAssets: investingActivities.purchaseOfLongTermAssets,
-                proceedsFromAssetSales: investingActivities.proceedsFromAssetSales,
+                ...investingActivities,
+                totalCashIn: totalInvestingIn,
+                totalCashOut: totalInvestingOut,
                 netInvestingCash,
+                netLabel: 'NET Investing Cash Flow',
             },
             financingActivities: {
-                loansReceived: financingActivities.loansReceived,
-                loanRepayments: financingActivities.loanRepayments,
-                ownerContributions: financingActivities.ownerContributions,
-                ownerWithdrawals: financingActivities.ownerWithdrawals,
+                ...financingActivities,
+                totalCashIn: totalFinancingIn,
+                totalCashOut: totalFinancingOut,
                 netFinancingCash,
+                netLabel: 'NET Financing Cash Flow',
             },
             netChangeInCash,
             openingCash: cashData.openingCash || 0,
             closingCash: cashData.closingCash || 0,
+            summary: {
+                openingCash: cashData.openingCash || 0,
+                netChange: netChangeInCash,
+                closingCash: cashData.closingCash || 0,
+            },
         };
     }
 
@@ -157,6 +188,128 @@ class CashFlowService {
             netChangeInCash: full.netChangeInCash,
             openingCash: full.openingCash,
             closingCash: full.closingCash,
+        };
+    }
+
+    /**
+     * Generate formatted cash flow for display with clear labels
+     * Perfect for frontend rendering
+     */
+    async generateFormatted({ userId, businessId, startDate, endDate }) {
+        const data = await this.generate({ userId, businessId, startDate, endDate });
+        
+        return {
+            title: 'Cash Flow Statement',
+            period: `${data.period.startDate} to ${data.period.endDate}`,
+            
+            operating: {
+                title: 'Operating Activities',
+                subtitle: 'Cash generated from core business operations',
+                cashIn: {
+                    label: '💰 CASH IN',
+                    items: [
+                        { label: 'From Customers', amount: data.operatingActivities.cashIn.fromCustomers },
+                        { label: 'From Debtors', amount: data.operatingActivities.cashIn.fromDebtors },
+                        { label: 'From Other Income', amount: data.operatingActivities.cashIn.fromOtherIncome },
+                    ],
+                    total: {
+                        label: '📊 Total Cash In',
+                        amount: data.operatingActivities.cashIn.total,
+                    },
+                },
+                cashOut: {
+                    label: '💳 CASH OUT',
+                    items: [
+                        { label: 'To Suppliers', amount: data.operatingActivities.cashOut.toSuppliers },
+                        { label: 'To Creditors', amount: data.operatingActivities.cashOut.toCreditors },
+                        { label: 'Operating Expenses', amount: data.operatingActivities.cashOut.operatingExpenses },
+                    ],
+                    total: {
+                        label: '📊 Total Cash Out',
+                        amount: data.operatingActivities.cashOut.total,
+                    },
+                },
+                netCashFlow: {
+                    label: '🎯 NET Operating Cash Flow',
+                    amount: data.operatingActivities.netOperatingCash,
+                },
+            },
+            
+            investing: {
+                title: 'Investing Activities',
+                subtitle: 'Cash used for asset purchases and investments',
+                cashIn: {
+                    label: '💰 CASH IN',
+                    items: [
+                        { label: 'Proceeds from Asset Sales', amount: data.investingActivities.proceedsFromAssetSales },
+                    ],
+                    total: {
+                        label: '📊 Total Cash In',
+                        amount: data.investingActivities.totalCashIn,
+                    },
+                },
+                cashOut: {
+                    label: '💳 CASH OUT',
+                    items: [
+                        { label: 'Purchase of Equipment', amount: data.investingActivities.purchaseOfEquipment },
+                        { label: 'Purchase of Long-Term Assets', amount: data.investingActivities.purchaseOfLongTermAssets },
+                    ],
+                    total: {
+                        label: '📊 Total Cash Out',
+                        amount: data.investingActivities.totalCashOut,
+                    },
+                },
+                netCashFlow: {
+                    label: '🎯 NET Investing Cash Flow',
+                    amount: data.investingActivities.netInvestingCash,
+                },
+            },
+            
+            financing: {
+                title: 'Financing Activities',
+                subtitle: 'Cash from financing activities',
+                cashIn: {
+                    label: '💰 CASH IN',
+                    items: [
+                        { label: 'Loans Received', amount: data.financingActivities.loansReceived },
+                        { label: 'Owner Contributions', amount: data.financingActivities.ownerContributions },
+                    ],
+                    total: {
+                        label: '📊 Total Cash In',
+                        amount: data.financingActivities.totalCashIn,
+                    },
+                },
+                cashOut: {
+                    label: '💳 CASH OUT',
+                    items: [
+                        { label: 'Loan Repayments', amount: data.financingActivities.loanRepayments },
+                        { label: 'Owner Withdrawals', amount: data.financingActivities.ownerWithdrawals },
+                    ],
+                    total: {
+                        label: '📊 Total Cash Out',
+                        amount: data.financingActivities.totalCashOut,
+                    },
+                },
+                netCashFlow: {
+                    label: '🎯 NET Financing Cash Flow',
+                    amount: data.financingActivities.netFinancingCash,
+                },
+            },
+            
+            summary: {
+                openingCash: {
+                    label: '💰 Opening Cash Balance',
+                    amount: data.openingCash,
+                },
+                netChange: {
+                    label: '📈 Net Change in Cash',
+                    amount: data.netChangeInCash,
+                },
+                closingCash: {
+                    label: '💰 Closing Cash Balance',
+                    amount: data.closingCash,
+                },
+            },
         };
     }
 }

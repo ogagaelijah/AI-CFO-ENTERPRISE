@@ -1,6 +1,6 @@
-// frontend/src/services/reportMappers/profitLossReportMapper.js
+// frontend/src/services/reportMappers/profitLossMapper.js
 
-import { today, isValidData, toNumber } from './utils';
+import { today, isValidData } from './utils';
 
 export const mapProfitLossReport = (backendData) => {
   if (!isValidData(backendData)) {
@@ -27,33 +27,33 @@ export const mapProfitLossReport = (backendData) => {
     startDate: startDate || period?.startDate || period?.start || today(),
     endDate: endDate || period?.endDate || period?.end || today(),
     revenue: {
-      productSales: toNumber(revenue.productSales),
-      otherRevenue: toNumber(revenue.otherRevenue),
-      totalRevenue: toNumber(revenue.totalRevenue),
+      productSales: revenue?.productSales || 0,
+      otherRevenue: revenue?.otherRevenue || 0,
+      totalRevenue: revenue?.totalRevenue || 0,
     },
     cogs: {
-      total: toNumber(cogs.total),
+      total: cogs?.total || 0,
     },
     grossProfit: {
-      amount: toNumber(grossProfit.amount),
-      margin: toNumber(grossProfit.margin),
+      amount: grossProfit?.amount || 0,
+      margin: grossProfit?.margin || 0,
     },
     operatingExpenses: {
-      salaries: toNumber(operatingExpenses.salaries),
-      rent: toNumber(operatingExpenses.rent),
-      advertising: toNumber(operatingExpenses.advertising),
-      transportation: toNumber(operatingExpenses.transportation),
-      utilities: toNumber(operatingExpenses.utilities),
-      other: toNumber(operatingExpenses.other),
-      total: toNumber(operatingExpenses.total),
+      salaries: operatingExpenses?.salaries || 0,
+      rent: operatingExpenses?.rent || 0,
+      advertising: operatingExpenses?.advertising || 0,
+      transportation: operatingExpenses?.transportation || 0,
+      utilities: operatingExpenses?.utilities || 0,
+      other: operatingExpenses?.other || 0,
+      total: operatingExpenses?.total || 0,
     },
     operatingProfit: {
-      amount: toNumber(operatingProfit.amount),
-      margin: toNumber(operatingProfit.margin),
+      amount: operatingProfit?.amount || 0,
+      margin: operatingProfit?.margin || 0,
     },
     netProfit: {
-      amount: toNumber(netProfit.amount),
-      margin: toNumber(netProfit.margin),
+      amount: netProfit?.amount || 0,
+      margin: netProfit?.margin || 0,
     },
   };
 };

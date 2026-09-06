@@ -35,13 +35,14 @@ class RevenueCalculator {
      * @returns {Object} Revenue metrics
      */
     async calculate({ userId, businessId, startDate, endDate, groupBy = null }) {
-        // ✅ PERMANENT FIX: Ensure sales is always an array
+        // ✅ PERMANENT FIX: Ensure sales is always an array + pass businessId
         let sales = [];
         try {
             const result = await this.saleRepository.findByDateRange(
                 userId,
                 startDate,
-                endDate
+                endDate,
+                businessId          // ← critical: was missing
             );
             sales = Array.isArray(result) ? result : [];
         } catch (error) {

@@ -3,6 +3,7 @@
 const { getSessionManager } = require('../sessionManager');
 const UserRepository = require('../../../infrastructure/database/sqlite/repositories/UserRepository');
 const ExpenseRepository = require('../../../infrastructure/database/sqlite/repositories/ExpenseRepository');
+const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository');
 const RecordExpenseUseCase = require('../../../application/useCases/expenses/RecordExpenseUseCase');
 const { getExpenseKeyboard } = require('../keyboards/dashboardKeyboard');
 const logger = require('../../../shared/utils/logger');
@@ -10,7 +11,10 @@ const logger = require('../../../shared/utils/logger');
 const sessionManager = getSessionManager();
 const userRepo = new UserRepository();
 const expenseRepo = new ExpenseRepository();
-const recordExpenseUseCase = new RecordExpenseUseCase(expenseRepo);
+const paymentRepo = new PaymentRepository();
+
+// ✅ paymentRepository is now correctly injected
+const recordExpenseUseCase = new RecordExpenseUseCase(expenseRepo, paymentRepo);
 
 async function expenseHandler(ctx) {
     try {
@@ -24,7 +28,6 @@ async function expenseHandler(ctx) {
         const session = sessionManager.getSession(telegramId);
         const state = session ? session.state : null;
 
-        // ✅ If no state, show the menu (this is the main menu entry)
         if (!state) {
             await showExpenseMenu(ctx, telegramId, user);
             return;
@@ -54,9 +57,6 @@ async function expenseHandler(ctx) {
     }
 }
 
-// =============================================
-// SHOW EXPENSE MENU
-// =============================================
 async function showExpenseMenu(ctx, telegramId, user) {
     const summary = await expenseRepo.getExpenseSummary(user.id);
 
@@ -76,11 +76,7 @@ async function showExpenseMenu(ctx, telegramId, user) {
     });
 }
 
-// =============================================
-// RECORD EXPENSE FLOW - START
-// =============================================
 async function startExpenseFlow(ctx, telegramId) {
-    // ✅ Clear any existing session first
     sessionManager.clearSession(telegramId);
     sessionManager.createSession(telegramId, 'EXPENSE_WAITING_CATEGORY', {});
     await ctx.reply(
@@ -133,7 +129,6 @@ async function handleExpenseDescription(ctx, telegramId, user) {
     const session = sessionManager.getSession(telegramId);
     const description = text.toLowerCase() === 'skip' ? null : text;
 
-    // ✅ Show confirmation
     sessionManager.setData(telegramId, { ...session.data, description, pendingAction: 'record_expense' });
     sessionManager.setState(telegramId, 'EXPENSE_WAITING_CONFIRMATION');
 
@@ -154,6 +149,7 @@ async function handleExpenseConfirmation(ctx, telegramId, user) {
         try {
             await recordExpenseUseCase.execute({
                 userId: user.id,
+                businessId: user.id,
                 category: session.data.category,
                 amount: session.data.amount,
                 description: session.data.description,
@@ -185,9 +181,6 @@ async function handleExpenseConfirmation(ctx, telegramId, user) {
     }
 }
 
-// =============================================
-// VIEW ALL EXPENSES
-// =============================================
 async function listExpenses(ctx) {
     const telegramId = ctx.from.id;
     const user = await userRepo.findByTelegramId(telegramId);
@@ -219,9 +212,6 @@ async function listExpenses(ctx) {
     await ctx.reply(`Select an option below:`, { ...getExpenseKeyboard() });
 }
 
-// =============================================
-// EXPENSE SUMMARY
-// =============================================
 async function expenseSummary(ctx) {
     const telegramId = ctx.from.id;
     const user = await userRepo.findByTelegramId(telegramId);
@@ -243,9 +233,6 @@ async function expenseSummary(ctx) {
     await ctx.reply(`Select an option below:`, { ...getExpenseKeyboard() });
 }
 
-// =============================================
-// TODAY'S EXPENSES
-// =============================================
 async function expenseToday(ctx) {
     const telegramId = ctx.from.id;
     const user = await userRepo.findByTelegramId(telegramId);
