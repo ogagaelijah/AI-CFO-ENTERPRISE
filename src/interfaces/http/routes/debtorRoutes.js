@@ -33,8 +33,10 @@ router.get('/', async (req, res) => {
         const userId = req.user.id;
         const { status, customerType, limit = 50, offset = 0 } = req.query;
 
+        // FIXED: pass userId correctly
         const debtors = await debtorRepo.findByFilters({
-            businessId: userId,
+            userId,
+            businessId: null, // show all for this user for now
             status,
             customerType,
             limit: parseInt(limit),
@@ -123,6 +125,33 @@ router.get('/overdue', async (req, res) => {
 });
 
 // =============================================
+// GET /api/debtors/summary
+// =============================================
+router.get('/summary', async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const summary = await debtorRepo.getSummary(userId);
+        const totalOutstanding = await debtorRepo.getTotalOutstanding(userId);
+        const overdue = await debtorRepo.findOverdue(userId);
+
+        res.json({
+            success: true,
+            data: {
+                ...summary,
+                totalOutstanding,
+                overdueCount: overdue.length,
+            }
+        });
+    } catch (error) {
+        console.error('❌ Error fetching debtor summary:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to fetch debtor summary'
+        });
+    }
+});
+
+// =============================================
 // GET /api/debtors/:id
 // =============================================
 router.get('/:id', async (req, res) => {
@@ -147,7 +176,10 @@ router.get('/:id', async (req, res) => {
         res.json({ success: true, data: debtor });
     } catch (error) {
         console.error('❌ Error fetching debtor:', error);
-        res.status(500).json({ success: false, message: error.message || 'Failed to fetch debtor' });
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to fetch debtor'
+        });
     }
 });
 
@@ -157,6 +189,9 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
     try {
         const userId = req.user.id;
+        // Use businessId if available, otherwise fallback to userId
+        const businessId = req.user.businessId || userId;
+
         const { customerName, totalOwed, dueDate, customerType = 'CUSTOMER', notes = '' } = req.body;
 
         if (!customerName) {
@@ -168,6 +203,7 @@ router.post('/', async (req, res) => {
 
         const debtor = await debtorRepo.create({
             user_id: userId,
+            business_id: businessId,          // ← FIXED: now saves business_id
             customer_name: customerName,
             total_owed: totalOwed,
             balance_remaining: totalOwed,
@@ -184,17 +220,21 @@ router.post('/', async (req, res) => {
         });
     } catch (error) {
         console.error('❌ Error creating debtor:', error);
-        res.status(500).json({ success: false, message: error.message || 'Failed to create debtor' });
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to create debtor'
+        });
     }
 });
 
 // =============================================
-// POST /api/debtors/:id/payment - Record payment (NOW USES USE CASE)
+// POST /api/debtors/:id/payment - Record payment
 // =============================================
 router.post('/:id/payment', async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
+        const businessId = req.user.businessId || userId;
         const { amount, notes = '', paymentMethod = 'CASH' } = req.body;
 
         const debtorId = parseInt(id);
@@ -207,7 +247,7 @@ router.post('/:id/payment', async (req, res) => {
 
         const result = await recordDebtorPaymentUseCase.execute({
             userId,
-            businessId: userId,          // currently userId === businessId in your system
+            businessId,
             debtorId,
             amount,
             paymentDate: new Date(),
@@ -268,31 +308,10 @@ router.delete('/:id', async (req, res) => {
         res.json({ success: true, message: 'Debtor deleted successfully' });
     } catch (error) {
         console.error('❌ Error deleting debtor:', error);
-        res.status(500).json({ success: false, message: error.message || 'Failed to delete debtor' });
-    }
-});
-
-// =============================================
-// GET /api/debtors/summary
-// =============================================
-router.get('/summary', async (req, res) => {
-    try {
-        const userId = req.user.id;
-        const summary = await debtorRepo.getSummary(userId);
-        const totalOutstanding = await debtorRepo.getTotalOutstanding(userId);
-        const overdue = await debtorRepo.findOverdue(userId);
-
-        res.json({
-            success: true,
-            data: {
-                ...summary,
-                totalOutstanding,
-                overdueCount: overdue.length,
-            }
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to delete debtor'
         });
-    } catch (error) {
-        console.error('❌ Error fetching debtor summary:', error);
-        res.status(500).json({ success: false, message: error.message || 'Failed to fetch debtor summary' });
     }
 });
 

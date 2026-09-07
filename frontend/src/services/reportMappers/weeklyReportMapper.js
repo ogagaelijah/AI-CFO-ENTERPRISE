@@ -19,6 +19,8 @@ export const mapWeeklyReport = (backendData) => {
     topProducts = [],
     topCustomers = [],
     inventory = {},
+    debtors = {},
+    creditors = {},
   } = backendData;
 
   return {
@@ -43,6 +45,16 @@ export const mapWeeklyReport = (backendData) => {
       totalValue: toNumber(inventory.totalValue),
       lowStockCount: toNumber(inventory.lowStockCount),
     },
+    debtors: {
+      count: toNumber(debtors.count),
+      totalAmount: toNumber(debtors.totalAmount),
+      top3: Array.isArray(debtors.top3) ? debtors.top3 : [],
+    },
+    creditors: {
+      count: toNumber(creditors.count),
+      totalAmount: toNumber(creditors.totalAmount),
+      top3: Array.isArray(creditors.top3) ? creditors.top3 : [],
+    },
   };
 };
 
@@ -64,5 +76,15 @@ const getEmptyWeeklyReport = () => ({
     totalItems: 0,
     totalValue: 0,
     lowStockCount: 0,
+  },
+  debtors: {
+    count: 0,
+    totalAmount: 0,
+    top3: [],
+  },
+  creditors: {
+    count: 0,
+    totalAmount: 0,
+    top3: [],
   },
 });

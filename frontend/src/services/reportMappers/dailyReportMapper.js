@@ -7,7 +7,7 @@ export const mapDailyReport = (backendData) => {
     return getEmptyDailyReport();
   }
 
-  const { date, today: todayData, comparison, transactions, alerts } = backendData;
+  const { date, today: todayData, comparison, transactions, alerts, debtors, creditors } = backendData;
 
   return {
     date: date || today(),
@@ -47,6 +47,16 @@ export const mapDailyReport = (backendData) => {
       overdueReceivables: false,
       negativeProfit: false,
     },
+    debtors: {
+      count: toNumber(debtors?.count),
+      totalAmount: toNumber(debtors?.totalAmount),
+      top3: Array.isArray(debtors?.top3) ? debtors.top3 : [],
+    },
+    creditors: {
+      count: toNumber(creditors?.count),
+      totalAmount: toNumber(creditors?.totalAmount),
+      top3: Array.isArray(creditors?.top3) ? creditors.top3 : [],
+    },
   };
 };
 
@@ -78,5 +88,15 @@ const getEmptyDailyReport = () => ({
     lowStock: false,
     overdueReceivables: false,
     negativeProfit: false,
+  },
+  debtors: {
+    count: 0,
+    totalAmount: 0,
+    top3: [],
+  },
+  creditors: {
+    count: 0,
+    totalAmount: 0,
+    top3: [],
   },
 });

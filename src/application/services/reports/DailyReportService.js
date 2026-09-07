@@ -172,6 +172,34 @@ class DailyReportService {
         });
 
         // =============================================
+        // DEBTORS & CREDITORS DATA
+        // =============================================
+
+        const activeDebtors = await this.debtorRepository.findActive(userId, businessId);
+        const debtorSummary = await this.debtorRepository.getSummary(userId, businessId);
+
+        const activeCreditors = await this.creditorRepository.findActive(userId, businessId);
+        const creditorSummary = await this.creditorRepository.getSummary(userId, businessId);
+
+        const debtorsData = {
+            count: debtorSummary.active_count || 0,
+            totalAmount: debtorSummary.total_outstanding || 0,
+            top3: activeDebtors.slice(0, 3).map(d => ({
+                name: d.customer_name || 'Unknown',
+                amount: d.balance_remaining || 0
+            }))
+        };
+
+        const creditorsData = {
+            count: creditorSummary.active_count || 0,
+            totalAmount: creditorSummary.total_outstanding || 0,
+            top3: activeCreditors.slice(0, 3).map(c => ({
+                name: c.supplier_name || 'Unknown',
+                amount: c.balance_remaining || 0
+            }))
+        };
+
+        // =============================================
         // YESTERDAY'S DATA
         // =============================================
 
@@ -291,7 +319,6 @@ class DailyReportService {
             date: dateStr,
             previousDate: prevDateStr,
             today: {
-                // ✅ Now includes Other Income (consistent with Weekly)
                 revenue: todayCombinedRevenue,
                 cogs: todayCogs.totalCogs || 0,
                 grossProfit: todayProfit.grossProfit || 0,
@@ -339,6 +366,8 @@ class DailyReportService {
                 negativeProfit: (todayProfit.netProfit || 0) < 0,
             },
             transactions: keyTransactions,
+            debtors: debtorsData,
+            creditors: creditorsData,
         };
     }
 }

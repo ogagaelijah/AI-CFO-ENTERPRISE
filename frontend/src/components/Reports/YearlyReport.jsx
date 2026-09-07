@@ -20,6 +20,10 @@ const YearlyReport = ({ data, formatCurrency, formatPercentage }) => {
     majorOpportunities,
     strategicInsights,
     inventory,
+    topProducts,
+    topCustomers,
+    debtors,
+    creditors,
   } = data;
 
   // Safeguard for missing data
@@ -51,6 +55,9 @@ const YearlyReport = ({ data, formatCurrency, formatPercentage }) => {
     totalValue: 0, 
     lowStockCount: 0 
   };
+
+  const safeDebtors = debtors || { count: 0, totalAmount: 0, top3: [] };
+  const safeCreditors = creditors || { count: 0, totalAmount: 0, top3: [] };
 
   const yearDisplay = year || new Date().getFullYear();
   const hasPriorYearData = safeYoY.hasPriorYearData;
@@ -200,6 +207,103 @@ const YearlyReport = ({ data, formatCurrency, formatPercentage }) => {
               <p className="text-xl font-bold text-yellow-600 dark:text-yellow-400">
                 {safeInventory.lowStockCount}
               </p>
+            </div>
+          )}
+        </div>
+
+        {/* Debtors Section */}
+        {(safeDebtors.count > 0 || safeDebtors.totalAmount > 0) && (
+          <div className="mt-4">
+            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              📋 Debtors
+            </h4>
+            <div className="grid grid-cols-2 gap-4 mb-2">
+              <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-3">
+                <p className="text-xs text-gray-500 dark:text-gray-400">Total Debtors</p>
+                <p className="text-xl font-bold text-purple-600 dark:text-purple-400">
+                  {safeDebtors.count}
+                </p>
+              </div>
+              <div className="bg-rose-50 dark:bg-rose-900/20 rounded-lg p-3">
+                <p className="text-xs text-gray-500 dark:text-gray-400">Total Amount Owed</p>
+                <p className="text-xl font-bold text-rose-600 dark:text-rose-400">
+                  {formatCurrency(safeDebtors.totalAmount)}
+                </p>
+              </div>
+            </div>
+            {safeDebtors.top3 && safeDebtors.top3.length > 0 && (
+              <div className="space-y-1">
+                {safeDebtors.top3.map((d, idx) => (
+                  <div key={idx} className="flex justify-between text-sm border-b border-gray-100 dark:border-gray-700 py-1">
+                    <span className="text-gray-600 dark:text-gray-400">{d.name}</span>
+                    <span className="font-medium text-gray-900 dark:text-white">{formatCurrency(d.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Creditors Section */}
+        {(safeCreditors.count > 0 || safeCreditors.totalAmount > 0) && (
+          <div className="mt-4">
+            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              📋 Creditors
+            </h4>
+            <div className="grid grid-cols-2 gap-4 mb-2">
+              <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-3">
+                <p className="text-xs text-gray-500 dark:text-gray-400">Total Creditors</p>
+                <p className="text-xl font-bold text-indigo-600 dark:text-indigo-400">
+                  {safeCreditors.count}
+                </p>
+              </div>
+              <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-3">
+                <p className="text-xs text-gray-500 dark:text-gray-400">Total Amount Owed</p>
+                <p className="text-xl font-bold text-orange-600 dark:text-orange-400">
+                  {formatCurrency(safeCreditors.totalAmount)}
+                </p>
+              </div>
+            </div>
+            {safeCreditors.top3 && safeCreditors.top3.length > 0 && (
+              <div className="space-y-1">
+                {safeCreditors.top3.map((c, idx) => (
+                  <div key={idx} className="flex justify-between text-sm border-b border-gray-100 dark:border-gray-700 py-1">
+                    <span className="text-gray-600 dark:text-gray-400">{c.name}</span>
+                    <span className="font-medium text-gray-900 dark:text-white">{formatCurrency(c.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Top 5 Products & Customers */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+          {topProducts && topProducts.length > 0 && (
+            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+              <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">🏆 Top 5 Products</h4>
+              <div className="space-y-1">
+                {topProducts.slice(0, 5).map((p, idx) => (
+                  <div key={idx} className="flex justify-between text-sm border-b border-gray-200 dark:border-gray-600 py-1">
+                    <span className="text-gray-600 dark:text-gray-400">{p.name}</span>
+                    <span className="font-medium text-gray-900 dark:text-white">{formatCurrency(p.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {topCustomers && topCustomers.length > 0 && (
+            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+              <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">👥 Top 5 Customers</h4>
+              <div className="space-y-1">
+                {topCustomers.slice(0, 5).map((c, idx) => (
+                  <div key={idx} className="flex justify-between text-sm border-b border-gray-200 dark:border-gray-600 py-1">
+                    <span className="text-gray-600 dark:text-gray-400">{c.name}</span>
+                    <span className="font-medium text-gray-900 dark:text-white">{formatCurrency(c.amount)}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

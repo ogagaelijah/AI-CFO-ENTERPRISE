@@ -52,7 +52,7 @@ class RecordDebtorPaymentUseCase {
             throw new Error(`Payment amount (${amount}) exceeds remaining balance (${balanceRemaining})`);
         }
 
-        // 1. Record payment (this is the critical part)
+        // 1. Record payment
         const Payment = require('../../../domain/entities/Payment');
         const payment = new Payment({
             userId,
@@ -88,34 +88,29 @@ class RecordDebtorPaymentUseCase {
             }
         } catch (txError) {
             console.warn('⚠️ Could not create transaction record (table may be missing):', txError.message);
-            // Do NOT throw – payment was already recorded successfully
         }
 
-        // 3. Update debtor
-        if (typeof debtor.receivePayment === 'function') {
-            debtor.receivePayment(amount);
-            await this.debtorRepository.update(debtor.id, debtor);
-        } else {
-            const newBalance = balanceRemaining - amount;
-            await this.debtorRepository.update(debtorId, {
-                balance_remaining: newBalance,
-                amount_paid: (debtor.amount_paid || 0) + amount,
-                status: newBalance <= 0 ? 'PAID' : 'ACTIVE',
-            });
-        }
+        // 3. Update debtor (now includes last_payment_date)
+        const newBalance = balanceRemaining - amount;
+        const lastPaymentDate = paymentDate instanceof Date
+            ? paymentDate.toISOString()
+            : paymentDate;
 
-        const remaining = typeof debtor.balanceRemaining !== 'undefined'
-            ? debtor.balanceRemaining
-            : (balanceRemaining - amount);
+        await this.debtorRepository.update(debtorId, {
+            balance_remaining: newBalance,
+            amount_paid: (debtor.amount_paid || 0) + amount,
+            status: newBalance <= 0 ? 'PAID' : 'ACTIVE',
+            last_payment_date: lastPaymentDate,
+        });
 
         return {
             success: true,
-            debtor: typeof debtor.toJSON === 'function' ? debtor.toJSON() : debtor,
+            debtor: await this.debtorRepository.findById(debtorId),
             payment: savedPayment.toJSON ? savedPayment.toJSON() : savedPayment,
-            remainingBalance: remaining,
-            message: remaining <= 0
+            remainingBalance: newBalance,
+            message: newBalance <= 0
                 ? 'Debtor fully paid'
-                : `Payment recorded. Remaining balance: ${remaining}`,
+                : `Payment recorded. Remaining balance: ${newBalance}`,
         };
     }
 }

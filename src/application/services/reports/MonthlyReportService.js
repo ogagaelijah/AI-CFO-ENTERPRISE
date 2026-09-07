@@ -188,6 +188,34 @@ class MonthlyReportService {
         ]);
 
         // =============================================
+        // DEBTORS & CREDITORS DATA
+        // =============================================
+
+        const activeDebtors = await this.debtorRepository.findActive(userId, businessId);
+        const debtorSummary = await this.debtorRepository.getSummary(userId, businessId);
+
+        const activeCreditors = await this.creditorRepository.findActive(userId, businessId);
+        const creditorSummary = await this.creditorRepository.getSummary(userId, businessId);
+
+        const debtorsData = {
+            count: debtorSummary.active_count || 0,
+            totalAmount: debtorSummary.total_outstanding || 0,
+            top3: activeDebtors.slice(0, 3).map(d => ({
+                name: d.customer_name || 'Unknown',
+                amount: d.balance_remaining || 0
+            }))
+        };
+
+        const creditorsData = {
+            count: creditorSummary.active_count || 0,
+            totalAmount: creditorSummary.total_outstanding || 0,
+            top3: activeCreditors.slice(0, 3).map(c => ({
+                name: c.supplier_name || 'Unknown',
+                amount: c.balance_remaining || 0
+            }))
+        };
+
+        // =============================================
         // PREVIOUS MONTH DATA
         // =============================================
 
@@ -472,7 +500,6 @@ class MonthlyReportService {
                 start: monthStartStr,
                 end: monthEndStr,
             },
-            // Flat fields for easy frontend consumption
             revenue: currentCombinedRevenue,
             grossProfit: this._round2(grossProfit),
             grossMargin: this._round2(grossMargin),
@@ -532,6 +559,8 @@ class MonthlyReportService {
             topProducts,
             topCustomers,
             topExpenses,
+            debtors: debtorsData,
+            creditors: creditorsData,
         };
     }
 }

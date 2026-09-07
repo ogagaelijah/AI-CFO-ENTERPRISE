@@ -1,3 +1,5 @@
+// src/application/services/reports/WeeklyReportService.js
+
 const RevenueCalculator = require('./calculators/RevenueCalculator');
 const CogsCalculator = require('./calculators/CogsCalculator');
 const ProfitCalculator = require('./calculators/ProfitCalculator');
@@ -164,6 +166,34 @@ class WeeklyReportService {
         ]);
 
         // =============================================
+        // DEBTORS & CREDITORS DATA
+        // =============================================
+
+        const activeDebtors = await this.debtorRepository.findActive(userId, businessId);
+        const debtorSummary = await this.debtorRepository.getSummary(userId, businessId);
+
+        const activeCreditors = await this.creditorRepository.findActive(userId, businessId);
+        const creditorSummary = await this.creditorRepository.getSummary(userId, businessId);
+
+        const debtorsData = {
+            count: debtorSummary.active_count || 0,
+            totalAmount: debtorSummary.total_outstanding || 0,
+            top3: activeDebtors.slice(0, 3).map(d => ({
+                name: d.customer_name || 'Unknown',
+                amount: d.balance_remaining || 0
+            }))
+        };
+
+        const creditorsData = {
+            count: creditorSummary.active_count || 0,
+            totalAmount: creditorSummary.total_outstanding || 0,
+            top3: activeCreditors.slice(0, 3).map(c => ({
+                name: c.supplier_name || 'Unknown',
+                amount: c.balance_remaining || 0
+            }))
+        };
+
+        // =============================================
         // 2. HISTORICAL COMPARATIVE DATA WINDOW (PREVIOUS WEEK)
         // =============================================
         const [prevRevenue, prevCogs] = await Promise.all([
@@ -308,7 +338,9 @@ class WeeklyReportService {
                 lowStockItems: currentInventory.lowStockItems || [],
             },
             transactions: sales,
-            keyRisks
+            keyRisks,
+            debtors: debtorsData,
+            creditors: creditorsData,
         };
     }
 }

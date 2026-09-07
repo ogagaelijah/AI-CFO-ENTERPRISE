@@ -178,6 +178,64 @@ class YearlyReportService {
         ]);
 
         // =============================================
+        // DEBTORS & CREDITORS DATA
+        // =============================================
+
+        const activeDebtors = await this.debtorRepository.findActive(userId, businessId);
+        const debtorSummary = await this.debtorRepository.getSummary(userId, businessId);
+
+        const activeCreditors = await this.creditorRepository.findActive(userId, businessId);
+        const creditorSummary = await this.creditorRepository.getSummary(userId, businessId);
+
+        const debtorsData = {
+            count: debtorSummary.active_count || 0,
+            totalAmount: debtorSummary.total_outstanding || 0,
+            top3: activeDebtors.slice(0, 3).map(d => ({
+                name: d.customer_name || 'Unknown',
+                amount: d.balance_remaining || 0
+            }))
+        };
+
+        const creditorsData = {
+            count: creditorSummary.active_count || 0,
+            totalAmount: creditorSummary.total_outstanding || 0,
+            top3: activeCreditors.slice(0, 3).map(c => ({
+                name: c.supplier_name || 'Unknown',
+                amount: c.balance_remaining || 0
+            }))
+        };
+
+        // =============================================
+        // TOP PRODUCTS & CUSTOMERS
+        // =============================================
+
+        const currentSales = this._safeArray(currentRevenue.sales);
+
+        const productSalesMap = {};
+        for (const sale of currentSales) {
+            const key = sale.item_name || 'Unknown';
+            if (!productSalesMap[key]) productSalesMap[key] = 0;
+            productSalesMap[key] += this._safeNumber(sale.total_price);
+        }
+
+        const topProducts = Object.entries(productSalesMap)
+            .map(([name, amount]) => ({ name, amount }))
+            .sort((a, b) => b.amount - a.amount)
+            .slice(0, 5);
+
+        const customerSalesMap = {};
+        for (const sale of currentSales) {
+            const key = sale.customer_name || 'Unknown';
+            if (!customerSalesMap[key]) customerSalesMap[key] = 0;
+            customerSalesMap[key] += this._safeNumber(sale.total_price);
+        }
+
+        const topCustomers = Object.entries(customerSalesMap)
+            .map(([name, amount]) => ({ name, amount }))
+            .sort((a, b) => b.amount - a.amount)
+            .slice(0, 5);
+
+        // =============================================
         // PREVIOUS YEAR DATA (for YoY comparison)
         // =============================================
 
@@ -262,12 +320,6 @@ class YearlyReportService {
             profitChange = profitComparison.percentageChange || 0;
             profitAbsoluteChange = profitComparison.absoluteChange || 0;
         }
-
-        // =============================================
-        // CURRENT YEAR SALES FOR ANALYSIS
-        // =============================================
-
-        const currentSales = this._safeArray(currentRevenue.sales);
 
         // =============================================
         // PROFESSIONAL STRATEGIC INSIGHTS
@@ -422,6 +474,10 @@ class YearlyReportService {
             majorRisks,
             majorOpportunities,
             strategicInsights,
+            topProducts,
+            topCustomers,
+            debtors: debtorsData,
+            creditors: creditorsData,
         };
     }
 }

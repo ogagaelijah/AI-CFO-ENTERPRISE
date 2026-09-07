@@ -1,6 +1,6 @@
 // frontend/src/services/reportMappers/yearlyMapper.js
 
-import { today, isValidData } from './utils';
+import { today, isValidData, toNumber } from './utils';
 
 export const mapYearlyReport = (backendData) => {
   if (!isValidData(backendData)) {
@@ -17,6 +17,10 @@ export const mapYearlyReport = (backendData) => {
     majorOpportunities,
     strategicInsights,
     inventory,
+    topProducts,
+    topCustomers,
+    debtors,
+    creditors,
   } = backendData;
 
   // Safely extract YoY data
@@ -59,6 +63,18 @@ export const mapYearlyReport = (backendData) => {
     majorRisks: Array.isArray(majorRisks) ? majorRisks : [],
     majorOpportunities: Array.isArray(majorOpportunities) ? majorOpportunities : [],
     strategicInsights: Array.isArray(strategicInsights) ? strategicInsights : [],
+    topProducts: Array.isArray(topProducts) ? topProducts : [],
+    topCustomers: Array.isArray(topCustomers) ? topCustomers : [],
+    debtors: {
+      count: toNumber(debtors?.count),
+      totalAmount: toNumber(debtors?.totalAmount),
+      top3: Array.isArray(debtors?.top3) ? debtors.top3 : [],
+    },
+    creditors: {
+      count: toNumber(creditors?.count),
+      totalAmount: toNumber(creditors?.totalAmount),
+      top3: Array.isArray(creditors?.top3) ? creditors.top3 : [],
+    },
   };
 };
 
@@ -96,4 +112,16 @@ const getEmptyYearlyReport = () => ({
   majorRisks: [],
   majorOpportunities: [],
   strategicInsights: [],
+  topProducts: [],
+  topCustomers: [],
+  debtors: {
+    count: 0,
+    totalAmount: 0,
+    top3: [],
+  },
+  creditors: {
+    count: 0,
+    totalAmount: 0,
+    top3: [],
+  },
 });

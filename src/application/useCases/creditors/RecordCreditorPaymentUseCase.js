@@ -54,17 +54,20 @@ class RecordCreditorPaymentUseCase {
         const newBalance = balanceRemaining - amount;
         const newAmountPaid = (creditor.amount_paid || creditor.amountPaid || 0) + amount;
 
+        // Full ISO timestamp (same as debtor)
+        const lastPaymentDate = paymentDate instanceof Date
+            ? paymentDate.toISOString()
+            : paymentDate;
+
         // 1. Update creditor
         const updated = await this.creditorRepository.update(creditorId, {
             balance_remaining: newBalance,
             amount_paid: newAmountPaid,
             status: newBalance <= 0 ? 'PAID' : 'ACTIVE',
-            last_payment_date: paymentDate instanceof Date
-                ? paymentDate.toISOString().split('T')[0]
-                : paymentDate,
+            last_payment_date: lastPaymentDate,
         });
 
-        // 2. Create payment record (critical)
+        // 2. Create payment record
         const Payment = require('../../../domain/entities/Payment');
         const payment = new Payment({
             userId,
@@ -100,7 +103,6 @@ class RecordCreditorPaymentUseCase {
             }
         } catch (txError) {
             console.warn('⚠️ Could not create transaction record (table may be missing):', txError.message);
-            // Do NOT throw – payment was already recorded successfully
         }
 
         return {
@@ -111,6 +113,7 @@ class RecordCreditorPaymentUseCase {
                 balance_remaining: updated.balance_remaining ?? updated.balanceRemaining,
                 amount_paid: updated.amount_paid ?? updated.amountPaid,
                 status: updated.status,
+                last_payment_date: updated.last_payment_date,
             },
             payment: savedPayment.toJSON ? savedPayment.toJSON() : savedPayment,
             remainingBalance: newBalance,

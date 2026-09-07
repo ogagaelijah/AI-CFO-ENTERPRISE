@@ -49,14 +49,24 @@ class CreditorRepository extends BaseRepository {
         ).all(businessId);
     }
 
-    findActive(userId) {
-        return this.db.prepare(
-            `SELECT * FROM creditors 
-             WHERE user_id = ? 
-             AND balance_remaining > 0 
-             AND status != 'PAID'
-             ORDER BY balance_remaining DESC`
-        ).all(userId);
+    findActive(userId, businessId = null) {
+        let sql = `SELECT * FROM creditors 
+                   WHERE user_id = ? 
+                   AND balance_remaining > 0 
+                   AND status != 'PAID'
+                   ORDER BY balance_remaining DESC`;
+        const params = [userId];
+        
+        if (businessId) {
+            sql = `SELECT * FROM creditors 
+                   WHERE user_id = ? AND business_id = ?
+                   AND balance_remaining > 0 
+                   AND status != 'PAID'
+                   ORDER BY balance_remaining DESC`;
+            params.push(businessId);
+        }
+        
+        return this.db.prepare(sql).all(...params);
     }
 
     findActiveByUser(userId) {
@@ -173,19 +183,34 @@ class CreditorRepository extends BaseRepository {
         return this.recordPayment(creditorId, amountPaid);
     }
 
-    getSummary(userId) {
-        return this.db.prepare(`
-            SELECT 
-                COUNT(*) as total_creditors,
-                SUM(total_owed) as total_owed,
-                SUM(amount_paid) as total_paid,
-                SUM(CASE WHEN balance_remaining > 0 AND status != 'PAID' THEN balance_remaining ELSE 0 END) as total_outstanding,
-                COUNT(CASE WHEN balance_remaining > 0 AND status != 'PAID' THEN 1 END) as active_count,
-                COUNT(CASE WHEN balance_remaining <= 0 OR status = 'PAID' THEN 1 END) as paid_count,
-                COUNT(CASE WHEN status = 'OVERDUE' AND balance_remaining > 0 THEN 1 END) as overdue_count
-            FROM creditors 
-            WHERE user_id = ?
-        `).get(userId);
+    getSummary(userId, businessId = null) {
+        let sql = `SELECT 
+                    COUNT(*) as total_creditors,
+                    SUM(total_owed) as total_owed,
+                    SUM(amount_paid) as total_paid,
+                    SUM(CASE WHEN balance_remaining > 0 AND status != 'PAID' THEN balance_remaining ELSE 0 END) as total_outstanding,
+                    COUNT(CASE WHEN balance_remaining > 0 AND status != 'PAID' THEN 1 END) as active_count,
+                    COUNT(CASE WHEN balance_remaining <= 0 OR status = 'PAID' THEN 1 END) as paid_count,
+                    COUNT(CASE WHEN status = 'OVERDUE' AND balance_remaining > 0 THEN 1 END) as overdue_count
+                   FROM creditors 
+                   WHERE user_id = ?`;
+        const params = [userId];
+        
+        if (businessId) {
+            sql += ` AND business_id = ?`;
+            params.push(businessId);
+        }
+        
+        const result = this.db.prepare(sql).get(...params);
+        return {
+            total_creditors: result?.total_creditors || 0,
+            total_owed: result?.total_owed || 0,
+            total_paid: result?.total_paid || 0,
+            total_outstanding: result?.total_outstanding || 0,
+            active_count: result?.active_count || 0,
+            paid_count: result?.paid_count || 0,
+            overdue_count: result?.overdue_count || 0,
+        };
     }
 
     delete(id) {

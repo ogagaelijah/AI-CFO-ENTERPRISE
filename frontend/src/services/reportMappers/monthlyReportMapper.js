@@ -1,6 +1,6 @@
 // frontend/src/services/reportMappers/monthlyMapper.js
 
-import { today, isValidData } from './utils';
+import { today, isValidData, toNumber } from './utils';
 
 export const mapMonthlyReport = (backendData) => {
   if (!isValidData(backendData)) {
@@ -25,6 +25,8 @@ export const mapMonthlyReport = (backendData) => {
     topProducts,
     topCustomers,
     inventory,
+    debtors,
+    creditors,
   } = backendData;
 
   return {
@@ -63,6 +65,16 @@ export const mapMonthlyReport = (backendData) => {
     recommendations: Array.isArray(recommendations) ? recommendations : [],
     topProducts: Array.isArray(topProducts) ? topProducts : [],
     topCustomers: Array.isArray(topCustomers) ? topCustomers : [],
+    debtors: {
+      count: toNumber(debtors?.count),
+      totalAmount: toNumber(debtors?.totalAmount),
+      top3: Array.isArray(debtors?.top3) ? debtors.top3 : [],
+    },
+    creditors: {
+      count: toNumber(creditors?.count),
+      totalAmount: toNumber(creditors?.totalAmount),
+      top3: Array.isArray(creditors?.top3) ? creditors.top3 : [],
+    },
   };
 };
 
@@ -99,4 +111,14 @@ const getEmptyMonthlyReport = () => ({
   recommendations: [],
   topProducts: [],
   topCustomers: [],
+  debtors: {
+    count: 0,
+    totalAmount: 0,
+    top3: [],
+  },
+  creditors: {
+    count: 0,
+    totalAmount: 0,
+    top3: [],
+  },
 });
