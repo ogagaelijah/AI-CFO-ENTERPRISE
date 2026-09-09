@@ -1,6 +1,6 @@
 /**
  * Report Engine Adapter - Investor Grade Production Configuration
- * Version: 1.5.0 (Production)
+ * Version: 1.7.0 (Production) - Fixed Cash Flow extraction for CashFlowService
  *
  * Correctly maps the real nested shapes returned by:
  * - CashFlowService
@@ -148,7 +148,7 @@ class ReportEngineAdapter {
 
     return {
       source: 'ReportEngineAdapter',
-      version: '1.5.0',
+      version: '1.7.0',
       generatedAt: new Date().toISOString(),
       period,
       periodType,
@@ -277,41 +277,66 @@ class ReportEngineAdapter {
   }
 
   /**
-   * Matches the exact shape returned by your CashFlowService
+   * FIXED: Matches the exact shape returned by CashFlowService
+   * CashFlowService returns:
+   *   {
+   *     netChangeInCash: number,
+   *     summary: { netChange: number, closingCash: number },
+   *     operatingActivities: { netOperatingCash: number },
+   *     closingCash: number
+   *   }
    */
   _normalizeCashFlow(cf, monthly = null, balanceSheet = null) {
     if (!cf) {
       return { closingCash: 0, netChange: 0, openingCash: 0 };
     }
 
-    // Direct top-level fields from the raw object we just logged
+    // Log the actual structure for debugging
+    console.log('🔍 [ReportEngineAdapter] CashFlowService response structure:', {
+      hasNetChangeInCash: cf.netChangeInCash !== undefined,
+      hasSummary: !!cf.summary,
+      hasOperatingActivities: !!cf.operatingActivities,
+      hasClosingCash: cf.closingCash !== undefined,
+      keys: Object.keys(cf),
+    });
+
+    // Extract net change from CashFlowService
     let netChange = this._safeNumber(
       cf.netChangeInCash ??
       cf.summary?.netChange ??
       cf.operatingActivities?.netOperatingCash ??
+      cf.netChange ??
       0
     );
 
+    // Extract closing cash
     let closingCash = this._safeNumber(
       cf.closingCash ??
       cf.summary?.closingCash ??
       0
     );
 
+    // Extract opening cash
     let openingCash = this._safeNumber(
       cf.openingCash ??
       cf.summary?.openingCash ??
       0
     );
 
-    // Fallback from Balance Sheet cash (if Cash Flow service returns 0)
-    if (closingCash === 0 && balanceSheet) {
-      closingCash = this._safeNumber(
-        balanceSheet.assets?.currentAssets?.cash ??
-        balanceSheet.assets?.cash ??
-        0
-      );
+    // If we have netChange but no closingCash, use it
+    if (netChange !== 0 && closingCash === 0) {
+      if (openingCash !== 0) {
+        closingCash = openingCash + netChange;
+      } else {
+        closingCash = netChange;
+      }
     }
+
+    console.log('📊 [ReportEngineAdapter] Cash Flow extracted:', {
+      netChange,
+      closingCash,
+      openingCash,
+    });
 
     return {
       closingCash,

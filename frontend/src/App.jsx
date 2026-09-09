@@ -22,6 +22,7 @@ import Creditors from './pages/Creditors';
 import Suppliers from './pages/Suppliers';
 import Customers from './pages/Customers';
 import Analytics from './pages/Analytics';
+import Forecast from './pages/Forecast';          // ← ADDED
 import Risk from './pages/Risk';
 import Decisions from './pages/Decisions';
 
@@ -147,6 +148,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <Analytics />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/forecast"                               // ← ADDED
+              element={
+                <ProtectedRoute>
+                  <Forecast />
                 </ProtectedRoute>
               }
             />

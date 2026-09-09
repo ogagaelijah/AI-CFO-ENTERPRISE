@@ -32,6 +32,7 @@ const creditorRoutes = require('./routes/creditorRoutes');
 const supplierRoutes = require('./routes/supplierRoutes');
 const customerRoutes = require('./routes/customerRoutes');
 const analyticsRoutes = require('./routes/analyticsRoutes');
+const forecastRoutes = require('./routes/forecastRoutes');   // ← ADDED
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -49,6 +50,7 @@ app.use('/api/creditors', creditorRoutes);
 app.use('/api/suppliers', supplierRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/forecast', forecastRoutes);                   // ← ADDED
 
 // Health check
 app.get('/api/health', (req, res) => {
