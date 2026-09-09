@@ -1,45 +1,99 @@
 // frontend/src/pages/Risk.jsx
-import { useState, useEffect } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { AlertTriangle, Shield, TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
+// SSOT v2.0.0-prod
 
-const Risk = () => {
-  const { user } = useAuth();
+import React, { useState, useEffect, useCallback } from 'react';
+import riskService from '../services/risk/riskService';
+
+import RiskHeader from '../components/risk/RiskHeader';
+import RiskSummaryCards from '../components/risk/RiskSummaryCards';
+import RiskDomainGrid from '../components/risk/RiskDomainGrid';
+import RiskRecommendations from '../components/risk/RiskRecommendations';
+import RiskProjectedValues from '../components/risk/RiskProjectedValues';
+import RiskLoading from '../components/risk/RiskLoading';
+import RiskError from '../components/risk/RiskError';
+
+const DEFAULT_HORIZON = '30D';
+
+export default function RiskPage() {
+  const [horizon, setHorizon] = useState(DEFAULT_HORIZON);
+  const [horizons, setHorizons] = useState([]);
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  useEffect(() => {
-    setTimeout(() => setLoading(false), 500);
+  const loadHorizons = useCallback(async () => {
+    try {
+      const list = await riskService.getHorizons();
+      setHorizons(list);
+    } catch (err) {
+      console.warn('Failed to load horizons', err);
+    }
   }, []);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading risk dashboard...</p>
-        </div>
-      </div>
-    );
+  const loadRisk = useCallback(async (selectedHorizon = horizon) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await riskService.assess({ horizon: selectedHorizon });
+      setData(result);
+    } catch (err) {
+      setError(err.message || 'Failed to load risk assessment');
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [horizon]);
+
+  useEffect(() => {
+    loadHorizons();
+  }, [loadHorizons]);
+
+  useEffect(() => {
+    loadRisk(horizon);
+  }, [horizon]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleHorizonChange = (newHorizon) => {
+    setHorizon(newHorizon);
+  };
+
+  const handleRefresh = () => {
+    loadRisk(horizon);
+  };
+
+  if (loading && !data) {
+    return <RiskLoading />;
+  }
+
+  if (error && !data) {
+    return <RiskError message={error} onRetry={handleRefresh} />;
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Risk Dashboard</h1>
-      </div>
+    <div className="risk-page p-4 md:p-6 max-w-7xl mx-auto bg-gray-950 text-gray-100 min-h-screen">
+      <RiskHeader
+        horizon={horizon}
+        horizons={horizons}
+        onHorizonChange={handleHorizonChange}
+        onRefresh={handleRefresh}
+        loading={loading}
+        generatedAt={data?.generatedAt}
+      />
 
-      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-8 text-center">
-        <Shield className="w-16 h-16 text-orange-500 dark:text-orange-400 mx-auto mb-4" />
-        <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Risk Assessment</h2>
-        <p className="text-gray-600 dark:text-gray-400 max-w-md mx-auto">
-          Revenue risk, profitability risk, cash flow risk, expense risk, receivables risk, payables risk, and inventory risk will be displayed here.
-        </p>
-        <p className="text-sm text-gray-500 dark:text-gray-500 mt-4">
-          🚧 Coming soon — Integration in progress
-        </p>
-      </div>
+      {data && (
+        <>
+          <RiskSummaryCards summary={data.summary} executive={data.executiveSummary} />
+
+          <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2">
+              <RiskDomainGrid risks={data.risks} />
+            </div>
+            <div className="space-y-6">
+              <RiskProjectedValues projected={data.projected} />
+              <RiskRecommendations recommendations={data.recommendations} />
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
-};
-
-export default Risk;
+}

@@ -1,0 +1,123 @@
+// src/application/services/risk/integration/RiskDataProvider.js
+// SSOT v1.0.0-prod – pure consumer of Forecast
+
+'use strict';
+
+class RiskDataProvider {
+  constructor({ forecastProvider, logger = console } = {}) {
+    this.forecastProvider = forecastProvider; // must expose .generate(...)
+    this.logger = logger;
+  }
+
+  /**
+   * Get a risk-ready package derived entirely from Forecast.
+   * No independent calculation.
+   */
+  async getRiskPackage({
+    userId,
+    businessId,
+    horizon = '30D',
+    whatIfChanges = null,
+    now = new Date(),
+    traceId = null,
+  } = {}) {
+    const empty = this._emptyPackage();
+
+    try {
+      if (!this.forecastProvider?.generate) {
+        this.logger.warn('[RiskDataProvider] ForecastProvider missing');
+        return empty;
+      }
+
+      const forecast = await this.forecastProvider.generate({
+        userId,
+        businessId,
+        horizon,
+        whatIfChanges,
+        now,
+        traceId,
+      });
+
+      if (!forecast || forecast.error) {
+        this.logger.warn('[RiskDataProvider] Forecast returned error or empty', {
+          error: forecast?.error,
+        });
+        return empty;
+      }
+
+      return this._mapFromForecast(forecast, empty);
+    } catch (err) {
+      this.logger.error('[RiskDataProvider] Failed', { error: err.message });
+      return empty;
+    }
+  }
+
+  _mapFromForecast(forecast, empty) {
+    const base = forecast.baseForecast || {};
+    const risksFromForecast = forecast.risks || {};
+    const summary = forecast.summary || {};
+    const meta = forecast.metadata || {};
+
+    // Extract only already-projected values — never re-project
+    const projected = {
+      revenue: base.revenue?.forecast ?? 0,
+      cogs: base.cogs?.forecast ?? 0,
+      expenses: base.expenses?.forecast ?? 0,
+      profit: base.profit?.forecast ?? 0,          // already derived in Forecast
+      cashFlow: base.cashFlow?.forecast ?? 0,
+      receivables: base.receivables?.forecast ?? 0,
+      payables: base.payables?.forecast ?? 0,
+      inventory: base.inventory?.forecast ?? 0,
+      demand: base.demand?.forecast ?? 0,
+    };
+
+    const confidence = {
+      revenue: base.revenue?.confidence?.score ?? 0,
+      profit: base.profit?.confidence?.score ?? 0,
+      cashFlow: base.cashFlow?.confidence?.score ?? 0,
+      inventory: base.inventory?.confidence?.score ?? 0,
+    };
+
+    return {
+      ...empty,
+      generatedAt: forecast.generatedAt,
+      horizon: forecast.horizon,
+      period: forecast.period,
+      projected,                    // already calculated by Forecast
+      confidence,
+      forecastRisks: risksFromForecast,  // risks already detected by ForecastRiskDetector
+      forecastSummary: summary,
+      scenarios: forecast.scenarios || null,
+      whatIf: forecast.whatIf || null,
+      sourceMetadata: {
+        forecastVersion: meta.orchestratorVersion,
+        traceId: meta.traceId,
+        durationMs: meta.durationMs,
+        warnings: meta.warnings,
+      },
+      available: true,
+    };
+  }
+
+  _emptyPackage() {
+    return {
+      generatedAt: new Date().toISOString(),
+      horizon: null,
+      period: null,
+      projected: {
+        revenue: 0, cogs: 0, expenses: 0, profit: 0,
+        cashFlow: 0, receivables: 0, payables: 0,
+        inventory: 0, demand: 0,
+      },
+      confidence: {},
+      forecastRisks: { risks: [], overallSeverity: 'UNKNOWN' },
+      forecastSummary: {},
+      scenarios: null,
+      whatIf: null,
+      sourceMetadata: {},
+      available: false,
+    };
+  }
+}
+
+module.exports = RiskDataProvider;
