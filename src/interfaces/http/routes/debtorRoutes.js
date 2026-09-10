@@ -8,6 +8,7 @@ const TransactionRepository = require('../../../infrastructure/database/sqlite/r
 const GetDebtorsUseCase = require('../../../application/useCases/debtors/GetDebtorsUseCase');
 const RecordDebtorPaymentUseCase = require('../../../application/useCases/debtors/RecordDebtorPaymentUseCase');
 const { authMiddleware } = require('../middleware/authMiddleware');
+const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
 
 // Initialize repositories
 const debtorRepo = new DebtorRepository();
@@ -186,7 +187,7 @@ router.get('/:id', async (req, res) => {
 // =============================================
 // POST /api/debtors - Create debtor
 // =============================================
-router.post('/', async (req, res) => {
+router.post('/', invalidateAfterWrite, async (req, res) => {
     try {
         const userId = req.user.id;
         // Use businessId if available, otherwise fallback to userId
@@ -230,7 +231,7 @@ router.post('/', async (req, res) => {
 // =============================================
 // POST /api/debtors/:id/payment - Record payment
 // =============================================
-router.post('/:id/payment', async (req, res) => {
+router.post('/:id/payment', invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
@@ -280,7 +281,7 @@ router.post('/:id/payment', async (req, res) => {
 // =============================================
 // DELETE /api/debtors/:id
 // =============================================
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;

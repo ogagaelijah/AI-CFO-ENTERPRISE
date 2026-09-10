@@ -22,9 +22,10 @@ import Creditors from './pages/Creditors';
 import Suppliers from './pages/Suppliers';
 import Customers from './pages/Customers';
 import Analytics from './pages/Analytics';
-import Forecast from './pages/Forecast';          // ← ADDED
+import Forecast from './pages/Forecast';
 import Risk from './pages/Risk';
 import Decisions from './pages/Decisions';
+import Advisor from './pages/Advisor';                    // ← ADDED
 
 function App() {
   return (
@@ -152,7 +153,7 @@ function App() {
               }
             />
             <Route
-              path="/forecast"                               // ← ADDED
+              path="/forecast"
               element={
                 <ProtectedRoute>
                   <Forecast />
@@ -172,6 +173,22 @@ function App() {
               element={
                 <ProtectedRoute>
                   <Decisions />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/ai"                                         // ← ADDED (matches sidebar)
+              element={
+                <ProtectedRoute>
+                  <Advisor />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/advisor"                                    // ← optional alias
+              element={
+                <ProtectedRoute>
+                  <Advisor />
                 </ProtectedRoute>
               }
             />

@@ -7,6 +7,13 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.HTTP_PORT || 5000;
 
+// ===== Rate Limiters =====
+const {
+  strictLimiter,
+  standardLimiter,
+  generousLimiter,
+} = require('./middleware/rateLimiter');
+
 // Middleware
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
@@ -33,34 +40,51 @@ const supplierRoutes = require('./routes/supplierRoutes');
 const customerRoutes = require('./routes/customerRoutes');
 const analyticsRoutes = require('./routes/analyticsRoutes');
 const forecastRoutes = require('./routes/forecastRoutes');
-const riskRoutes = require('./routes/riskRoutes');               // ← ADDED
+const riskRoutes = require('./routes/riskRoutes');
+const decisionRoutes = require('./routes/decisionRoutes');
+const advisorRoutes = require('./routes/advisorRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
 
+// ===== Strict rate limiting for auth =====
+app.use('/api/auth/login', strictLimiter);
+app.use('/api/auth/register', strictLimiter);
+app.use('/api/auth/forgot-password', strictLimiter);
+app.use('/api/auth/reset-password', strictLimiter);
+
+// ===== Auth routes (already rate-limited above) =====
 app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/business', businessRoutes);
-app.use('/api/reports', reportRoutes);
-app.use('/api/payment', paymentRoutes);
-app.use('/api/subscription', subscriptionRoutes);
-app.use('/api/sales', salesRoutes);
-app.use('/api/inventory', inventoryRoutes);
-app.use('/api/debtors', debtorRoutes);
-app.use('/api/income', incomeRoutes);
-app.use('/api/expenses', expenseRoutes);
-app.use('/api/purchases', purchaseRoutes);
-app.use('/api/creditors', creditorRoutes);
-app.use('/api/suppliers', supplierRoutes);
-app.use('/api/customers', customerRoutes);
-app.use('/api/analytics', analyticsRoutes);
-app.use('/api/forecast', forecastRoutes);
-app.use('/api/risk', riskRoutes);                               // ← ADDED
+
+// ===== Standard rate limiting (write/transaction endpoints) =====
+app.use('/api/users', standardLimiter, userRoutes);
+app.use('/api/business', standardLimiter, businessRoutes);
+app.use('/api/payment', standardLimiter, paymentRoutes);
+app.use('/api/subscription', standardLimiter, subscriptionRoutes);
+app.use('/api/sales', standardLimiter, salesRoutes);
+app.use('/api/inventory', standardLimiter, inventoryRoutes);
+app.use('/api/debtors', standardLimiter, debtorRoutes);
+app.use('/api/income', standardLimiter, incomeRoutes);
+app.use('/api/expenses', standardLimiter, expenseRoutes);
+app.use('/api/purchases', standardLimiter, purchaseRoutes);
+app.use('/api/creditors', standardLimiter, creditorRoutes);
+app.use('/api/suppliers', standardLimiter, supplierRoutes);
+app.use('/api/customers', standardLimiter, customerRoutes);
+
+// ===== Generous rate limiting (read-heavy intelligence endpoints) =====
+app.use('/api/reports', generousLimiter, reportRoutes);
+app.use('/api/analytics', generousLimiter, analyticsRoutes);
+app.use('/api/forecast', generousLimiter, forecastRoutes);
+app.use('/api/risk', generousLimiter, riskRoutes);
+app.use('/api/decision', generousLimiter, decisionRoutes);
+app.use('/api/advisor', generousLimiter, advisorRoutes);
+app.use('/api/dashboard', generousLimiter, dashboardRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
+  res.json({
+    status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    message: 'AI CFO ENTERPRISE API is running'
+    message: 'AI CFO ENTERPRISE API is running',
   });
 });
 
@@ -69,7 +93,7 @@ app.use((req, res) => {
   console.log(`❌ 404: ${req.method} ${req.originalUrl}`);
   res.status(404).json({
     success: false,
-    message: `Route ${req.method} ${req.originalUrl} not found`
+    message: `Route ${req.method} ${req.originalUrl} not found`,
   });
 });
 
@@ -85,6 +109,7 @@ app.use((err, req, res, next) => {
 // Start server
 const server = app.listen(PORT, () => {
   console.log(`🌐 HTTP Server running on http://localhost:${PORT}`);
+  console.log(`⚡ Rate limiting: strict=auth, standard=writes, generous=reads`);
 });
 
 module.exports = { app, server };

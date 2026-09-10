@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const InventoryRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryRepository');
 const { authMiddleware } = require('../middleware/authMiddleware');
+const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
 
 // ✅ Initialize repository
 const inventoryRepo = new InventoryRepository();
@@ -84,7 +85,7 @@ router.get('/:id', async (req, res) => {
 // =============================================
 // POST /api/inventory - Add new inventory item (Add Stock)
 // =============================================
-router.post('/', async (req, res) => {
+router.post('/', invalidateAfterWrite, async (req, res) => {
     try {
         const userId = req.user.id;
         const { itemName, quantity, costPrice, sellingPrice, reorderLevel = 5 } = req.body;
@@ -157,7 +158,7 @@ router.post('/', async (req, res) => {
 // =============================================
 // PUT /api/inventory/:id - Update inventory item (Edit)
 // =============================================
-router.put('/:id', async (req, res) => {
+router.put('/:id', invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
@@ -204,7 +205,7 @@ router.put('/:id', async (req, res) => {
 // =============================================
 // PATCH /api/inventory/:id/stock - Adjust stock
 // =============================================
-router.patch('/:id/stock', async (req, res) => {
+router.patch('/:id/stock', invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
@@ -276,7 +277,7 @@ router.patch('/:id/stock', async (req, res) => {
 // =============================================
 // DELETE /api/inventory/:id - Delete inventory item
 // =============================================
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;

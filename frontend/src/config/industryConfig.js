@@ -5,7 +5,8 @@ import {
   TrendingUp, TrendingDown, DollarSign, ShoppingCart, 
   Package, Users, CreditCard, Building2, BarChart3,
   FileText, Calendar, Brain, Layers, Lightbulb, Settings,
-  AlertTriangle
+  AlertTriangle, Briefcase as ProjectIcon, Clock, Wallet,
+  Home, UserCheck, Users2, Receipt
 } from 'lucide-react';
 
 export const INDUSTRY_CONFIGS = {
@@ -16,10 +17,14 @@ export const INDUSTRY_CONFIGS = {
     bgColor: 'bg-blue-50 dark:bg-blue-900/30',
     borderColor: 'border-blue-200 dark:border-blue-800',
     stats: [
-      { key: 'revenue', label: 'Revenue', icon: DollarSign, color: 'primary' },
-      { key: 'sales', label: 'Sales', icon: ShoppingCart, color: 'blue' },
-      { key: 'inventory', label: 'Inventory Value', icon: Package, color: 'teal' },
-      { key: 'debtors', label: 'Debtors', icon: Users, color: 'yellow' },
+      { key: 'revenue',     label: 'Revenue Today',   icon: DollarSign,   color: 'primary' },
+      { key: 'sales',       label: 'Sales Today',     icon: ShoppingCart, color: 'blue' },
+      { key: 'profit',      label: 'Profit Today',    icon: TrendingUp,   color: 'emerald' },
+      { key: 'expenses',    label: 'Expenses Today',  icon: TrendingDown, color: 'red' },
+      { key: 'inventory',   label: 'Inventory Value', icon: Package,      color: 'teal' },
+      { key: 'debtors',     label: 'Debtors Owed',    icon: Users,        color: 'yellow' },
+      { key: 'creditors',   label: 'You Owe',         icon: CreditCard,   color: 'orange' },
+      { key: 'cash',        label: 'Cash Position',   icon: Wallet,       color: 'purple' },
     ],
     quickActions: [
       { label: 'Record Sale', icon: ShoppingCart, href: '/sales/record' },
@@ -53,6 +58,7 @@ export const INDUSTRY_CONFIGS = {
       { icon: Settings, label: 'Settings', href: '/settings' },
     ],
   },
+
   'MANUFACTURING': {
     label: 'Manufacturing',
     icon: Wrench,
@@ -60,10 +66,14 @@ export const INDUSTRY_CONFIGS = {
     bgColor: 'bg-orange-50 dark:bg-orange-900/30',
     borderColor: 'border-orange-200 dark:border-orange-800',
     stats: [
-      { key: 'revenue', label: 'Revenue', icon: DollarSign, color: 'primary' },
-      { key: 'production', label: 'Production Runs', icon: TrendingUp, color: 'orange' },
-      { key: 'raw_materials', label: 'Raw Materials', icon: Package, color: 'teal' },
-      { key: 'debtors', label: 'Debtors', icon: Users, color: 'yellow' },
+      { key: 'revenue',        label: 'Revenue Today',     icon: DollarSign,   color: 'primary' },
+      { key: 'sales',          label: 'Sales Today',       icon: ShoppingCart, color: 'blue' },
+      { key: 'profit',         label: 'Profit Today',      icon: TrendingUp,   color: 'emerald' },
+      { key: 'expenses',       label: 'Expenses Today',    icon: TrendingDown, color: 'red' },
+      { key: 'raw_materials',  label: 'Raw Materials',     icon: Package,      color: 'amber' },
+      { key: 'inventory',      label: 'Finished Goods',    icon: Package,      color: 'teal' },
+      { key: 'debtors',        label: 'Debtors Owed',      icon: Users,        color: 'yellow' },
+      { key: 'creditors',      label: 'You Owe',           icon: CreditCard,   color: 'orange' },
     ],
     quickActions: [
       { label: 'Record Sale', icon: ShoppingCart, href: '/sales/record' },
@@ -98,6 +108,7 @@ export const INDUSTRY_CONFIGS = {
       { icon: Settings, label: 'Settings', href: '/settings' },
     ],
   },
+
   'CONSTRUCTION': {
     label: 'Construction',
     icon: Building,
@@ -105,15 +116,19 @@ export const INDUSTRY_CONFIGS = {
     bgColor: 'bg-amber-50 dark:bg-amber-900/30',
     borderColor: 'border-amber-200 dark:border-amber-800',
     stats: [
-      { key: 'revenue', label: 'Revenue', icon: DollarSign, color: 'primary' },
-      { key: 'projects', label: 'Active Projects', icon: Briefcase, color: 'amber' },
-      { key: 'materials', label: 'Materials', icon: Package, color: 'teal' },
-      { key: 'debtors', label: 'Debtors', icon: Users, color: 'yellow' },
+      { key: 'revenue',     label: 'Revenue Today',     icon: DollarSign,   color: 'primary' },
+      { key: 'sales',       label: 'Sales Today',       icon: ShoppingCart, color: 'blue' },
+      { key: 'profit',      label: 'Profit Today',      icon: TrendingUp,   color: 'emerald' },
+      { key: 'expenses',    label: 'Expenses Today',    icon: TrendingDown, color: 'red' },
+      { key: 'projects',    label: 'Active Projects',   icon: ProjectIcon,  color: 'amber' },
+      { key: 'materials',   label: 'Materials',         icon: Package,      color: 'teal' },
+      { key: 'debtors',     label: 'Debtors Owed',      icon: Users,        color: 'yellow' },
+      { key: 'creditors',   label: 'You Owe',           icon: CreditCard,   color: 'orange' },
     ],
     quickActions: [
       { label: 'Record Sale', icon: ShoppingCart, href: '/sales/record' },
       { label: 'Add Materials', icon: Package, href: '/inventory/add' },
-      { label: 'Create Project', icon: Briefcase, href: '/projects/create' },
+      { label: 'Create Project', icon: ProjectIcon, href: '/projects/create' },
       { label: 'View Reports', icon: FileText, href: '/reports/daily' },
     ],
     features: ['Projects', 'Materials', 'Project Billing', 'Suppliers', 'Reports'],
@@ -140,6 +155,7 @@ export const INDUSTRY_CONFIGS = {
       { icon: Settings, label: 'Settings', href: '/settings' },
     ],
   },
+
   'HEALTHCARE': {
     label: 'Healthcare',
     icon: Stethoscope,
@@ -147,10 +163,14 @@ export const INDUSTRY_CONFIGS = {
     bgColor: 'bg-red-50 dark:bg-red-900/30',
     borderColor: 'border-red-200 dark:border-red-800',
     stats: [
-      { key: 'revenue', label: 'Revenue', icon: DollarSign, color: 'primary' },
-      { key: 'patients', label: 'Patients', icon: Users, color: 'red' },
-      { key: 'visits', label: 'Visits', icon: TrendingUp, color: 'blue' },
-      { key: 'inventory', label: 'Supplies', icon: Package, color: 'teal' },
+      { key: 'revenue',     label: 'Revenue Today',     icon: DollarSign,   color: 'primary' },
+      { key: 'sales',       label: 'Visits Today',      icon: Stethoscope,  color: 'blue' },
+      { key: 'profit',      label: 'Profit Today',      icon: TrendingUp,   color: 'emerald' },
+      { key: 'expenses',    label: 'Expenses Today',    icon: TrendingDown, color: 'red' },
+      { key: 'inventory',   label: 'Supplies Value',    icon: Package,      color: 'teal' },
+      { key: 'debtors',     label: 'Patient Balances',  icon: Users,        color: 'yellow' },
+      { key: 'creditors',   label: 'You Owe',           icon: CreditCard,   color: 'orange' },
+      { key: 'cash',        label: 'Cash Position',     icon: Wallet,       color: 'purple' },
     ],
     quickActions: [
       { label: 'Record Visit', icon: Stethoscope, href: '/visits/record' },
@@ -183,6 +203,7 @@ export const INDUSTRY_CONFIGS = {
       { icon: Settings, label: 'Settings', href: '/settings' },
     ],
   },
+
   'CONSULTANCY': {
     label: 'Consultancy',
     icon: Briefcase,
@@ -190,25 +211,29 @@ export const INDUSTRY_CONFIGS = {
     bgColor: 'bg-purple-50 dark:bg-purple-900/30',
     borderColor: 'border-purple-200 dark:border-purple-800',
     stats: [
-      { key: 'revenue', label: 'Revenue', icon: DollarSign, color: 'primary' },
-      { key: 'clients', label: 'Clients', icon: Users, color: 'purple' },
-      { key: 'hours', label: 'Billable Hours', icon: TrendingUp, color: 'blue' },
-      { key: 'projects', label: 'Projects', icon: Briefcase, color: 'amber' },
+      { key: 'revenue',     label: 'Revenue Today',     icon: DollarSign,   color: 'primary' },
+      { key: 'sales',       label: 'Invoices Today',    icon: FileText,     color: 'blue' },
+      { key: 'profit',      label: 'Profit Today',      icon: TrendingUp,   color: 'emerald' },
+      { key: 'expenses',    label: 'Expenses Today',    icon: TrendingDown, color: 'red' },
+      { key: 'projects',    label: 'Active Projects',   icon: ProjectIcon,  color: 'amber' },
+      { key: 'debtors',     label: 'Client Balances',   icon: Users,        color: 'yellow' },
+      { key: 'creditors',   label: 'You Owe',           icon: CreditCard,   color: 'orange' },
+      { key: 'cash',        label: 'Cash Position',     icon: Wallet,       color: 'purple' },
     ],
     quickActions: [
-      { label: 'Record Hour', icon: Briefcase, href: '/hours/record' },
+      { label: 'Log Hours', icon: Clock, href: '/hours/record' },
       { label: 'Add Client', icon: Users, href: '/clients/add' },
-      { label: 'Create Project', icon: Briefcase, href: '/projects/create' },
+      { label: 'Create Invoice', icon: FileText, href: '/invoices/create' },
       { label: 'View Reports', icon: FileText, href: '/reports/daily' },
     ],
     features: ['Clients', 'Billable Hours', 'Projects', 'Invoices', 'Reports'],
     sidebar: [
       { type: 'section', label: '━━━ TRANSACTIONS ━━━' },
-      { icon: Briefcase, label: 'Projects', href: '/projects' },
+      { icon: ProjectIcon, label: 'Projects', href: '/projects' },
       { icon: Users, label: 'Clients', href: '/clients' },
       { icon: DollarSign, label: 'Income', href: '/income' },
       { icon: TrendingDown, label: 'Expenses', href: '/expenses' },
-      { icon: BarChart3, label: 'Hours', href: '/hours' },
+      { icon: Clock, label: 'Hours', href: '/hours' },
       { icon: Users, label: 'Debtors', href: '/debtors' },
       { icon: CreditCard, label: 'Creditors', href: '/creditors' },
       { icon: TruckIcon, label: 'Suppliers', href: '/suppliers' },
@@ -226,6 +251,7 @@ export const INDUSTRY_CONFIGS = {
       { icon: Settings, label: 'Settings', href: '/settings' },
     ],
   },
+
   'REAL_ESTATE': {
     label: 'Real Estate',
     icon: HomeIcon,
@@ -233,13 +259,17 @@ export const INDUSTRY_CONFIGS = {
     bgColor: 'bg-emerald-50 dark:bg-emerald-900/30',
     borderColor: 'border-emerald-200 dark:border-emerald-800',
     stats: [
-      { key: 'revenue', label: 'Revenue', icon: DollarSign, color: 'primary' },
-      { key: 'properties', label: 'Properties', icon: HomeIcon, color: 'emerald' },
-      { key: 'tenants', label: 'Tenants', icon: Users, color: 'purple' },
-      { key: 'rent', label: 'Rent Collected', icon: TrendingUp, color: 'blue' },
+      { key: 'revenue',     label: 'Revenue Today',     icon: DollarSign,   color: 'primary' },
+      { key: 'sales',       label: 'Transactions Today', icon: ShoppingCart, color: 'blue' },
+      { key: 'profit',      label: 'Profit Today',      icon: TrendingUp,   color: 'emerald' },
+      { key: 'expenses',    label: 'Expenses Today',    icon: TrendingDown, color: 'red' },
+      { key: 'properties',  label: 'Properties',        icon: Home,         color: 'emerald' },
+      { key: 'debtors',     label: 'Tenant Balances',   icon: Users,        color: 'yellow' },
+      { key: 'creditors',   label: 'You Owe',           icon: CreditCard,   color: 'orange' },
+      { key: 'cash',        label: 'Cash Position',     icon: Wallet,       color: 'purple' },
     ],
     quickActions: [
-      { label: 'Add Property', icon: HomeIcon, href: '/properties/add' },
+      { label: 'Add Property', icon: Home, href: '/properties/add' },
       { label: 'Add Tenant', icon: Users, href: '/tenants/add' },
       { label: 'Record Rent', icon: DollarSign, href: '/rent/record' },
       { label: 'View Reports', icon: FileText, href: '/reports/daily' },
@@ -247,7 +277,7 @@ export const INDUSTRY_CONFIGS = {
     features: ['Properties', 'Tenants', 'Rent Collection', 'Maintenance', 'Reports'],
     sidebar: [
       { type: 'section', label: '━━━ TRANSACTIONS ━━━' },
-      { icon: HomeIcon, label: 'Properties', href: '/properties' },
+      { icon: Home, label: 'Properties', href: '/properties' },
       { icon: Users, label: 'Tenants', href: '/tenants' },
       { icon: DollarSign, label: 'Rent', href: '/rent' },
       { icon: DollarSign, label: 'Income', href: '/income' },
@@ -269,6 +299,7 @@ export const INDUSTRY_CONFIGS = {
       { icon: Settings, label: 'Settings', href: '/settings' },
     ],
   },
+
   'EDUCATION': {
     label: 'Education',
     icon: GraduationCap,
@@ -276,10 +307,14 @@ export const INDUSTRY_CONFIGS = {
     bgColor: 'bg-indigo-50 dark:bg-indigo-900/30',
     borderColor: 'border-indigo-200 dark:border-indigo-800',
     stats: [
-      { key: 'revenue', label: 'Revenue', icon: DollarSign, color: 'primary' },
-      { key: 'students', label: 'Students', icon: Users, color: 'indigo' },
-      { key: 'classes', label: 'Classes', icon: TrendingUp, color: 'blue' },
-      { key: 'fees', label: 'Fees', icon: DollarSign, color: 'yellow' },
+      { key: 'revenue',     label: 'Revenue Today',     icon: DollarSign,   color: 'primary' },
+      { key: 'sales',       label: 'Enrollments Today', icon: GraduationCap, color: 'blue' },
+      { key: 'profit',      label: 'Profit Today',      icon: TrendingUp,   color: 'emerald' },
+      { key: 'expenses',    label: 'Expenses Today',    icon: TrendingDown, color: 'red' },
+      { key: 'students',    label: 'Total Students',    icon: Users,        color: 'indigo' },
+      { key: 'debtors',     label: 'Fee Balances',      icon: Receipt,      color: 'yellow' },
+      { key: 'creditors',   label: 'You Owe',           icon: CreditCard,   color: 'orange' },
+      { key: 'cash',        label: 'Cash Position',     icon: Wallet,       color: 'purple' },
     ],
     quickActions: [
       { label: 'Add Student', icon: Users, href: '/students/add' },
@@ -311,6 +346,7 @@ export const INDUSTRY_CONFIGS = {
       { icon: Settings, label: 'Settings', href: '/settings' },
     ],
   },
+
   'LOGISTICS': {
     label: 'Logistics',
     icon: TruckIcon,
@@ -318,10 +354,14 @@ export const INDUSTRY_CONFIGS = {
     bgColor: 'bg-cyan-50 dark:bg-cyan-900/30',
     borderColor: 'border-cyan-200 dark:border-cyan-800',
     stats: [
-      { key: 'revenue', label: 'Revenue', icon: DollarSign, color: 'primary' },
-      { key: 'trips', label: 'Trips', icon: TrendingUp, color: 'cyan' },
-      { key: 'vehicles', label: 'Vehicles', icon: TruckIcon, color: 'blue' },
-      { key: 'drivers', label: 'Drivers', icon: Users, color: 'purple' },
+      { key: 'revenue',     label: 'Revenue Today',     icon: DollarSign,   color: 'primary' },
+      { key: 'sales',       label: 'Trips Today',       icon: TruckIcon,    color: 'blue' },
+      { key: 'profit',      label: 'Profit Today',      icon: TrendingUp,   color: 'emerald' },
+      { key: 'expenses',    label: 'Expenses Today',    icon: TrendingDown, color: 'red' },
+      { key: 'vehicles',    label: 'Vehicles',          icon: TruckIcon,    color: 'cyan' },
+      { key: 'debtors',     label: 'Debtors Owed',      icon: Users,        color: 'yellow' },
+      { key: 'creditors',   label: 'You Owe',           icon: CreditCard,   color: 'orange' },
+      { key: 'cash',        label: 'Cash Position',     icon: Wallet,       color: 'purple' },
     ],
     quickActions: [
       { label: 'Record Trip', icon: TruckIcon, href: '/trips/record' },

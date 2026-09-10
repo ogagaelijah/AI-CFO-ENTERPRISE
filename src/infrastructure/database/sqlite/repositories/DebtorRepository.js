@@ -1,4 +1,6 @@
 // src/infrastructure/database/sqlite/repositories/DebtorRepository.js
+// v2.0.0-prod — Strict business_id with userId fallback
+// Relies on migration 027 indexes: (business_id, balance_remaining), (business_id, status)
 
 const BaseRepository = require('./BaseRepository');
 
@@ -57,95 +59,103 @@ class DebtorRepository extends BaseRepository {
         return rows.map(row => this._hydrate(row));
     }
 
-    findByBusinessId(userId, businessId) {
+    findByBusinessId(businessId) {
         const rows = this.db.prepare(
-            'SELECT * FROM debtors WHERE user_id = ? AND business_id = ? ORDER BY balance_remaining DESC'
-        ).all(userId, businessId);
+            'SELECT * FROM debtors WHERE business_id = ? ORDER BY balance_remaining DESC'
+        ).all(businessId);
         return rows.map(row => this._hydrate(row));
     }
 
-    findActive(userId, businessId = null) {
-        let sql = `
-            SELECT * FROM debtors 
-            WHERE user_id = ? 
-            AND balance_remaining > 0 
-            AND status != 'PAID'
-        `;
-        const params = [userId];
-
+    findActive(businessId, userId = null) {
         if (businessId) {
-            sql += ` AND business_id = ?`;
-            params.push(businessId);
+            const rows = this.db.prepare(`
+                SELECT * FROM debtors
+                WHERE business_id = ?
+                  AND balance_remaining > 0
+                  AND status != 'PAID'
+                ORDER BY balance_remaining DESC
+            `).all(businessId);
+            return rows.map(row => this._hydrate(row));
         }
-
-        sql += ` ORDER BY balance_remaining DESC`;
-
-        const rows = this.db.prepare(sql).all(...params);
+        // Fallback for legacy (pre-migration) records
+        const rows = this.db.prepare(`
+            SELECT * FROM debtors
+            WHERE user_id = ?
+              AND balance_remaining > 0
+              AND status != 'PAID'
+            ORDER BY balance_remaining DESC
+        `).all(userId);
         return rows.map(row => this._hydrate(row));
     }
 
     findActiveByUser(userId) {
-        return this.findActive(userId);
+        return this.findActive(null, userId);
     }
 
-    getTotalOutstanding(userId, businessId = null) {
-        let sql = `
-            SELECT COALESCE(SUM(balance_remaining), 0) as total_outstanding
-            FROM debtors 
-            WHERE user_id = ? 
-            AND balance_remaining > 0 
-            AND status != 'PAID'
-        `;
-        const params = [userId];
-
+    getTotalOutstanding(businessId, userId = null) {
         if (businessId) {
-            sql += ` AND business_id = ?`;
-            params.push(businessId);
+            const result = this.db.prepare(`
+                SELECT COALESCE(SUM(balance_remaining), 0) as total_outstanding
+                FROM debtors
+                WHERE business_id = ?
+                  AND balance_remaining > 0
+                  AND status != 'PAID'
+            `).get(businessId);
+            return result?.total_outstanding || 0;
         }
-
-        const result = this.db.prepare(sql).get(...params);
+        // Fallback for legacy records
+        const result = this.db.prepare(`
+            SELECT COALESCE(SUM(balance_remaining), 0) as total_outstanding
+            FROM debtors
+            WHERE user_id = ?
+              AND balance_remaining > 0
+              AND status != 'PAID'
+        `).get(userId);
         return result?.total_outstanding || 0;
     }
 
-    findOverdue(userId, businessId = null) {
+    findOverdue(businessId, userId = null) {
         const today = new Date().toISOString().split('T')[0];
-        let sql = `
-            SELECT * FROM debtors 
-            WHERE user_id = ? 
-            AND balance_remaining > 0 
-            AND status != 'PAID'
-            AND due_date IS NOT NULL
-            AND DATE(due_date) < DATE(?)
-        `;
-        const params = [userId, today];
-
         if (businessId) {
-            sql += ` AND business_id = ?`;
-            params.push(businessId);
+            const rows = this.db.prepare(`
+                SELECT * FROM debtors
+                WHERE business_id = ?
+                  AND balance_remaining > 0
+                  AND status != 'PAID'
+                  AND due_date IS NOT NULL
+                  AND DATE(due_date) < DATE(?)
+                ORDER BY due_date ASC
+            `).all(businessId, today);
+            return rows.map(row => this._hydrate(row));
         }
-
-        sql += ` ORDER BY due_date ASC`;
-
-        const rows = this.db.prepare(sql).all(...params);
+        const rows = this.db.prepare(`
+            SELECT * FROM debtors
+            WHERE user_id = ?
+              AND balance_remaining > 0
+              AND status != 'PAID'
+              AND due_date IS NOT NULL
+              AND DATE(due_date) < DATE(?)
+            ORDER BY due_date ASC
+        `).all(userId, today);
         return rows.map(row => this._hydrate(row));
     }
 
     findAllOverdue() {
         const today = new Date().toISOString().split('T')[0];
         return this.db.prepare(`
-            SELECT * FROM debtors 
-            WHERE balance_remaining > 0 
-            AND status != 'PAID'
-            AND due_date IS NOT NULL
-            AND DATE(due_date) < DATE(?)
+            SELECT * FROM debtors
+            WHERE balance_remaining > 0
+              AND status != 'PAID'
+              AND due_date IS NOT NULL
+              AND DATE(due_date) < DATE(?)
             ORDER BY due_date ASC
         `).all(today);
     }
 
     findByCustomerName(userId, customerName) {
         const rows = this.db.prepare(`
-            SELECT * FROM debtors 
-            WHERE user_id = ? AND customer_name LIKE ? 
+            SELECT * FROM debtors
+            WHERE user_id = ? AND customer_name LIKE ?
             ORDER BY balance_remaining DESC
         `).all(userId, `%${customerName}%`);
         return rows.map(row => this._hydrate(row));
@@ -172,49 +182,52 @@ class DebtorRepository extends BaseRepository {
             }
         }
 
-        const stmt = this.db.prepare(`
-            UPDATE debtors 
+        this.db.prepare(`
+            UPDATE debtors
             SET amount_paid = ?,
                 balance_remaining = ?,
                 status = ?,
                 last_payment_date = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
-        `);
-
-        stmt.run(
-            newPaid,
-            newBalance,
-            status,
-            new Date().toISOString(),
-            debtorId
-        );
+        `).run(newPaid, newBalance, status, new Date().toISOString(), debtorId);
 
         return this.findById(debtorId);
     }
 
-    getSummary(userId, businessId = null) {
-        let sql = `
-            SELECT 
+    getSummary(businessId, userId = null) {
+        if (businessId) {
+            const result = this.db.prepare(`
+                SELECT
+                    COUNT(*) as total_debtors,
+                    COALESCE(SUM(total_owed), 0) as total_owed,
+                    COALESCE(SUM(amount_paid), 0) as total_paid,
+                    COALESCE(SUM(balance_remaining), 0) as total_outstanding,
+                    COUNT(CASE WHEN balance_remaining > 0 AND status != 'PAID' THEN 1 END) as active_count,
+                    COUNT(CASE WHEN balance_remaining <= 0 OR status = 'PAID' THEN 1 END) as paid_count,
+                    COUNT(CASE WHEN status = 'OVERDUE' AND balance_remaining > 0 THEN 1 END) as overdue_count
+                FROM debtors
+                WHERE business_id = ?
+            `).get(businessId);
+            return this._summaryShape(result);
+        }
+
+        const result = this.db.prepare(`
+            SELECT
                 COUNT(*) as total_debtors,
                 COALESCE(SUM(total_owed), 0) as total_owed,
                 COALESCE(SUM(amount_paid), 0) as total_paid,
-                COALESCE(SUM(CASE WHEN balance_remaining > 0 AND status != 'PAID' THEN balance_remaining ELSE 0 END), 0) as total_outstanding,
+                COALESCE(SUM(balance_remaining), 0) as total_outstanding,
                 COUNT(CASE WHEN balance_remaining > 0 AND status != 'PAID' THEN 1 END) as active_count,
                 COUNT(CASE WHEN balance_remaining <= 0 OR status = 'PAID' THEN 1 END) as paid_count,
                 COUNT(CASE WHEN status = 'OVERDUE' AND balance_remaining > 0 THEN 1 END) as overdue_count
-            FROM debtors 
+            FROM debtors
             WHERE user_id = ?
-        `;
-        const params = [userId];
+        `).get(userId);
+        return this._summaryShape(result);
+    }
 
-        if (businessId) {
-            sql += ` AND business_id = ?`;
-            params.push(businessId);
-        }
-
-        const result = this.db.prepare(sql).get(...params);
-
+    _summaryShape(result) {
         return {
             total_debtors: result?.total_debtors || 0,
             total_owed: result?.total_owed || 0,
@@ -227,8 +240,7 @@ class DebtorRepository extends BaseRepository {
     }
 
     delete(id) {
-        const stmt = this.db.prepare('DELETE FROM debtors WHERE id = ?');
-        const result = stmt.run(id);
+        const result = this.db.prepare('DELETE FROM debtors WHERE id = ?').run(id);
         return result.changes > 0;
     }
 
@@ -240,7 +252,7 @@ class DebtorRepository extends BaseRepository {
             'customer_name', 'customer_id', 'customer_type',
             'total_owed', 'amount_paid', 'balance_remaining',
             'status', 'due_date', 'reference_type', 'reference_id',
-            'notes', 'last_payment_date', 'business_id'
+            'notes', 'last_payment_date', 'business_id',
         ];
 
         for (const key of allowed) {
@@ -250,34 +262,31 @@ class DebtorRepository extends BaseRepository {
             }
         }
 
-        if (fields.length === 0) {
-            throw new Error('No fields to update');
-        }
+        if (fields.length === 0) throw new Error('No fields to update');
 
         fields.push('updated_at = CURRENT_TIMESTAMP');
         values.push(id);
 
-        const stmt = this.db.prepare(
+        const result = this.db.prepare(
             `UPDATE debtors SET ${fields.join(', ')} WHERE id = ?`
-        );
-        const result = stmt.run(...values);
+        ).run(...values);
 
-        if (result.changes === 0) {
-            throw new Error('Debtor not found or no changes made');
-        }
-
+        if (result.changes === 0) throw new Error('Debtor not found or no changes made');
         return this.findById(id);
     }
 
-    // FIXED versions
-    findByFilters({ userId, businessId = null, status, customerType, limit = 50, offset = 0 }) {
-        let sql = 'SELECT * FROM debtors WHERE user_id = ?';
-        const params = [userId];
+    findByFilters({ businessId = null, userId = null, status, customerType, limit = 50, offset = 0 }) {
+        let sql = 'SELECT * FROM debtors WHERE 1=1';
+        const params = [];
 
         if (businessId) {
             sql += ' AND business_id = ?';
             params.push(businessId);
+        } else if (userId) {
+            sql += ' AND user_id = ?';
+            params.push(userId);
         }
+
         if (status) {
             sql += ' AND status = ?';
             params.push(status);
@@ -294,14 +303,18 @@ class DebtorRepository extends BaseRepository {
         return rows.map(row => this._hydrate(row));
     }
 
-    countByFilters({ userId, businessId = null, status, customerType }) {
-        let sql = 'SELECT COUNT(*) as total FROM debtors WHERE user_id = ?';
-        const params = [userId];
+    countByFilters({ businessId = null, userId = null, status, customerType }) {
+        let sql = 'SELECT COUNT(*) as total FROM debtors WHERE 1=1';
+        const params = [];
 
         if (businessId) {
             sql += ' AND business_id = ?';
             params.push(businessId);
+        } else if (userId) {
+            sql += ' AND user_id = ?';
+            params.push(userId);
         }
+
         if (status) {
             sql += ' AND status = ?';
             params.push(status);

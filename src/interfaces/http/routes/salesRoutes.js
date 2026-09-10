@@ -9,6 +9,7 @@ const DebtorRepository = require('../../../infrastructure/database/sqlite/reposi
 const CustomerRepository = require('../../../infrastructure/database/sqlite/repositories/CustomerRepository');
 const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository');
 const { authMiddleware } = require('../middleware/authMiddleware');
+const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
 
 // Initialize repositories
 const saleRepo = new SaleRepository();
@@ -62,7 +63,7 @@ router.get('/', async (req, res) => {
 // =============================================
 // ✅ POST /api/sales - Record a new sale (Single or Multi-item)
 // =============================================
-router.post('/', async (req, res) => {
+router.post('/', invalidateAfterWrite, async (req, res) => {
     try {
         const userId = req.user.id;
         const businessId = userId;

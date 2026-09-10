@@ -10,6 +10,7 @@ const CreateCustomerUseCase = require('../../../application/useCases/customers/C
 const UpdateCustomerUseCase = require('../../../application/useCases/customers/UpdateCustomerUseCase');
 const DeleteCustomerUseCase = require('../../../application/useCases/customers/DeleteCustomerUseCase');
 const { authMiddleware } = require('../middleware/authMiddleware');
+const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
 
 // Initialize repository
 const customerRepo = new CustomerRepository();
@@ -163,7 +164,7 @@ router.get('/:id/history', async (req, res) => {
 // =============================================
 // POST /api/customers - Create customer
 // =============================================
-router.post('/', async (req, res) => {
+router.post('/', invalidateAfterWrite, async (req, res) => {
     try {
         const businessId = req.user.businessId || req.body.businessId;
 
@@ -198,10 +199,9 @@ router.post('/', async (req, res) => {
     }
 });
 
+// =============================================// PUT /api/customers/:id - Update customer
 // =============================================
-// PUT /api/customers/:id - Update customer
-// =============================================
-router.put('/:id', async (req, res) => {
+router.put('/:id', invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const businessId = req.user.businessId || req.body.businessId;
@@ -242,7 +242,7 @@ router.put('/:id', async (req, res) => {
 // =============================================
 // DELETE /api/customers/:id - Delete customer
 // =============================================
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const businessId = req.user.businessId || req.query.businessId;

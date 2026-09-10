@@ -10,6 +10,7 @@ const SupplierRepository = require('../../../infrastructure/database/sqlite/repo
 const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository');
 const RecordPurchaseUseCase = require('../../../application/useCases/purchases/RecordPurchaseUseCase');
 const { authMiddleware } = require('../middleware/authMiddleware');
+const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
 
 // Initialize repositories
 const purchaseRepo = new PurchaseRepository();
@@ -142,7 +143,7 @@ router.get('/summary', async (req, res) => {
 // =============================================
 // POST /api/purchases
 // =============================================
-router.post('/', async (req, res) => {
+router.post('/', invalidateAfterWrite, async (req, res) => {
     try {
         const userId = req.user.id;
         const businessId = req.user.businessId || req.body.businessId || userId;
@@ -248,7 +249,7 @@ router.get('/:id', async (req, res) => {
 // =============================================
 // PUT /api/purchases/:id
 // =============================================
-router.put('/:id', async (req, res) => {
+router.put('/:id', invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
@@ -284,7 +285,7 @@ router.put('/:id', async (req, res) => {
 // =============================================
 // DELETE /api/purchases/:id
 // =============================================
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;

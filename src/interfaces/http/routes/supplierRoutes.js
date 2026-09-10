@@ -9,6 +9,7 @@ const CreateSupplierUseCase = require('../../../application/useCases/suppliers/C
 const UpdateSupplierUseCase = require('../../../application/useCases/suppliers/UpdateSupplierUseCase');
 const DeleteSupplierUseCase = require('../../../application/useCases/suppliers/DeleteSupplierUseCase');
 const { authMiddleware } = require('../middleware/authMiddleware');
+const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
 
 // Initialize repository
 const supplierRepo = new SupplierRepository();
@@ -107,7 +108,7 @@ router.get('/:id', async (req, res) => {
 // =============================================
 // POST /api/suppliers - Create supplier
 // =============================================
-router.post('/', async (req, res) => {
+router.post('/', invalidateAfterWrite, async (req, res) => {
     try {
         const businessId = req.user.businessId || req.body.businessId;
 
@@ -144,7 +145,7 @@ router.post('/', async (req, res) => {
 // =============================================
 // PUT /api/suppliers/:id - Update supplier
 // =============================================
-router.put('/:id', async (req, res) => {
+router.put('/:id', invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const businessId = req.user.businessId || req.body.businessId;
@@ -183,7 +184,7 @@ router.put('/:id', async (req, res) => {
 // =============================================
 // DELETE /api/suppliers/:id - Delete supplier
 // =============================================
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const businessId = req.user.businessId || req.query.businessId;

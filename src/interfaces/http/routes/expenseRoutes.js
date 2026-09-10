@@ -6,6 +6,7 @@ const ExpenseRepository = require('../../../infrastructure/database/sqlite/repos
 const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository');
 const RecordExpenseUseCase = require('../../../application/useCases/expenses/RecordExpenseUseCase');
 const { authMiddleware } = require('../middleware/authMiddleware');
+const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
 
 const expenseRepo = new ExpenseRepository();
 const paymentRepo = new PaymentRepository();
@@ -123,7 +124,7 @@ router.get('/summary', async (req, res) => {
 // =============================================
 // POST /api/expenses
 // =============================================
-router.post('/', async (req, res) => {
+router.post('/', invalidateAfterWrite, async (req, res) => {
     try {
         const userId = req.user.id;
         const businessId = req.user.businessId || userId;
@@ -185,7 +186,7 @@ router.get('/:id', async (req, res) => {
 // =============================================
 // PUT /api/expenses/:id
 // =============================================
-router.put('/:id', async (req, res) => {
+router.put('/:id', invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
@@ -217,7 +218,7 @@ router.put('/:id', async (req, res) => {
 // =============================================
 // DELETE /api/expenses/:id
 // =============================================
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;

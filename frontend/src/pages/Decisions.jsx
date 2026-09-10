@@ -1,45 +1,92 @@
 // frontend/src/pages/Decisions.jsx
-import { useState, useEffect } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { Lightbulb, CheckCircle, Clock, AlertCircle, TrendingUp } from 'lucide-react';
+// SSOT v2.0.0-prod
 
-const Decisions = () => {
-  const { user } = useAuth();
+import React, { useState, useEffect, useCallback } from 'react';
+import decisionService from '../services/decision/decisionService';
+
+import DecisionHeader from '../components/decision/DecisionHeader';
+import DecisionSummaryCards from '../components/decision/DecisionSummaryCards';
+import DecisionList from '../components/decision/DecisionList';
+import DecisionRecommendations from '../components/decision/DecisionRecommendations';
+import DecisionProjectedValues from '../components/decision/DecisionProjectedValues';
+import DecisionLoading from '../components/decision/DecisionLoading';
+import DecisionError from '../components/decision/DecisionError';
+
+const DEFAULT_HORIZON = '30D';
+
+export default function DecisionsPage() {
+  const [horizon, setHorizon] = useState(DEFAULT_HORIZON);
+  const [horizons, setHorizons] = useState([]);
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  useEffect(() => {
-    setTimeout(() => setLoading(false), 500);
+  const loadHorizons = useCallback(async () => {
+    try {
+      const list = await decisionService.getHorizons();
+      setHorizons(list);
+    } catch (err) {
+      console.warn('Failed to load horizons', err);
+    }
   }, []);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading decisions...</p>
-        </div>
-      </div>
-    );
-  }
+  const loadDecisions = useCallback(async (selectedHorizon = horizon) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await decisionService.generate({ horizon: selectedHorizon });
+      setData(result);
+    } catch (err) {
+      setError(err.message || 'Failed to load decisions');
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [horizon]);
+
+  useEffect(() => {
+    loadHorizons();
+  }, [loadHorizons]);
+
+  useEffect(() => {
+    loadDecisions(horizon);
+  }, [horizon]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleHorizonChange = (newHorizon) => setHorizon(newHorizon);
+  const handleRefresh = () => loadDecisions(horizon);
+
+  if (loading && !data) return <DecisionLoading />;
+  if (error && !data) return <DecisionError message={error} onRetry={handleRefresh} />;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Decisions</h1>
-      </div>
+    <div className="decision-page p-4 md:p-6 max-w-7xl mx-auto bg-gray-950 text-gray-100 min-h-screen">
+      <DecisionHeader
+        horizon={horizon}
+        horizons={horizons}
+        onHorizonChange={handleHorizonChange}
+        onRefresh={handleRefresh}
+        loading={loading}
+        generatedAt={data?.generatedAt}
+      />
 
-      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-8 text-center">
-        <Lightbulb className="w-16 h-16 text-yellow-500 dark:text-yellow-400 mx-auto mb-4" />
-        <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">AI-Powered Decisions</h2>
-        <p className="text-gray-600 dark:text-gray-400 max-w-md mx-auto">
-          Recommendations, priorities, actions, break-even analysis, impact analysis, and scenario comparison will be displayed here.
-        </p>
-        <p className="text-sm text-gray-500 dark:text-gray-500 mt-4">
-          🚧 Coming soon — Integration in progress
-        </p>
-      </div>
+      {data && (
+        <>
+          <DecisionSummaryCards
+            summary={data.summary}
+            executive={data.executiveSummary}
+          />
+
+          <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2">
+              <DecisionList decisions={data.decisions} />
+            </div>
+            <div className="space-y-6">
+              <DecisionProjectedValues projected={data.projected} />
+              <DecisionRecommendations recommendations={data.recommendations} />
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
-};
-
-export default Decisions;
+}
