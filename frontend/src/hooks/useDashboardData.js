@@ -1,11 +1,12 @@
 // frontend/src/hooks/useDashboardData.js
-// Production-grade dashboard hook with retry logic
+// v2.0.0-prod — Plan-aware fetch with retry + abort + read-only bail.
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import api from '../services/api';
+import { usePlan } from './usePlan';
+import { dashboardApi } from '../services/api';
+import { reportError } from '../services/telemetry';
 
-const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 1500;
 
 const EMPTY_DASHBOARD = {
@@ -33,62 +34,92 @@ const EMPTY_DASHBOARD = {
 
 export const useDashboardData = () => {
   const { user } = useAuth();
+  const { isReadOnly } = usePlan();
+
   const [data, setData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+
   const abortRef = useRef(null);
+  const retryTimerRef = useRef(null);
+  const mountedRef = useRef(true);
 
-  const fetchDashboard = useCallback(async (isRetry = false) => {
-    // Abort any in-flight request
-    if (abortRef.current) {
-      abortRef.current.abort();
-    }
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (abortRef.current) abortRef.current.abort();
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    };
+  }, []);
 
-    const controller = new AbortController();
-    abortRef.current = controller;
+  const fetchDashboard = useCallback(
+    async (isRetry = false) => {
+      if (abortRef.current) abortRef.current.abort();
 
-    if (!user?.businessId) {
-      setData(EMPTY_DASHBOARD);
-      setIsLoading(false);
-      return;
-    }
+      const controller = new AbortController();
+      abortRef.current = controller;
 
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      const response = await api.get('/dashboard/summary', {
-        signal: controller.signal,
-      });
-
-      if (response.data?.success) {
-        setData(response.data.data || EMPTY_DASHBOARD);
-      } else {
-        setData(EMPTY_DASHBOARD);
-        setError('Failed to load dashboard');
-      }
-    } catch (err) {
-      if (err.name === 'AbortError' || err.name === 'CanceledError') return;
-
-      // Retry on network errors
-      if (!isRetry && (!err.response || err.response.status >= 500)) {
-        console.log('Retrying dashboard fetch...');
-        setTimeout(() => fetchDashboard(true), RETRY_DELAY_MS);
+      // ── Guard: no business or read-only → do not hit the network
+      if (!user?.businessId || isReadOnly) {
+        if (mountedRef.current) {
+          setData(EMPTY_DASHBOARD);
+          setIsLoading(false);
+          setError(null);
+        }
         return;
       }
 
-      setError(err.message || 'Failed to load dashboard');
-      setData(EMPTY_DASHBOARD);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [user?.businessId]);
+      try {
+        if (mountedRef.current) {
+          setIsLoading(true);
+          setError(null);
+        }
+
+        const response = await dashboardApi.getSummary(controller.signal);
+        if (!mountedRef.current) return;
+
+        if (response.data?.success) {
+          setData(response.data.data || EMPTY_DASHBOARD);
+        } else {
+          setData(EMPTY_DASHBOARD);
+          setError('Failed to load dashboard');
+        }
+      } catch (err) {
+        if (err.name === 'AbortError' || err.name === 'CanceledError') return;
+        if (!mountedRef.current) return;
+
+        const status = err.response?.status;
+
+        // 403 = plan gate; silent empty state
+        if (status === 403) {
+          setData(EMPTY_DASHBOARD);
+          setError(null);
+          return;
+        }
+
+        const shouldRetry =
+          !isRetry && (!err.response || (status && status >= 500));
+
+        if (shouldRetry) {
+          retryTimerRef.current = setTimeout(() => {
+            if (mountedRef.current) fetchDashboard(true);
+          }, RETRY_DELAY_MS);
+          return;
+        }
+
+        reportError(err, { scope: 'useDashboardData' });
+        setError(err.message || 'Failed to load dashboard');
+        setData(EMPTY_DASHBOARD);
+      } finally {
+        if (mountedRef.current) setIsLoading(false);
+      }
+    },
+    [user?.businessId, isReadOnly]
+  );
 
   useEffect(() => {
     fetchDashboard();
-    return () => {
-      if (abortRef.current) abortRef.current.abort();
-    };
   }, [fetchDashboard]);
 
   return {
@@ -103,3 +134,5 @@ export const useDashboardData = () => {
     refresh: () => fetchDashboard(),
   };
 };
+
+export default useDashboardData;

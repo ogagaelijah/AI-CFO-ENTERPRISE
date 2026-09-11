@@ -1,83 +1,100 @@
 // src/application/useCases/subscriptions/CreateSubscriptionUseCase.js
+// v2.0.1-prod — 14-day Pro trial by default, SSOT-driven, no entity import
+
+const plans = require('../../../config/plans');
 
 class CreateSubscriptionUseCase {
     constructor({
         subscriptionRepository,
         businessRepository,
-        planRepository,
     }) {
         this.subscriptionRepository = subscriptionRepository;
         this.businessRepository = businessRepository;
-        this.planRepository = planRepository;
     }
 
+    /**
+     * Create a subscription.
+     *
+     * @param {Object} params
+     * @param {number} params.businessId
+     * @param {string} [params.planId] - Defaults to plans.getTrialPlan() ('pro')
+     * @param {string} [params.billingCycle] - 'monthly' | 'yearly' | 'trial'
+     * @param {number} [params.trialDays] - Defaults to plan's trialDays
+     * @param {string} [params.paymentReference]
+     * @param {string} [params.status] - 'trial' | 'active'
+     */
     async execute({
         businessId,
-        planId = 'free',
-        trialDays = 30,
+        planId = null,
+        billingCycle = null,
+        trialDays = null,
         paymentReference = null,
+        status = null,
     }) {
-        if (!businessId) {
-            throw new Error('Business ID is required');
-        }
+        if (!businessId) throw new Error('Business ID is required');
 
-        // Check if business exists
         const business = await this.businessRepository.findById(businessId);
-        if (!business) {
-            throw new Error('Business not found');
+        if (!business) throw new Error('Business not found');
+
+        // ── Determine plan
+        const effectivePlanId = planId || plans.getTrialPlan();
+        const plan = plans.getPlan(effectivePlanId);
+        if (!plan) throw new Error(`Plan not found: ${effectivePlanId}`);
+
+        // ── Determine trial duration
+        const effectiveTrialDays = trialDays != null
+            ? trialDays
+            : plan.trialDays;
+
+        const isTrial = effectiveTrialDays > 0 && status !== 'active';
+
+        // ── Determine billing cycle
+        const effectiveCycle = billingCycle || (isTrial ? 'trial' : 'monthly');
+
+        // ── Cancel any existing active subscription
+        const existing = this.subscriptionRepository.findActiveByBusinessId(businessId);
+        if (existing) {
+            this.subscriptionRepository.update(existing.id, {
+                status: 'cancelled',
+                endDate: new Date(),
+            });
         }
 
-        // Get plan details
-        const plan = await this.planRepository.findById(planId);
-        if (!plan) {
-            throw new Error('Plan not found');
-        }
-
-        // Check if business already has an active subscription
-        const existingSubscription = await this.subscriptionRepository.findActiveByBusinessId(businessId);
-        if (existingSubscription) {
-            // Cancel existing subscription
-            existingSubscription.status = 'cancelled';
-            await this.subscriptionRepository.update(existingSubscription.id, existingSubscription);
-        }
-
-        // Calculate dates
+        // ── Calculate dates
         const startDate = new Date();
         let endDate = null;
         let trialEndDate = null;
 
-        if (planId === 'free') {
-            // Free plan has a trial period
+        if (isTrial) {
             trialEndDate = new Date(startDate);
-            trialEndDate.setDate(trialEndDate.getDate() + trialDays);
+            trialEndDate.setDate(trialEndDate.getDate() + effectiveTrialDays);
         } else {
-            // Paid plans are monthly/yearly
             endDate = new Date(startDate);
-            endDate.setMonth(endDate.getMonth() + 1);
+            if (effectiveCycle === 'yearly') {
+                endDate.setFullYear(endDate.getFullYear() + 1);
+            } else {
+                endDate.setMonth(endDate.getMonth() + 1);
+            }
         }
 
-        // Create subscription
-        const Subscription = require('../../../domain/entities/Subscription');
-        const subscription = new Subscription({
+        // ── Create subscription (plain object — repo hydrates the entity)
+        const saved = this.subscriptionRepository.create({
             businessId,
-            planId,
-            status: 'trial',
+            planId: effectivePlanId,
+            status: isTrial ? 'trial' : 'active',
+            billingCycle: effectiveCycle,
             startDate,
             endDate,
             trialEndDate,
-            features: plan.features || {},
-            metadata: {
-                paymentReference,
-                trialDays,
-            },
+            features: plan.features,
         });
-
-        const savedSubscription = await this.subscriptionRepository.create(subscription);
 
         return {
             success: true,
-            subscription: savedSubscription.toJSON(),
-            message: `Subscription created successfully. ${planId === 'free' ? `Trial ends in ${trialDays} days.` : ''}`,
+            subscription: saved.toJSON(),
+            message: isTrial
+                ? `Trial started. ${effectiveTrialDays} days of ${plan.name} access.`
+                : `${plan.name} subscription activated.`,
         };
     }
 }

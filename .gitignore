@@ -110,3 +110,4 @@ coverage/
 *.orig
 *.rej
 *.patch
+ai-cfo.db*

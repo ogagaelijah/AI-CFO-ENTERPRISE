@@ -1,20 +1,29 @@
 // src/interfaces/http/server.js
+// v2.1.0-prod — Sentry v8+, structured logging, plan gating in correct order
+
+const { initSentry, Sentry } = require('../../shared/utils/sentry');
+initSentry();
+
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
+const pinoHttp = require('pino-http');
 require('dotenv').config();
+
+const logger = require('../../shared/utils/logger');
 
 const app = express();
 const PORT = process.env.HTTP_PORT || 5000;
 
-// ===== Rate Limiters =====
 const {
   strictLimiter,
   standardLimiter,
   generousLimiter,
 } = require('./middleware/rateLimiter');
 
-// Middleware
+const { authMiddleware } = require('./middleware/authMiddleware');
+const { planGuard } = require('./middleware/planGuard');
+
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
   credentials: true,
@@ -22,7 +31,30 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 
-// Routes
+app.use(pinoHttp({
+  logger,
+  genReqId: (req) =>
+    req.headers['x-request-id'] ||
+    `srv-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  customLogLevel: (_req, res, err) => {
+    if (err || res.statusCode >= 500) return 'error';
+    if (res.statusCode >= 400) return 'warn';
+    return 'info';
+  },
+  customSuccessMessage: (req, res) => `${req.method} ${req.url} ${res.statusCode}`,
+  customErrorMessage: (req, res, err) =>
+    `${req.method} ${req.url} ${res.statusCode} — ${err.message}`,
+  serializers: {
+    req: (req) => ({
+      id: req.id,
+      method: req.method,
+      url: req.url,
+      remoteAddress: req.remoteAddress,
+    }),
+    res: (res) => ({ statusCode: res.statusCode }),
+  },
+}));
+
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const businessRoutes = require('./routes/businessRoutes');
@@ -45,40 +77,39 @@ const decisionRoutes = require('./routes/decisionRoutes');
 const advisorRoutes = require('./routes/advisorRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 
-// ===== Strict rate limiting for auth =====
 app.use('/api/auth/login', strictLimiter);
 app.use('/api/auth/register', strictLimiter);
 app.use('/api/auth/forgot-password', strictLimiter);
 app.use('/api/auth/reset-password', strictLimiter);
 
-// ===== Auth routes (already rate-limited above) =====
 app.use('/api/auth', authRoutes);
 
-// ===== Standard rate limiting (write/transaction endpoints) =====
-app.use('/api/users', standardLimiter, userRoutes);
-app.use('/api/business', standardLimiter, businessRoutes);
-app.use('/api/payment', standardLimiter, paymentRoutes);
 app.use('/api/subscription', standardLimiter, subscriptionRoutes);
-app.use('/api/sales', standardLimiter, salesRoutes);
-app.use('/api/inventory', standardLimiter, inventoryRoutes);
-app.use('/api/debtors', standardLimiter, debtorRoutes);
-app.use('/api/income', standardLimiter, incomeRoutes);
-app.use('/api/expenses', standardLimiter, expenseRoutes);
-app.use('/api/purchases', standardLimiter, purchaseRoutes);
-app.use('/api/creditors', standardLimiter, creditorRoutes);
-app.use('/api/suppliers', standardLimiter, supplierRoutes);
-app.use('/api/customers', standardLimiter, customerRoutes);
+app.use('/api/payment', standardLimiter, paymentRoutes);
 
-// ===== Generous rate limiting (read-heavy intelligence endpoints) =====
-app.use('/api/reports', generousLimiter, reportRoutes);
-app.use('/api/analytics', generousLimiter, analyticsRoutes);
-app.use('/api/forecast', generousLimiter, forecastRoutes);
-app.use('/api/risk', generousLimiter, riskRoutes);
-app.use('/api/decision', generousLimiter, decisionRoutes);
-app.use('/api/advisor', generousLimiter, advisorRoutes);
-app.use('/api/dashboard', generousLimiter, dashboardRoutes);
+app.use('/api/users', standardLimiter, authMiddleware, userRoutes);
+app.use('/api/business', standardLimiter, authMiddleware, businessRoutes);
 
-// Health check
+app.use('/api/sales', standardLimiter, authMiddleware, planGuard({ feature: 'sales' }), salesRoutes);
+app.use('/api/inventory', standardLimiter, authMiddleware, planGuard({ feature: 'inventory' }), inventoryRoutes);
+app.use('/api/debtors', standardLimiter, authMiddleware, planGuard({ feature: 'debtors' }), debtorRoutes);
+app.use('/api/income', standardLimiter, authMiddleware, planGuard({ feature: 'income' }), incomeRoutes);
+app.use('/api/expenses', standardLimiter, authMiddleware, planGuard({ feature: 'expenses' }), expenseRoutes);
+app.use('/api/purchases', standardLimiter, authMiddleware, planGuard({ feature: 'purchases' }), purchaseRoutes);
+app.use('/api/creditors', standardLimiter, authMiddleware, planGuard({ feature: 'creditors' }), creditorRoutes);
+app.use('/api/suppliers', standardLimiter, authMiddleware, planGuard({ feature: 'suppliers' }), supplierRoutes);
+app.use('/api/customers', standardLimiter, authMiddleware, planGuard({ feature: 'customers' }), customerRoutes);
+
+app.use('/api/reports', generousLimiter, authMiddleware, planGuard({ feature: 'reports_basic' }), reportRoutes);
+
+app.use('/api/analytics', generousLimiter, authMiddleware, planGuard({ feature: 'analytics' }), analyticsRoutes);
+app.use('/api/forecast', generousLimiter, authMiddleware, planGuard({ feature: 'forecast' }), forecastRoutes);
+app.use('/api/risk', generousLimiter, authMiddleware, planGuard({ feature: 'risk' }), riskRoutes);
+app.use('/api/decision', generousLimiter, authMiddleware, planGuard({ feature: 'decisions' }), decisionRoutes);
+app.use('/api/advisor', generousLimiter, authMiddleware, planGuard({ feature: 'ai_advisor' }), advisorRoutes);
+
+app.use('/api/dashboard', generousLimiter, authMiddleware, planGuard({ feature: 'sales' }), dashboardRoutes);
+
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -88,28 +119,36 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// 404 handler
 app.use((req, res) => {
-  console.log(`❌ 404: ${req.method} ${req.originalUrl}`);
+  logger.warn({ method: req.method, url: req.originalUrl }, 'http: 404');
   res.status(404).json({
     success: false,
     message: `Route ${req.method} ${req.originalUrl} not found`,
   });
 });
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error('❌ HTTP Server Error:', err.message);
+if (process.env.SENTRY_DSN) {
+  Sentry.setupExpressErrorHandler(app);
+}
+
+app.use((err, req, res, _next) => {
+  logger.error(
+    { err: err.message, stack: err.stack, url: req.originalUrl },
+    'http: unhandled error'
+  );
   res.status(err.status || 500).json({
     success: false,
     message: err.message || 'Internal server error',
   });
 });
 
-// Start server
 const server = app.listen(PORT, () => {
-  console.log(`🌐 HTTP Server running on http://localhost:${PORT}`);
-  console.log(`⚡ Rate limiting: strict=auth, standard=writes, generous=reads`);
+  logger.info({ port: PORT }, 'http: server started');
+  logger.info('rate limiting: strict=auth, standard=writes, generous=reads');
+  logger.info('plan gating: active (authMiddleware → planGuard)');
+  logger.info(
+    process.env.SENTRY_DSN ? 'sentry: enabled' : 'sentry: disabled (no SENTRY_DSN)'
+  );
 });
 
 module.exports = { app, server };

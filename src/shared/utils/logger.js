@@ -1,37 +1,42 @@
 // src/shared/utils/logger.js
+// v1.0.0-prod — Pino structured logger
 
-const config = require('../../config');
+const pino = require('pino');
 
-const LOG_LEVELS = {
-    ERROR: 0,
-    WARN: 1,
-    INFO: 2,
-    DEBUG: 3,
-};
+const isProd = process.env.NODE_ENV === 'production';
+const level = process.env.LOG_LEVEL || (isProd ? 'info' : 'debug');
 
-const currentLevel = config.env === 'production' ? LOG_LEVELS.INFO : LOG_LEVELS.DEBUG;
+const logger = pino({
+  level,
+  base: {
+    service: 'ai-cfo-api',
+    env: process.env.NODE_ENV || 'development',
+  },
+  timestamp: pino.stdTimeFunctions.isoTime,
+  redact: {
+    paths: [
+      'req.headers.authorization',
+      'req.headers.cookie',
+      'password',
+      'passwordHash',
+      '*.password',
+      '*.passwordHash',
+      'token',
+      '*.token',
+    ],
+    remove: true,
+  },
+  transport: isProd
+    ? undefined
+    : {
+        target: 'pino-pretty',
+        options: {
+          colorize: true,
+          translateTime: 'HH:MM:ss.l',
+          ignore: 'pid,hostname,service,env',
+        },
+      },
+});
 
-function log(level, message, data = null) {
-    if (LOG_LEVELS[level] > currentLevel) return;
-
-    const timestamp = new Date().toISOString();
-    const logEntry = {
-        timestamp,
-        level,
-        message,
-        ...(data && { data }),
-    };
-
-    if (level === 'ERROR') {
-        console.error(JSON.stringify(logEntry, null, 2));
-    } else {
-        console.log(JSON.stringify(logEntry, null, 2));
-    }
-}
-
-module.exports = {
-    error: (message, data) => log('ERROR', message, data),
-    warn: (message, data) => log('WARN', message, data),
-    info: (message, data) => log('INFO', message, data),
-    debug: (message, data) => log('DEBUG', message, data),
-};
+module.exports = logger;
+module.exports.default = logger;

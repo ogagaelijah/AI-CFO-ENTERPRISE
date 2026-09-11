@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
-import { User, Building2, CreditCard, LogOut, Home, Settings as SettingsIcon, Menu, X, Moon, Sun } from 'lucide-react';
+import { User, Building2, CreditCard, LogOut, Menu, X, Moon, Sun } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import ProfileTab from './settings/ProfileTab';
 import BusinessTab from './settings/BusinessTab';
@@ -25,7 +25,6 @@ const Settings = () => {
 
   const loadData = async () => {
     setLoading(true);
-    // Mock data - replace with API calls
     setProfileData({
       fullName: user?.fullName || 'User',
       email: user?.email || 'user@example.com',
@@ -46,7 +45,7 @@ const Settings = () => {
 
   const handleLogout = () => {
     logout();
-    window.location.href = '/login';
+    window.location.href = '/';
   };
 
   const closeMenu = () => setIsMobileMenuOpen(false);
@@ -120,7 +119,9 @@ const Settings = () => {
                 <div className="w-8 h-8 rounded-full bg-primary-600 text-white flex items-center justify-center text-sm font-medium">
                   {user?.fullName?.charAt(0)?.toUpperCase() || 'U'}
                 </div>
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300 hidden lg:block">{user?.fullName || 'User'}</span>
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300 hidden lg:block">
+                  {user?.fullName || 'User'}
+                </span>
               </div>
             </div>
           </div>

@@ -1,89 +1,102 @@
 // src/application/useCases/subscriptions/CheckFeatureAccessUseCase.js
+// v2.0.0-prod — SSOT-based feature gating + read-only mode
+
+const plans = require('../../../config/plans');
 
 class CheckFeatureAccessUseCase {
     constructor({
         subscriptionRepository,
         businessRepository,
-        plansConfig,
     }) {
         this.subscriptionRepository = subscriptionRepository;
         this.businessRepository = businessRepository;
-        this.plansConfig = plansConfig;
     }
 
+    /**
+     * Check if a business has access to a feature.
+     *
+     * @param {Object} params
+     * @param {number} params.businessId
+     * @param {string} params.feature
+     * @returns {Promise<Object>} {
+     *   success, hasAccess, feature, plan, isReadOnly, isTrial,
+     *   daysRemaining, reason, message
+     * }
+     */
     async execute({ businessId, feature }) {
-        if (!businessId) {
-            throw new Error('Business ID is required');
-        }
+        if (!businessId) throw new Error('Business ID is required');
+        if (!feature) throw new Error('Feature is required');
 
-        if (!feature) {
-            throw new Error('Feature is required');
-        }
-
-        // Get business
         const business = await this.businessRepository.findById(businessId);
-        if (!business) {
-            throw new Error('Business not found');
-        }
+        if (!business) throw new Error('Business not found');
 
-        // Get active subscription
         const subscription = await this.subscriptionRepository.findActiveByBusinessId(businessId);
 
-        // If no subscription, use free plan
-        const planId = subscription ? subscription.planId : 'free';
-        const plan = this.plansConfig[planId];
-
-        if (!plan) {
+        // ── No subscription at all → fallback plan, read-only if fallback has no access
+        if (!subscription) {
+            const fallbackPlanId = plans.getFallbackPlan();
+            const hasAccess = plans.hasFeature(fallbackPlanId, feature);
             return {
                 success: true,
                 hasAccess: false,
                 feature,
-                plan: planId,
-                message: 'Plan not found',
+                plan: fallbackPlanId,
+                isReadOnly: true,
+                isTrial: false,
+                daysRemaining: 0,
+                reason: 'NO_SUBSCRIPTION',
+                message: 'No active subscription. Please subscribe to access this feature.',
             };
         }
 
-        // Check if feature is available in the plan
-        const hasAccess = plan.features && plan.features[feature] === true;
+        // ── Read-only mode (expired trial or expired paid cycle)
+        if (subscription.isReadOnly()) {
+            return {
+                success: true,
+                hasAccess: false,
+                feature,
+                plan: subscription.planId,
+                isReadOnly: true,
+                isTrial: false,
+                daysRemaining: 0,
+                reason: 'TRIAL_EXPIRED',
+                message: 'Your trial has ended. Upgrade to continue.',
+            };
+        }
 
-        // Check usage limits for certain features
-        let usage = null;
-        if (hasAccess && subscription && plan.limits) {
-            // Check if feature has usage limits
-            const limit = plan.limits[feature];
-            if (limit) {
-                // Get current usage from subscription
-                const usageData = subscription.metadata?.usage || {};
-                const currentUsage = usageData[feature] || 0;
+        // ── During trial: grant pro-level access
+        const effectivePlanId = subscription.isTrialActive()
+            ? plans.getTrialPlan()
+            : subscription.planId;
 
-                if (currentUsage >= limit) {
-                    // Feature limit exceeded
-                    return {
-                        success: true,
-                        hasAccess: false,
-                        feature,
-                        plan: planId,
-                        limit,
-                        usage: currentUsage,
-                        message: `Feature limit exceeded (${currentUsage}/${limit})`,
-                    };
-                }
+        const hasAccess = plans.hasFeature(effectivePlanId, feature);
 
-                usage = {
-                    current: currentUsage,
-                    limit,
-                    remaining: limit - currentUsage,
-                };
-            }
+        if (!hasAccess) {
+            return {
+                success: true,
+                hasAccess: false,
+                feature,
+                plan: subscription.planId,
+                effectivePlan: effectivePlanId,
+                isReadOnly: false,
+                isTrial: subscription.isTrialActive(),
+                daysRemaining: subscription.daysRemaining(),
+                reason: 'PLAN_UPGRADE_REQUIRED',
+                message: `Your plan does not include this feature.`,
+            };
         }
 
         return {
             success: true,
-            hasAccess,
+            hasAccess: true,
             feature,
-            plan: planId,
-            usage,
-            message: hasAccess ? 'Feature available' : 'Feature not available in your plan',
+            plan: subscription.planId,
+            effectivePlan: effectivePlanId,
+            isReadOnly: false,
+            isTrial: subscription.isTrialActive(),
+            daysRemaining: subscription.daysRemaining(),
+            reason: null,
+            message: 'Feature available',
         };
     }
 }

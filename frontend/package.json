@@ -13,6 +13,7 @@
     "test:coverage": "vitest --coverage"
   },
   "dependencies": {
+    "@sentry/react": "^10.74.0",
     "axios": "^1.19.0",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",

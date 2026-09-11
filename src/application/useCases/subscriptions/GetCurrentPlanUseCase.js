@@ -1,76 +1,97 @@
 // src/application/useCases/subscriptions/GetCurrentPlanUseCase.js
+// v2.0.0-prod — Returns plan + trial + read-only state
+
+const plans = require('../../../config/plans');
 
 class GetCurrentPlanUseCase {
     constructor({
         subscriptionRepository,
         businessRepository,
-        plansConfig,
     }) {
         this.subscriptionRepository = subscriptionRepository;
         this.businessRepository = businessRepository;
-        this.plansConfig = plansConfig;
     }
 
     async execute({ businessId }) {
-        if (!businessId) {
-            throw new Error('Business ID is required');
-        }
+        if (!businessId) throw new Error('Business ID is required');
 
-        // Check if business exists
         const business = await this.businessRepository.findById(businessId);
-        if (!business) {
-            throw new Error('Business not found');
-        }
+        if (!business) throw new Error('Business not found');
 
-        // Get active subscription
         const subscription = await this.subscriptionRepository.findActiveByBusinessId(businessId);
 
-        let planId = 'free';
-        let planDetails = this.plansConfig.free;
-        let status = 'inactive';
-        let daysRemaining = 0;
-
-        if (subscription) {
-            planId = subscription.planId;
-            planDetails = this.plansConfig[planId] || this.plansConfig.free;
-            status = subscription.status;
-
-            // Calculate days remaining for trial
-            if (subscription.trialEndDate) {
-                const now = new Date();
-                const trialEnd = new Date(subscription.trialEndDate);
-                daysRemaining = Math.max(0, Math.floor((trialEnd - now) / (1000 * 60 * 60 * 24)));
-            }
-
-            // Check if subscription is expired
-            if (subscription.endDate && new Date() > new Date(subscription.endDate)) {
-                status = 'expired';
-            }
+        // ── No subscription
+        if (!subscription) {
+            const fallbackPlanId = plans.getFallbackPlan();
+            const fallbackPlan = plans.getPlan(fallbackPlanId);
+            return {
+                success: true,
+                plan: {
+                    id: fallbackPlanId,
+                    name: fallbackPlan.name,
+                    description: fallbackPlan.description,
+                    price: fallbackPlan.pricing.monthly,
+                    pricing: fallbackPlan.pricing,
+                    currency: fallbackPlan.currency,
+                    features: fallbackPlan.features,
+                    limits: fallbackPlan.limits,
+                },
+                status: 'none',
+                billingCycle: null,
+                isActive: false,
+                isTrial: false,
+                isReadOnly: true,
+                daysRemaining: 0,
+                startDate: null,
+                endDate: null,
+                trialEndDate: null,
+                message: 'No active subscription. Please subscribe to continue.',
+            };
         }
 
-        const isTrial = status === 'trial' && daysRemaining > 0;
-        const isActive = status === 'active' || status === 'trial';
+        // ── Determine effective plan (trial upgrades to pro)
+        const isTrial = subscription.isTrialActive();
+        const effectivePlanId = isTrial ? plans.getTrialPlan() : subscription.planId;
+        const plan = plans.getPlan(effectivePlanId);
+
+        const isReadOnly = subscription.isReadOnly();
+        const daysRemaining = subscription.daysRemaining();
+
+        // Override status if read-only
+        const status = isReadOnly
+            ? 'expired'
+            : (isTrial ? 'trial' : subscription.status);
+
+        const message = isReadOnly
+            ? 'Your trial has ended. Upgrade to continue.'
+            : isTrial
+              ? `Trial active — ${daysRemaining} day${daysRemaining === 1 ? '' : 's'} remaining.`
+              : 'Subscription active.';
 
         return {
             success: true,
             plan: {
-                id: planId,
-                name: planDetails.name || planId,
-                description: planDetails.description || '',
-                status,
-                isActive,
-                isTrial,
-                daysRemaining: isTrial ? daysRemaining : 0,
-                features: planDetails.features || {},
-                limits: planDetails.limits || {},
-                price: planDetails.price || 0,
+                id: effectivePlanId,
+                name: plan.name,
+                description: plan.description,
+                price: plan.pricing.monthly,
+                pricing: plan.pricing,
+                currency: plan.currency,
+                features: plan.features,
+                limits: plan.limits,
+                trialDays: plan.trialDays,
             },
-            subscription: subscription ? subscription.toJSON() : null,
-            availablePlans: Object.keys(this.plansConfig).map(key => ({
-                id: key,
-                name: this.plansConfig[key].name || key,
-                price: this.plansConfig[key].price || 0,
-            })),
+            status,
+            subscriptionPlanId: subscription.planId,
+            billingCycle: subscription.billingCycle,
+            isActive: !isReadOnly,
+            isTrial,
+            isReadOnly,
+            daysRemaining,
+            startDate: subscription.startDate,
+            endDate: subscription.endDate,
+            trialEndDate: subscription.trialEndDate,
+            message,
         };
     }
 }

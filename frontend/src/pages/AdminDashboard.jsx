@@ -2,16 +2,13 @@
 import { useState, useEffect } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
-import { 
-  Users, Building2, CreditCard, DollarSign, 
-  TrendingUp, TrendingDown, Calendar, 
+import {
+  Users, Building2, CreditCard, DollarSign,
   LogOut, Home, Settings, Bell, Moon, Sun,
-  Menu, X, BarChart3, PieChart, Activity,
-  Users as UsersIcon, Layers, Brain, Lightbulb,
-  ArrowUp, ArrowDown
+  Menu, X, BarChart3, Activity,
+  Users as UsersIcon,
 } from 'lucide-react';
 
-// Common navigation items
 const navItems = [
   { icon: Home, label: 'Dashboard', href: '/admin', active: true },
   { icon: Users, label: 'Users', href: '/admin/users' },
@@ -42,9 +39,8 @@ const AdminDashboard = () => {
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
-      // 🔄 MOCK DATA — Will connect to backend later
       await new Promise((resolve) => setTimeout(resolve, 800));
-      
+
       setStats({
         totalUsers: 8,
         activeBusinesses: 6,
@@ -76,7 +72,7 @@ const AdminDashboard = () => {
 
   const handleLogout = () => {
     logout();
-    window.location.href = '/login';
+    window.location.href = '/';
   };
 
   const closeMenu = () => setIsMobileMenuOpen(false);
@@ -92,7 +88,6 @@ const AdminDashboard = () => {
     );
   }
 
-  // Calculate total from industry distribution
   const totalBusinesses = stats.industryDistribution.reduce((sum, i) => sum + i.count, 0);
 
   return (
@@ -219,7 +214,6 @@ const AdminDashboard = () => {
 
         {/* Dashboard Content */}
         <main className="flex-1 p-4 sm:p-6 space-y-4 sm:space-y-6">
-          {/* Welcome Banner */}
           <div className="rounded-xl p-4 sm:p-6 bg-gradient-to-r from-primary-600 to-primary-700 dark:from-primary-800 dark:to-primary-900 text-white">
             <div className="flex items-start sm:items-center gap-4">
               <div className="p-3 rounded-xl bg-white/20">
@@ -234,9 +228,7 @@ const AdminDashboard = () => {
             </div>
           </div>
 
-          {/* Stats Grid */}
           <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-            {/* Total Users */}
             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-4 sm:p-6 transition-colors duration-300">
               <div className="flex items-center justify-between">
                 <div className="p-2 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
@@ -252,7 +244,6 @@ const AdminDashboard = () => {
               <p className="text-sm text-gray-500 dark:text-gray-400">Total Users</p>
             </div>
 
-            {/* Active Businesses */}
             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-4 sm:p-6 transition-colors duration-300">
               <div className="flex items-center justify-between">
                 <div className="p-2 bg-emerald-50 dark:bg-emerald-900/30 rounded-lg">
@@ -268,7 +259,6 @@ const AdminDashboard = () => {
               </p>
             </div>
 
-            {/* Total Revenue */}
             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-4 sm:p-6 transition-colors duration-300">
               <div className="flex items-center justify-between">
                 <div className="p-2 bg-primary-50 dark:bg-primary-900/30 rounded-lg">
@@ -284,7 +274,6 @@ const AdminDashboard = () => {
               <p className="text-sm text-gray-500 dark:text-gray-400">Total Revenue</p>
             </div>
 
-            {/* Active Subscriptions */}
             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-4 sm:p-6 transition-colors duration-300">
               <div className="flex items-center justify-between">
                 <div className="p-2 bg-purple-50 dark:bg-purple-900/30 rounded-lg">
@@ -298,9 +287,7 @@ const AdminDashboard = () => {
             </div>
           </div>
 
-          {/* Industry Distribution & Recent Registrations */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Industry Distribution */}
             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6 transition-colors duration-300">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Industry Distribution</h2>
               <div className="space-y-3">
@@ -331,7 +318,6 @@ const AdminDashboard = () => {
               </div>
             </div>
 
-            {/* Recent Registrations */}
             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6 transition-colors duration-300">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Recent Registrations</h2>
               {stats.recentRegistrations.length > 0 ? (
@@ -357,7 +343,6 @@ const AdminDashboard = () => {
             </div>
           </div>
 
-          {/* Quick Actions */}
           <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6 transition-colors duration-300">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Quick Actions</h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

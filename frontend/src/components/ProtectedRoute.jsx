@@ -17,22 +17,19 @@ const ProtectedRoute = ({ children, requireAdmin = false }) => {
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/" replace />;
   }
 
-  // Check admin access if required
   if (requireAdmin) {
-    // Admin emails - add any emails that should have admin access
     const adminEmails = [
       'ogagaokeelijah@gmail.com',
       'ogagaoke66@gmail.com',
       'ogalosautomation@gmail.com',
     ];
-    
+
     const isAdmin = adminEmails.includes(user?.email) || user?.isAdmin === true;
-    
+
     if (!isAdmin) {
-      // Redirect non-admin users to their dashboard
       return <Navigate to="/dashboard" replace />;
     }
   }

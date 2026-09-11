@@ -1,4 +1,5 @@
 // src/application/useCases/subscriptions/CancelSubscriptionUseCase.js
+// v2.0.0-prod — Cancel → read-only until re-subscribe
 
 class CancelSubscriptionUseCase {
     constructor({
@@ -10,33 +11,27 @@ class CancelSubscriptionUseCase {
     }
 
     async execute({ businessId, reason = '' }) {
-        if (!businessId) {
-            throw new Error('Business ID is required');
-        }
+        if (!businessId) throw new Error('Business ID is required');
 
-        // Check if business exists
         const business = await this.businessRepository.findById(businessId);
-        if (!business) {
-            throw new Error('Business not found');
-        }
+        if (!business) throw new Error('Business not found');
 
-        // Get active subscription
         const subscription = await this.subscriptionRepository.findActiveByBusinessId(businessId);
-        if (!subscription) {
-            throw new Error('No active subscription found');
-        }
+        if (!subscription) throw new Error('No active subscription found');
 
-        // Cancel subscription
-        subscription.cancel(reason);
-        await this.subscriptionRepository.update(subscription.id, subscription);
-
-        // Update business features to free plan
-        // (This will be handled by the subscription guard)
+        // Cancel immediately → read-only mode
+        const updated = await this.subscriptionRepository.update(subscription.id, {
+            status: 'cancelled',
+            // End now so isReadOnly() returns true
+            endDate: new Date(),
+            trialEndDate: new Date(),
+        });
 
         return {
             success: true,
-            subscription: subscription.toJSON(),
-            message: 'Subscription cancelled successfully. You will be downgraded to the Free plan.',
+            subscription: updated.toJSON(),
+            isReadOnly: true,
+            message: 'Subscription cancelled. Your account is now in read-only mode.',
         };
     }
 }
