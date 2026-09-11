@@ -29,6 +29,7 @@ pnpm-lock.yaml
 *.sqlite
 *.sqlite3
 *.sqlite-journal
+*.db.backup
 
 # =============================================
 # LOGS

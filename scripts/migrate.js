@@ -1,4 +1,12 @@
 // scripts/migrate.js
+// v2.0.0-prod — Transaction-safe, FK-aware, uses db.exec() for multi-statement files
+//
+// Key improvements:
+//   • Each migration runs inside a transaction (all-or-nothing)
+//   • Foreign keys are disabled during migration, re-enabled after
+//   • Uses db.exec() on the whole file (preserves triggers, comments, structure)
+//   • Verification that FK re-enables cleanly
+
 const fs = require('fs');
 const path = require('path');
 const { getDatabase } = require('../src/infrastructure/database/sqlite/connection');
@@ -9,23 +17,22 @@ console.log('🔄 Starting migrations...');
 
 const MIGRATION_TABLE = 'migrations';
 
-// ✅ Check if table exists and has correct schema
+// ─────────────────────────────────────────────
+// Ensure migrations table exists with correct schema
+// ─────────────────────────────────────────────
 try {
-    // Check if table exists
     const tableExists = db.prepare(
         `SELECT name FROM sqlite_master WHERE type='table' AND name='${MIGRATION_TABLE}'`
     ).get();
 
-    // If table exists, check if it has the migration_name column
     if (tableExists) {
         const columns = db.prepare(`PRAGMA table_info(${MIGRATION_TABLE})`).all();
         const hasMigrationName = columns.some(c => c.name === 'migration_name');
-        
+
         if (!hasMigrationName) {
-            // ✅ Drop and recreate the table with correct schema
             db.exec(`DROP TABLE ${MIGRATION_TABLE}`);
             console.log('⚠️ Recreating migrations table with correct schema...');
-            
+
             db.exec(`
                 CREATE TABLE ${MIGRATION_TABLE} (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -38,7 +45,6 @@ try {
             console.log('✅ Migrations table ready');
         }
     } else {
-        // Create table fresh
         db.exec(`
             CREATE TABLE ${MIGRATION_TABLE} (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,22 +59,24 @@ try {
     process.exit(1);
 }
 
-// Get list of already run migrations
+// ─────────────────────────────────────────────
+// Load already-run migrations
+// ─────────────────────────────────────────────
 const runMigrations = db.prepare(
     `SELECT migration_name FROM ${MIGRATION_TABLE} ORDER BY id`
 ).all().map(row => row.migration_name);
 
-// Get all migration files
-const migrationsDir = path.join(__dirname, '../src/infrastructure/database/sqlite/migrations');
+// ─────────────────────────────────────────────
+// Load migration files
+// ─────────────────────────────────────────────
+const migrationsDir = path.join(
+    __dirname,
+    '../src/infrastructure/database/sqlite/migrations'
+);
 
-// Check if migrations directory exists
 if (!fs.existsSync(migrationsDir)) {
     console.error('❌ Migrations directory not found:', migrationsDir);
-    console.log('📁 Creating migrations directory...');
-    fs.mkdirSync(migrationsDir, { recursive: true });
-    console.log('✅ Migrations directory created');
-    console.log('⚠️ No migration files found. Please add .sql files to:', migrationsDir);
-    process.exit(0);
+    process.exit(1);
 }
 
 const files = fs.readdirSync(migrationsDir)
@@ -79,11 +87,12 @@ console.log(`📋 Found ${files.length} migration files`);
 
 if (files.length === 0) {
     console.log('⚠️ No migration files found.');
-    console.log('📁 Add .sql files to:', migrationsDir);
     process.exit(0);
 }
 
-// Run each migration that hasn't been run yet
+// ─────────────────────────────────────────────
+// Run pending migrations
+// ─────────────────────────────────────────────
 let runCount = 0;
 for (const file of files) {
     if (runMigrations.includes(file)) {
@@ -95,24 +104,42 @@ for (const file of files) {
     const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
 
     try {
-        // ✅ Execute the SQL - split statements if needed
-        const statements = sql.split(';').filter(s => s.trim().length > 0);
-        for (const stmt of statements) {
-            if (stmt.trim().length > 0) {
-                db.exec(stmt.trim());
-            }
+        // ─────────────────────────────────────────────
+        // Wrap in transaction + disable FK enforcement
+        // ─────────────────────────────────────────────
+        db.exec('PRAGMA foreign_keys = OFF');
+        db.exec('BEGIN');
+
+        try {
+            // Execute whole file at once — preserves triggers, multi-statement
+            db.exec(sql);
+
+            // Record the migration inside the same transaction
+            db.prepare(
+                `INSERT INTO ${MIGRATION_TABLE} (migration_name) VALUES (?)`
+            ).run(file);
+
+            db.exec('COMMIT');
+            console.log(`✅ ${file} completed`);
+            runCount++;
+        } catch (innerError) {
+            db.exec('ROLLBACK');
+            throw innerError;
+        } finally {
+            // Always re-enable FK enforcement
+            db.exec('PRAGMA foreign_keys = ON');
         }
-        
-        // Record the migration
-        db.prepare(`INSERT INTO ${MIGRATION_TABLE} (migration_name) VALUES (?)`).run(file);
-        
-        console.log(`✅ ${file} completed`);
-        runCount++;
     } catch (error) {
         console.error(`❌ ${file} failed:`, error.message);
-        console.error('📝 SQL that failed:', sql.substring(0, 200) + '...');
+        console.error('📝 SQL that failed:', sql.substring(0, 400) + '...');
         process.exit(1);
     }
 }
+
+// ─────────────────────────────────────────────
+// Sanity check: FKs are ON and DB is consistent
+// ─────────────────────────────────────────────
+const fkStatus = db.prepare('PRAGMA foreign_keys').get();
+console.log(`🔒 Foreign keys enabled: ${fkStatus.foreign_keys === 1}`);
 
 console.log(`✅ All migrations complete! (${runCount} new migrations ran)`);

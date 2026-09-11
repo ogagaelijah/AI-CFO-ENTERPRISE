@@ -1,22 +1,27 @@
 // src/application/useCases/auth/VerifyEmailUseCase.js
+// v2.0.0-prod — Single-use, hashed token
+
+const crypto = require('crypto');
 
 class VerifyEmailUseCase {
     constructor({ userRepository }) {
         this.userRepository = userRepository;
     }
 
-    async execute({ email, token }) {
-        if (!email) {
-            throw new Error('Email is required');
-        }
+    _hashToken(rawToken) {
+        return crypto.createHash('sha256').update(rawToken).digest('hex');
+    }
 
+    async execute({ token }) {
         if (!token) {
             throw new Error('Verification token is required');
         }
 
-        const user = await this.userRepository.findByEmail(email);
+        const hashedToken = this._hashToken(token);
+        const user = await this.userRepository.findByEmailVerificationToken(hashedToken);
+
         if (!user) {
-            throw new Error('User not found');
+            throw new Error('Invalid verification token');
         }
 
         if (user.emailVerified) {
@@ -27,21 +32,22 @@ class VerifyEmailUseCase {
             };
         }
 
-        // Check if token matches
-        if (user.verificationToken !== token) {
-            throw new Error('Invalid verification token');
-        }
-
-        // Check if token is expired
-        if (user.verificationTokenExpiry && new Date() > new Date(user.verificationTokenExpiry)) {
+        if (!user.isEmailVerificationTokenValid()) {
+            // Clear expired token
+            await this.userRepository.update(user.id, {
+                emailVerificationToken: null,
+                emailVerificationExpiry: null,
+            });
             throw new Error('Verification token has expired. Please request a new one.');
         }
 
-        // Verify email
+        // Mark verified + clear token (single-use)
         user.verifyEmail();
-        user.clearVerificationToken();
-
-        await this.userRepository.update(user.id, user);
+        await this.userRepository.update(user.id, {
+            emailVerified: true,
+            emailVerificationToken: null,
+            emailVerificationExpiry: null,
+        });
 
         return {
             success: true,

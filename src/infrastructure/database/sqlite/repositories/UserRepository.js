@@ -1,7 +1,12 @@
 // src/infrastructure/database/sqlite/repositories/UserRepository.js
-const BaseRepository = require('./BaseRepository');
+// v2.1.0-prod — Backward-compatible export + auth-hardened
 
+const BaseRepository = require('./BaseRepository');
+const bcrypt = require('bcrypt');
+
+// ─────────────────────────────────────────────
 // User Entity
+// ─────────────────────────────────────────────
 class User {
     constructor(data) {
         this.id = data.id || null;
@@ -14,8 +19,84 @@ class User {
         this.phoneVerified = data.phoneVerified || false;
         this.resetToken = data.resetToken || null;
         this.resetTokenExpiry = data.resetTokenExpiry || null;
+        this.emailVerificationToken = data.emailVerificationToken || null;
+        this.emailVerificationExpiry = data.emailVerificationExpiry || null;
+        this.passwordChangedAt = data.passwordChangedAt || null;
         this.createdAt = data.createdAt || new Date();
         this.updatedAt = data.updatedAt || new Date();
+    }
+
+    // ─────────────────────────────────────────────
+    // Password operations
+    // ─────────────────────────────────────────────
+    async verifyPassword(plainPassword) {
+        if (!this.passwordHash) return false;
+        return bcrypt.compare(plainPassword, this.passwordHash);
+    }
+
+    async setPassword(plainPassword) {
+        if (typeof plainPassword !== 'string' || plainPassword.length < 6) {
+            throw new Error('Password must be at least 6 characters');
+        }
+        this.passwordHash = await bcrypt.hash(plainPassword, 10);
+        this.passwordChangedAt = new Date().toISOString();
+        return this;
+    }
+
+    // ─────────────────────────────────────────────
+    // Reset token operations
+    // ─────────────────────────────────────────────
+    setResetToken(hashedToken, expiry) {
+        this.resetToken = hashedToken;
+        this.resetTokenExpiry = expiry;
+        return this;
+    }
+
+    clearResetToken() {
+        this.resetToken = null;
+        this.resetTokenExpiry = null;
+        return this;
+    }
+
+    isResetTokenValid() {
+        if (!this.resetToken || !this.resetTokenExpiry) return false;
+        const expiry = new Date(this.resetTokenExpiry).getTime();
+        return Date.now() < expiry;
+    }
+
+    // ─────────────────────────────────────────────
+    // Email verification token operations
+    // ─────────────────────────────────────────────
+    setEmailVerificationToken(hashedToken, expiry) {
+        this.emailVerificationToken = hashedToken;
+        this.emailVerificationExpiry = expiry;
+        return this;
+    }
+
+    clearEmailVerificationToken() {
+        this.emailVerificationToken = null;
+        this.emailVerificationExpiry = null;
+        return this;
+    }
+
+    isEmailVerificationTokenValid() {
+        if (!this.emailVerificationToken || !this.emailVerificationExpiry) return false;
+        const expiry = new Date(this.emailVerificationExpiry).getTime();
+        return Date.now() < expiry;
+    }
+
+    verifyEmail() {
+        this.emailVerified = true;
+        return this;
+    }
+
+    verifyPhone() {
+        this.phoneVerified = true;
+        return this;
+    }
+
+    isComplete() {
+        return Boolean(this.email && this.passwordHash && this.fullName);
     }
 
     toJSON() {
@@ -33,12 +114,14 @@ class User {
     }
 }
 
+// ─────────────────────────────────────────────
+// Repository
+// ─────────────────────────────────────────────
 class UserRepository extends BaseRepository {
     constructor() {
         super('users');
     }
 
-    // Hydrate row to User entity
     toEntity(row) {
         if (!row) return null;
         return new User({
@@ -52,20 +135,26 @@ class UserRepository extends BaseRepository {
             phoneVerified: row.phone_verified === 1,
             resetToken: row.reset_token,
             resetTokenExpiry: row.reset_token_expiry,
+            emailVerificationToken: row.email_verification_token,
+            emailVerificationExpiry: row.email_verification_expiry,
+            passwordChangedAt: row.password_changed_at,
             createdAt: row.created_at,
             updatedAt: row.updated_at,
         });
     }
 
-    // Create a new user
     create(userData) {
         const stmt = this.db.prepare(`
             INSERT INTO users (
-                telegram_id, email, phone_number, full_name, 
+                telegram_id, email, phone_number, full_name,
                 password_hash, email_verified, phone_verified,
-                reset_token, reset_token_expiry
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                reset_token, reset_token_expiry,
+                email_verification_token, email_verification_expiry,
+                password_changed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
+
+        const now = new Date().toISOString();
 
         const result = stmt.run(
             userData.telegramId || null,
@@ -76,84 +165,106 @@ class UserRepository extends BaseRepository {
             userData.emailVerified ? 1 : 0,
             userData.phoneVerified ? 1 : 0,
             userData.resetToken || null,
-            userData.resetTokenExpiry || null
+            userData.resetTokenExpiry || null,
+            userData.emailVerificationToken || null,
+            userData.emailVerificationExpiry || null,
+            userData.passwordChangedAt || now
         );
 
         return this.findById(result.lastInsertRowid);
     }
 
-    // Find by ID
     findById(id) {
         const row = this.db.prepare('SELECT * FROM users WHERE id = ?').get(id);
         return this.toEntity(row);
     }
 
-    // Find by email
     findByEmail(email) {
         const row = this.db.prepare('SELECT * FROM users WHERE email = ?').get(email);
         return this.toEntity(row);
     }
 
-    // Find by telegram ID
     findByTelegramId(telegramId) {
         const row = this.db.prepare('SELECT * FROM users WHERE telegram_id = ?').get(telegramId);
         return this.toEntity(row);
     }
 
-    // Find by reset token
-    findByResetToken(token) {
-        const row = this.db.prepare('SELECT * FROM users WHERE reset_token = ?').get(token);
+    findByPhoneNumber(phoneNumber) {
+        const row = this.db.prepare('SELECT * FROM users WHERE phone_number = ?').get(phoneNumber);
         return this.toEntity(row);
     }
 
-    // Update user
-    update(id, data) {
+    findByResetToken(hashedToken) {
+        const row = this.db.prepare('SELECT * FROM users WHERE reset_token = ?').get(hashedToken);
+        return this.toEntity(row);
+    }
+
+    findByEmailVerificationToken(hashedToken) {
+        const row = this.db.prepare(
+            'SELECT * FROM users WHERE email_verification_token = ?'
+        ).get(hashedToken);
+        return this.toEntity(row);
+    }
+
+    /**
+     * Update user.
+     * Accepts:
+     *   update(id, data)
+     *   update(user)          — convenience form for legacy callers
+     */
+    update(id, data = {}) {
+        if (id instanceof User) {
+            const entity = id;
+            return this.update(entity.id, {
+                telegramId: entity.telegramId,
+                email: entity.email,
+                phoneNumber: entity.phoneNumber,
+                fullName: entity.fullName,
+                passwordHash: entity.passwordHash,
+                emailVerified: entity.emailVerified,
+                phoneVerified: entity.phoneVerified,
+                resetToken: entity.resetToken,
+                resetTokenExpiry: entity.resetTokenExpiry,
+                emailVerificationToken: entity.emailVerificationToken,
+                emailVerificationExpiry: entity.emailVerificationExpiry,
+                passwordChangedAt: entity.passwordChangedAt,
+            });
+        }
+
         const fields = [];
         const values = [];
 
-        if (data.telegramId !== undefined) {
-            fields.push('telegram_id = ?');
-            values.push(data.telegramId);
+        const map = {
+            telegramId: 'telegram_id',
+            email: 'email',
+            phoneNumber: 'phone_number',
+            fullName: 'full_name',
+            passwordHash: 'password_hash',
+            emailVerified: 'email_verified',
+            phoneVerified: 'phone_verified',
+            resetToken: 'reset_token',
+            resetTokenExpiry: 'reset_token_expiry',
+            emailVerificationToken: 'email_verification_token',
+            emailVerificationExpiry: 'email_verification_expiry',
+            passwordChangedAt: 'password_changed_at',
+        };
+
+        for (const [key, column] of Object.entries(map)) {
+            if (data[key] !== undefined) {
+                fields.push(`${column} = ?`);
+                if (key === 'emailVerified' || key === 'phoneVerified') {
+                    values.push(data[key] ? 1 : 0);
+                } else {
+                    values.push(data[key]);
+                }
+            }
         }
-        if (data.email !== undefined) {
-            fields.push('email = ?');
-            values.push(data.email);
-        }
-        if (data.phoneNumber !== undefined) {
-            fields.push('phone_number = ?');
-            values.push(data.phoneNumber);
-        }
-        if (data.fullName !== undefined) {
-            fields.push('full_name = ?');
-            values.push(data.fullName);
-        }
-        if (data.passwordHash !== undefined) {
-            fields.push('password_hash = ?');
-            values.push(data.passwordHash);
-        }
-        if (data.emailVerified !== undefined) {
-            fields.push('email_verified = ?');
-            values.push(data.emailVerified ? 1 : 0);
-        }
-        if (data.phoneVerified !== undefined) {
-            fields.push('phone_verified = ?');
-            values.push(data.phoneVerified ? 1 : 0);
-        }
-        if (data.resetToken !== undefined) {
-            fields.push('reset_token = ?');
-            values.push(data.resetToken);
-        }
-        if (data.resetTokenExpiry !== undefined) {
-            fields.push('reset_token_expiry = ?');
-            values.push(data.resetTokenExpiry);
+
+        if (fields.length === 0) {
+            return this.findById(id);
         }
 
         fields.push('updated_at = CURRENT_TIMESTAMP');
-
-        if (fields.length === 0) {
-            throw new Error('No fields to update');
-        }
-
         values.push(id);
 
         const stmt = this.db.prepare(
@@ -168,24 +279,37 @@ class UserRepository extends BaseRepository {
         return this.findById(id);
     }
 
-    // Delete user
     delete(id) {
-        const stmt = this.db.prepare('DELETE FROM users WHERE id = ?');
-        const result = stmt.run(id);
+        const result = this.db.prepare('DELETE FROM users WHERE id = ?').run(id);
         return result.changes > 0;
     }
 
-    // Check if email exists
     emailExists(email) {
-        const result = this.db.prepare('SELECT COUNT(*) as count FROM users WHERE email = ?').get(email);
+        const result = this.db.prepare(
+            'SELECT COUNT(*) as count FROM users WHERE email = ?'
+        ).get(email);
         return result.count > 0;
     }
 
-    // Count all users
+    phoneExists(phoneNumber) {
+        const result = this.db.prepare(
+            'SELECT COUNT(*) as count FROM users WHERE phone_number = ?'
+        ).get(phoneNumber);
+        return result.count > 0;
+    }
+
     count() {
         const result = this.db.prepare('SELECT COUNT(*) as count FROM users').get();
         return result.count;
     }
 }
 
+// ─────────────────────────────────────────────
+// Backward-compatible export:
+//   const UserRepository = require('./UserRepository');        → works
+//   const { UserRepository } = require('./UserRepository');    → works
+//   const { User } = require('./UserRepository');              → works
+// ─────────────────────────────────────────────
 module.exports = UserRepository;
+module.exports.UserRepository = UserRepository;
+module.exports.User = User;
