@@ -20,13 +20,12 @@ const YearlyReport = ({ data, formatCurrency, formatPercentage }) => {
     majorOpportunities,
     strategicInsights,
     inventory,
-    topProducts,
-    topCustomers,
+    topProducts = [],
+    topCustomers = [],
     debtors,
     creditors,
   } = data;
 
-  // Safeguard for missing data
   const safeExecutive = executiveSummary || { 
     totalRevenue: 0, 
     netProfit: 0, 
@@ -58,17 +57,16 @@ const YearlyReport = ({ data, formatCurrency, formatPercentage }) => {
 
   const safeDebtors = debtors || { count: 0, totalAmount: 0, top3: [] };
   const safeCreditors = creditors || { count: 0, totalAmount: 0, top3: [] };
+  const safeTopCustomers = Array.isArray(topCustomers) ? topCustomers : [];
+  const safeTopProducts = Array.isArray(topProducts) ? topProducts : [];
 
   const yearDisplay = year || new Date().getFullYear();
   const hasPriorYearData = safeYoY.hasPriorYearData;
-
-  // Format period dates
   const startDate = period?.start ? new Date(period.start) : new Date();
   const endDate = period?.end ? new Date(period.end) : new Date();
 
   return (
     <div className="space-y-4">
-      {/* Main Report Card */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
           Yearly Report
@@ -116,9 +114,8 @@ const YearlyReport = ({ data, formatCurrency, formatPercentage }) => {
           </div>
         </div>
 
-        {/* Year-over-Year + Inventory */}
+        {/* YoY + Inventory */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
-          {/* YoY Revenue */}
           <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">YoY Revenue</p>
             {hasPriorYearData ? (
@@ -127,67 +124,44 @@ const YearlyReport = ({ data, formatCurrency, formatPercentage }) => {
                   <p className={`text-xl font-bold ${safeYoY.revenueChange >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                     {safeYoY.revenueChange >= 0 ? '↑' : '↓'} {Math.abs(safeYoY.revenueChange || 0).toFixed(1)}%
                   </p>
-                  <p className={`text-sm font-medium ${safeYoY.revenueChange >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                    {safeYoY.revenueAbsoluteChange >= 0 ? '+' : '-'} {formatCurrency(Math.abs(safeYoY.revenueAbsoluteChange || 0))}
-                  </p>
                 </div>
                 <p className="text-xs text-gray-400 dark:text-gray-500">vs previous year</p>
               </>
             ) : (
-              <>
-                <p className="text-xl font-bold text-gray-900 dark:text-white">
-                  {formatCurrency(safeExecutive.totalRevenue)}
-                </p>
-                <p className="text-xs text-gray-400 dark:text-gray-500">📊 First year tracked — baseline established</p>
-              </>
+              <p className="text-sm text-gray-500 dark:text-gray-400">First year tracked</p>
             )}
           </div>
 
-          {/* YoY Profit */}
           <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">YoY Profit</p>
             {hasPriorYearData ? (
               <>
-                <div className="flex items-baseline gap-2">
-                  <p className={`text-xl font-bold ${safeYoY.profitChange >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                    {safeYoY.profitChange >= 0 ? '↑' : '↓'} {Math.abs(safeYoY.profitChange || 0).toFixed(1)}%
-                  </p>
-                  <p className={`text-sm font-medium ${safeYoY.profitChange >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                    {safeYoY.profitAbsoluteChange >= 0 ? '+' : '-'} {formatCurrency(Math.abs(safeYoY.profitAbsoluteChange || 0))}
-                  </p>
-                </div>
+                <p className={`text-xl font-bold ${safeYoY.profitChange >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                  {safeYoY.profitChange >= 0 ? '↑' : '↓'} {Math.abs(safeYoY.profitChange || 0).toFixed(1)}%
+                </p>
                 <p className="text-xs text-gray-400 dark:text-gray-500">vs previous year</p>
               </>
             ) : (
-              <>
-                <p className="text-xl font-bold text-gray-900 dark:text-white">
-                  {formatCurrency(safeExecutive.netProfit)}
-                </p>
-                <p className="text-xs text-gray-400 dark:text-gray-500">📊 First year tracked — baseline established</p>
-              </>
+              <p className="text-sm text-gray-500 dark:text-gray-400">First year tracked</p>
             )}
           </div>
 
-          {/* Total COGS */}
           <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">Total COGS</p>
             <p className="text-xl font-bold text-indigo-600 dark:text-indigo-400">
               {formatCurrency(safeKpi.cogs)}
             </p>
-            <p className="text-xs text-gray-400 dark:text-gray-500">Cost of goods sold</p>
           </div>
 
-          {/* Net Margin */}
           <div className="bg-teal-50 dark:bg-teal-900/20 rounded-lg p-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">Net Margin</p>
             <p className="text-xl font-bold text-teal-600 dark:text-teal-400">
               {formatPercentage(safeKpi.netMargin)}
             </p>
-            <p className="text-xs text-gray-400 dark:text-gray-500">Net Profit / Revenue</p>
           </div>
         </div>
 
-        {/* Inventory Section */}
+        {/* Inventory */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
           <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">Total Inventory Items</p>
@@ -211,102 +185,79 @@ const YearlyReport = ({ data, formatCurrency, formatPercentage }) => {
           )}
         </div>
 
-        {/* Debtors Section */}
+        {/* Debtors */}
         {(safeDebtors.count > 0 || safeDebtors.totalAmount > 0) && (
           <div className="mt-4">
-            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              📋 Debtors
-            </h4>
+            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">📋 Debtors</h4>
             <div className="grid grid-cols-2 gap-4 mb-2">
               <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-3">
                 <p className="text-xs text-gray-500 dark:text-gray-400">Total Debtors</p>
-                <p className="text-xl font-bold text-purple-600 dark:text-purple-400">
-                  {safeDebtors.count}
-                </p>
+                <p className="text-xl font-bold text-purple-600 dark:text-purple-400">{safeDebtors.count}</p>
               </div>
               <div className="bg-rose-50 dark:bg-rose-900/20 rounded-lg p-3">
                 <p className="text-xs text-gray-500 dark:text-gray-400">Total Amount Owed</p>
-                <p className="text-xl font-bold text-rose-600 dark:text-rose-400">
-                  {formatCurrency(safeDebtors.totalAmount)}
-                </p>
+                <p className="text-xl font-bold text-rose-600 dark:text-rose-400">{formatCurrency(safeDebtors.totalAmount)}</p>
               </div>
             </div>
-            {safeDebtors.top3 && safeDebtors.top3.length > 0 && (
-              <div className="space-y-1">
-                {safeDebtors.top3.map((d, idx) => (
-                  <div key={idx} className="flex justify-between text-sm border-b border-gray-100 dark:border-gray-700 py-1">
-                    <span className="text-gray-600 dark:text-gray-400">{d.name}</span>
-                    <span className="font-medium text-gray-900 dark:text-white">{formatCurrency(d.amount)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         )}
 
-        {/* Creditors Section */}
+        {/* Creditors */}
         {(safeCreditors.count > 0 || safeCreditors.totalAmount > 0) && (
           <div className="mt-4">
-            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              📋 Creditors
-            </h4>
+            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">📋 Creditors</h4>
             <div className="grid grid-cols-2 gap-4 mb-2">
               <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-3">
                 <p className="text-xs text-gray-500 dark:text-gray-400">Total Creditors</p>
-                <p className="text-xl font-bold text-indigo-600 dark:text-indigo-400">
-                  {safeCreditors.count}
-                </p>
+                <p className="text-xl font-bold text-indigo-600 dark:text-indigo-400">{safeCreditors.count}</p>
               </div>
               <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-3">
                 <p className="text-xs text-gray-500 dark:text-gray-400">Total Amount Owed</p>
-                <p className="text-xl font-bold text-orange-600 dark:text-orange-400">
-                  {formatCurrency(safeCreditors.totalAmount)}
-                </p>
+                <p className="text-xl font-bold text-orange-600 dark:text-orange-400">{formatCurrency(safeCreditors.totalAmount)}</p>
               </div>
             </div>
-            {safeCreditors.top3 && safeCreditors.top3.length > 0 && (
-              <div className="space-y-1">
-                {safeCreditors.top3.map((c, idx) => (
-                  <div key={idx} className="flex justify-between text-sm border-b border-gray-100 dark:border-gray-700 py-1">
-                    <span className="text-gray-600 dark:text-gray-400">{c.name}</span>
-                    <span className="font-medium text-gray-900 dark:text-white">{formatCurrency(c.amount)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         )}
 
-        {/* Top 5 Products & Customers */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-          {topProducts && topProducts.length > 0 && (
-            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
-              <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">🏆 Top 5 Products</h4>
-              <div className="space-y-1">
-                {topProducts.slice(0, 5).map((p, idx) => (
-                  <div key={idx} className="flex justify-between text-sm border-b border-gray-200 dark:border-gray-600 py-1">
-                    <span className="text-gray-600 dark:text-gray-400">{p.name}</span>
-                    <span className="font-medium text-gray-900 dark:text-white">{formatCurrency(p.amount)}</span>
-                  </div>
-                ))}
-              </div>
+        {/* ===== TOP 5 CUSTOMERS ===== */}
+        {safeTopCustomers.length > 0 && (
+          <div className="mt-6">
+            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">🏆 Top 5 Customers</h4>
+            <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg overflow-hidden">
+              {safeTopCustomers.slice(0, 5).map((c, idx) => (
+                <div key={idx} className="flex justify-between text-sm border-b border-gray-100 dark:border-gray-700 px-3 py-2.5 last:border-0">
+                  <span className="text-gray-600 dark:text-gray-400">
+                    <span className="font-medium text-gray-500 dark:text-gray-400 mr-2">{idx + 1}.</span>
+                    {c.name}
+                  </span>
+                  <span className="font-semibold text-green-600 dark:text-green-400">
+                    {formatCurrency(c.amount || c.totalRevenue || 0)}
+                  </span>
+                </div>
+              ))}
             </div>
-          )}
+          </div>
+        )}
 
-          {topCustomers && topCustomers.length > 0 && (
-            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
-              <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">👥 Top 5 Customers</h4>
-              <div className="space-y-1">
-                {topCustomers.slice(0, 5).map((c, idx) => (
-                  <div key={idx} className="flex justify-between text-sm border-b border-gray-200 dark:border-gray-600 py-1">
-                    <span className="text-gray-600 dark:text-gray-400">{c.name}</span>
-                    <span className="font-medium text-gray-900 dark:text-white">{formatCurrency(c.amount)}</span>
-                  </div>
-                ))}
-              </div>
+        {/* ===== TOP 5 PRODUCTS ===== */}
+        {safeTopProducts.length > 0 && (
+          <div className="mt-6">
+            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">📦 Top 5 Products</h4>
+            <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg overflow-hidden">
+              {safeTopProducts.slice(0, 5).map((p, idx) => (
+                <div key={idx} className="flex justify-between text-sm border-b border-gray-100 dark:border-gray-700 px-3 py-2.5 last:border-0">
+                  <span className="text-gray-600 dark:text-gray-400">
+                    <span className="font-medium text-gray-500 dark:text-gray-400 mr-2">{idx + 1}.</span>
+                    {p.name}
+                  </span>
+                  <span className="font-semibold text-green-600 dark:text-green-400">
+                    {formatCurrency(p.amount || p.totalRevenue || 0)}
+                  </span>
+                </div>
+              ))}
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Strategic Insights */}
         {strategicInsights && strategicInsights.length > 0 && (

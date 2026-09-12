@@ -1,4 +1,5 @@
 // src/application/useCases/income/RecordIncomeUseCase.js
+// v2.1.0-prod — Fixed missing business_id
 
 class RecordIncomeUseCase {
     constructor(incomeRepository, paymentRepository = null) {
@@ -14,14 +15,19 @@ class RecordIncomeUseCase {
         description = '',
         date = new Date(),
     }) {
-        // Validate
-        const validSources = ['COMMISSION', 'INTEREST', 'RENT', 'GRANT', 'GIFT', 'DIVIDEND', 'OTHER'];
+        if (!userId) {
+            throw new Error('User ID is required');
+        }
+        if (!businessId) {
+            throw new Error('Business ID is required');
+        }
+
         if (!source) {
             throw new Error('Source is required');
         }
 
         // Normalize source
-        source = source.toUpperCase();
+        source = source.toUpperCase().trim();
 
         if (!amount || amount <= 0) {
             throw new Error('Amount must be greater than 0');
@@ -31,21 +37,21 @@ class RecordIncomeUseCase {
 
         const incomeData = {
             user_id: userId,
+            business_id: businessId,          // 🔑 CRITICAL FIX
             source: source,
             amount: amount,
             description: description || null,
             date: incomeDate.toISOString().split('T')[0],
-            payment_status: 'PAID',
         };
 
         // 1. Create the income
         const savedIncome = await this.incomeRepository.create(incomeData);
 
-        // 2. Create corresponding Payment record (permanent fix)
+        // 2. Create corresponding Payment record
         if (this.paymentRepository) {
             try {
                 await this.paymentRepository.create({
-                    businessId: businessId || userId,
+                    businessId: businessId,
                     userId: userId,
                     type: 'RECEIVED',
                     amount: amount,

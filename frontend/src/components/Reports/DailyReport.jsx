@@ -10,7 +10,17 @@ const DailyReport = ({ data, formatCurrency, formatPercentage }) => {
     );
   }
 
-  const { date, today, comparison, transactions, alerts, debtors, creditors } = data;
+  const {
+    date,
+    today,
+    comparison,
+    transactions,
+    alerts,
+    debtors,
+    creditors,
+    topCustomers = [],
+    topProducts = [],
+  } = data;
 
   const safeToday = today || {
     revenue: 0,
@@ -36,7 +46,9 @@ const DailyReport = ({ data, formatCurrency, formatPercentage }) => {
   const safeDebtors = debtors || { count: 0, totalAmount: 0, top3: [] };
   const safeCreditors = creditors || { count: 0, totalAmount: 0, top3: [] };
 
-  // Show both absolute + percentage when available
+  const safeTopCustomers = Array.isArray(topCustomers) ? topCustomers : [];
+  const safeTopProducts = Array.isArray(topProducts) ? topProducts : [];
+
   const renderChange = (percentageChange, absoluteChange) => {
     const hasPercentage = percentageChange != null;
     const hasAbsolute = absoluteChange != null && absoluteChange !== 0;
@@ -45,10 +57,7 @@ const DailyReport = ({ data, formatCurrency, formatPercentage }) => {
       return <span className="text-gray-500 dark:text-gray-400">—</span>;
     }
 
-    const isPositive = hasPercentage
-      ? percentageChange >= 0
-      : absoluteChange > 0;
-
+    const isPositive = hasPercentage ? percentageChange >= 0 : absoluteChange > 0;
     const arrow = isPositive ? '↑' : '↓';
     const colorClass = isPositive
       ? 'text-green-600 dark:text-green-400'
@@ -93,9 +102,8 @@ const DailyReport = ({ data, formatCurrency, formatPercentage }) => {
             : 'No date available'}
         </p>
 
-        {/* Financial Summary - Correct Order + Labels */}
+        {/* Financial Summary */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
-          {/* Revenue */}
           <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">Revenue</p>
             <p className="text-xl font-bold text-blue-600 dark:text-blue-400">
@@ -106,7 +114,6 @@ const DailyReport = ({ data, formatCurrency, formatPercentage }) => {
             </p>
           </div>
 
-          {/* Gross Profit */}
           <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">Gross Profit</p>
             <p className="text-xl font-bold text-green-600 dark:text-green-400">
@@ -120,7 +127,6 @@ const DailyReport = ({ data, formatCurrency, formatPercentage }) => {
             </p>
           </div>
 
-          {/* Expenses (moved before Net Profit) */}
           <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">Expenses</p>
             <p className="text-xl font-bold text-red-600 dark:text-red-400">
@@ -131,7 +137,6 @@ const DailyReport = ({ data, formatCurrency, formatPercentage }) => {
             </p>
           </div>
 
-          {/* Net Profit */}
           <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">Net Profit</p>
             <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
@@ -143,7 +148,7 @@ const DailyReport = ({ data, formatCurrency, formatPercentage }) => {
           </div>
         </div>
 
-        {/* Sales & Inventory Summary */}
+        {/* Sales & Inventory */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">Sales Count</p>
@@ -190,7 +195,7 @@ const DailyReport = ({ data, formatCurrency, formatPercentage }) => {
           </div>
         )}
 
-        {/* Low stock alert with item names */}
+        {/* Low stock alert */}
         {alerts?.lowStock === true && lowStockItems.length > 0 && (
           <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
             <p className="text-sm font-medium text-yellow-700 dark:text-yellow-400 mb-1">
@@ -206,9 +211,9 @@ const DailyReport = ({ data, formatCurrency, formatPercentage }) => {
           </div>
         )}
 
-        {/* Debtors Section */}
+        {/* Debtors */}
         {(safeDebtors.count > 0 || safeDebtors.totalAmount > 0) && (
-          <div className="mt-4">
+          <div className="mt-6">
             <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               📋 Debtors
             </h4>
@@ -226,12 +231,14 @@ const DailyReport = ({ data, formatCurrency, formatPercentage }) => {
                 </p>
               </div>
             </div>
-            {safeDebtors.top3 && safeDebtors.top3.length > 0 && (
+            {safeDebtors.top3?.length > 0 && (
               <div className="space-y-1">
                 {safeDebtors.top3.map((d, idx) => (
                   <div key={idx} className="flex justify-between text-sm border-b border-gray-100 dark:border-gray-700 py-1">
                     <span className="text-gray-600 dark:text-gray-400">{d.name}</span>
-                    <span className="font-medium text-gray-900 dark:text-white">{formatCurrency(d.amount)}</span>
+                    <span className="font-medium text-gray-900 dark:text-white">
+                      {formatCurrency(d.amount)}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -239,7 +246,7 @@ const DailyReport = ({ data, formatCurrency, formatPercentage }) => {
           </div>
         )}
 
-        {/* Creditors Section */}
+        {/* Creditors */}
         {(safeCreditors.count > 0 || safeCreditors.totalAmount > 0) && (
           <div className="mt-4">
             <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -259,16 +266,94 @@ const DailyReport = ({ data, formatCurrency, formatPercentage }) => {
                 </p>
               </div>
             </div>
-            {safeCreditors.top3 && safeCreditors.top3.length > 0 && (
+            {safeCreditors.top3?.length > 0 && (
               <div className="space-y-1">
                 {safeCreditors.top3.map((c, idx) => (
                   <div key={idx} className="flex justify-between text-sm border-b border-gray-100 dark:border-gray-700 py-1">
                     <span className="text-gray-600 dark:text-gray-400">{c.name}</span>
-                    <span className="font-medium text-gray-900 dark:text-white">{formatCurrency(c.amount)}</span>
+                    <span className="font-medium text-gray-900 dark:text-white">
+                      {formatCurrency(c.amount)}
+                    </span>
                   </div>
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* ===== TOP 5 CUSTOMERS (moved here) ===== */}
+        {safeTopCustomers.length > 0 && (
+          <div className="mt-6">
+            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+              🏆 Top 5 Customers
+            </h4>
+            <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg overflow-hidden">
+              <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-600">
+                <div className="col-span-1">#</div>
+                <div className="col-span-5">Customer</div>
+                <div className="col-span-3 text-right">Revenue</div>
+                <div className="col-span-3 text-right">Sales</div>
+              </div>
+              {safeTopCustomers.map((customer) => (
+                <div
+                  key={customer.rank || customer.name}
+                  className="grid grid-cols-12 gap-2 px-3 py-2.5 text-sm border-b border-gray-100 dark:border-gray-700 last:border-0"
+                >
+                  <div className="col-span-1 font-medium text-gray-500 dark:text-gray-400">
+                    {customer.rank}
+                  </div>
+                  <div className="col-span-5 font-medium text-gray-900 dark:text-white truncate">
+                    {customer.name}
+                  </div>
+                  <div className="col-span-3 text-right font-semibold text-green-600 dark:text-green-400">
+                    {formatCurrency(customer.totalRevenue)}
+                  </div>
+                  <div className="col-span-3 text-right text-gray-600 dark:text-gray-300">
+                    {customer.salesCount}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ===== TOP 5 PRODUCTS (moved here) ===== */}
+        {safeTopProducts.length > 0 && (
+          <div className="mt-6">
+            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+              📦 Top 5 Products
+            </h4>
+            <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg overflow-hidden">
+              <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-600">
+                <div className="col-span-1">#</div>
+                <div className="col-span-4">Product</div>
+                <div className="col-span-2 text-right">Qty</div>
+                <div className="col-span-3 text-right">Revenue</div>
+                <div className="col-span-2 text-right">Sales</div>
+              </div>
+              {safeTopProducts.map((product) => (
+                <div
+                  key={product.rank || product.name}
+                  className="grid grid-cols-12 gap-2 px-3 py-2.5 text-sm border-b border-gray-100 dark:border-gray-700 last:border-0"
+                >
+                  <div className="col-span-1 font-medium text-gray-500 dark:text-gray-400">
+                    {product.rank}
+                  </div>
+                  <div className="col-span-4 font-medium text-gray-900 dark:text-white truncate">
+                    {product.name}
+                  </div>
+                  <div className="col-span-2 text-right text-gray-700 dark:text-gray-200">
+                    {product.quantitySold}
+                  </div>
+                  <div className="col-span-3 text-right font-semibold text-green-600 dark:text-green-400">
+                    {formatCurrency(product.totalRevenue)}
+                  </div>
+                  <div className="col-span-2 text-right text-gray-600 dark:text-gray-300">
+                    {product.salesCount}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>

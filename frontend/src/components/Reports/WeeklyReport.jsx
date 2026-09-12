@@ -17,8 +17,8 @@ const WeeklyReport = ({ data, formatCurrency, formatPercentage }) => {
     expenses, 
     netProfit, 
     netMargin, 
-    topProducts, 
-    topCustomers,
+    topProducts = [], 
+    topCustomers = [],
     inventory,
     weekOverWeek,
     debtors,
@@ -38,6 +38,8 @@ const WeeklyReport = ({ data, formatCurrency, formatPercentage }) => {
 
   const safeDebtors = debtors || { count: 0, totalAmount: 0, top3: [] };
   const safeCreditors = creditors || { count: 0, totalAmount: 0, top3: [] };
+  const safeTopCustomers = Array.isArray(topCustomers) ? topCustomers : [];
+  const safeTopProducts = Array.isArray(topProducts) ? topProducts : [];
 
   return (
     <div className="space-y-4">
@@ -59,7 +61,6 @@ const WeeklyReport = ({ data, formatCurrency, formatPercentage }) => {
         
         {/* Performance Metrics */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          {/* Revenue */}
           <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">Revenue</p>
             <p className="text-xl font-bold text-blue-600 dark:text-blue-400">
@@ -70,7 +71,6 @@ const WeeklyReport = ({ data, formatCurrency, formatPercentage }) => {
             </p>
           </div>
 
-          {/* Gross Profit */}
           <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">Gross Profit</p>
             <p className="text-xl font-bold text-green-600 dark:text-green-400">
@@ -84,7 +84,6 @@ const WeeklyReport = ({ data, formatCurrency, formatPercentage }) => {
             </p>
           </div>
 
-          {/* Expenses */}
           <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">Expenses</p>
             <p className="text-xl font-bold text-red-600 dark:text-red-400">
@@ -95,7 +94,6 @@ const WeeklyReport = ({ data, formatCurrency, formatPercentage }) => {
             </p>
           </div>
 
-          {/* Net Profit */}
           <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">Net Profit</p>
             <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
@@ -110,7 +108,7 @@ const WeeklyReport = ({ data, formatCurrency, formatPercentage }) => {
           </div>
         </div>
 
-        {/* Inventory Section */}
+        {/* Inventory */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-4">
           <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">Total Inventory Items</p>
@@ -134,7 +132,7 @@ const WeeklyReport = ({ data, formatCurrency, formatPercentage }) => {
           )}
         </div>
 
-        {/* Low stock alert with item names */}
+        {/* Low stock alert */}
         {safeInventory.lowStockCount > 0 && lowStockItems.length > 0 && (
           <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
             <p className="text-sm font-medium text-yellow-700 dark:text-yellow-400 mb-1">
@@ -150,7 +148,7 @@ const WeeklyReport = ({ data, formatCurrency, formatPercentage }) => {
           </div>
         )}
 
-        {/* Week-over-Week Comparison */}
+        {/* Week-over-Week */}
         {weekOverWeek && (
           <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
             <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Week-over-Week</p>
@@ -165,27 +163,21 @@ const WeeklyReport = ({ data, formatCurrency, formatPercentage }) => {
           </div>
         )}
 
-        {/* Debtors Section */}
+        {/* Debtors */}
         {(safeDebtors.count > 0 || safeDebtors.totalAmount > 0) && (
           <div className="mt-4">
-            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              📋 Debtors
-            </h4>
+            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">📋 Debtors</h4>
             <div className="grid grid-cols-2 gap-4 mb-2">
               <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-3">
                 <p className="text-xs text-gray-500 dark:text-gray-400">Total Debtors</p>
-                <p className="text-xl font-bold text-purple-600 dark:text-purple-400">
-                  {safeDebtors.count}
-                </p>
+                <p className="text-xl font-bold text-purple-600 dark:text-purple-400">{safeDebtors.count}</p>
               </div>
               <div className="bg-rose-50 dark:bg-rose-900/20 rounded-lg p-3">
                 <p className="text-xs text-gray-500 dark:text-gray-400">Total Amount Owed</p>
-                <p className="text-xl font-bold text-rose-600 dark:text-rose-400">
-                  {formatCurrency(safeDebtors.totalAmount)}
-                </p>
+                <p className="text-xl font-bold text-rose-600 dark:text-rose-400">{formatCurrency(safeDebtors.totalAmount)}</p>
               </div>
             </div>
-            {safeDebtors.top3 && safeDebtors.top3.length > 0 && (
+            {safeDebtors.top3?.length > 0 && (
               <div className="space-y-1">
                 {safeDebtors.top3.map((d, idx) => (
                   <div key={idx} className="flex justify-between text-sm border-b border-gray-100 dark:border-gray-700 py-1">
@@ -198,27 +190,21 @@ const WeeklyReport = ({ data, formatCurrency, formatPercentage }) => {
           </div>
         )}
 
-        {/* Creditors Section */}
+        {/* Creditors */}
         {(safeCreditors.count > 0 || safeCreditors.totalAmount > 0) && (
           <div className="mt-4">
-            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              📋 Creditors
-            </h4>
+            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">📋 Creditors</h4>
             <div className="grid grid-cols-2 gap-4 mb-2">
               <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-3">
                 <p className="text-xs text-gray-500 dark:text-gray-400">Total Creditors</p>
-                <p className="text-xl font-bold text-indigo-600 dark:text-indigo-400">
-                  {safeCreditors.count}
-                </p>
+                <p className="text-xl font-bold text-indigo-600 dark:text-indigo-400">{safeCreditors.count}</p>
               </div>
               <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-3">
                 <p className="text-xs text-gray-500 dark:text-gray-400">Total Amount Owed</p>
-                <p className="text-xl font-bold text-orange-600 dark:text-orange-400">
-                  {formatCurrency(safeCreditors.totalAmount)}
-                </p>
+                <p className="text-xl font-bold text-orange-600 dark:text-orange-400">{formatCurrency(safeCreditors.totalAmount)}</p>
               </div>
             </div>
-            {safeCreditors.top3 && safeCreditors.top3.length > 0 && (
+            {safeCreditors.top3?.length > 0 && (
               <div className="space-y-1">
                 {safeCreditors.top3.map((c, idx) => (
                   <div key={idx} className="flex justify-between text-sm border-b border-gray-100 dark:border-gray-700 py-1">
@@ -230,32 +216,41 @@ const WeeklyReport = ({ data, formatCurrency, formatPercentage }) => {
             )}
           </div>
         )}
-      </div>
 
-      {/* Top Products & Customers */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {topProducts && topProducts.length > 0 && (
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">🏆 Top Products</h4>
-            <div className="space-y-1">
-              {topProducts.slice(0, 5).map((p, idx) => (
-                <div key={idx} className="flex justify-between text-sm border-b border-gray-100 dark:border-gray-700 py-1">
-                  <span className="text-gray-600 dark:text-gray-400">{p.name}</span>
-                  <span className="font-medium text-gray-900 dark:text-white">{formatCurrency(p.amount)}</span>
+        {/* ===== TOP 5 CUSTOMERS ===== */}
+        {safeTopCustomers.length > 0 && (
+          <div className="mt-6">
+            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">🏆 Top 5 Customers</h4>
+            <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg overflow-hidden">
+              {safeTopCustomers.slice(0, 5).map((c, idx) => (
+                <div key={idx} className="flex justify-between text-sm border-b border-gray-100 dark:border-gray-700 px-3 py-2.5 last:border-0">
+                  <span className="text-gray-600 dark:text-gray-400">
+                    <span className="font-medium text-gray-500 dark:text-gray-400 mr-2">{idx + 1}.</span>
+                    {c.name}
+                  </span>
+                  <span className="font-semibold text-green-600 dark:text-green-400">
+                    {formatCurrency(c.amount || c.totalRevenue || 0)}
+                  </span>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {topCustomers && topCustomers.length > 0 && (
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">👥 Top Customers</h4>
-            <div className="space-y-1">
-              {topCustomers.slice(0, 5).map((c, idx) => (
-                <div key={idx} className="flex justify-between text-sm border-b border-gray-100 dark:border-gray-700 py-1">
-                  <span className="text-gray-600 dark:text-gray-400">{c.name}</span>
-                  <span className="font-medium text-gray-900 dark:text-white">{formatCurrency(c.amount)}</span>
+        {/* ===== TOP 5 PRODUCTS ===== */}
+        {safeTopProducts.length > 0 && (
+          <div className="mt-6">
+            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">📦 Top 5 Products</h4>
+            <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg overflow-hidden">
+              {safeTopProducts.slice(0, 5).map((p, idx) => (
+                <div key={idx} className="flex justify-between text-sm border-b border-gray-100 dark:border-gray-700 px-3 py-2.5 last:border-0">
+                  <span className="text-gray-600 dark:text-gray-400">
+                    <span className="font-medium text-gray-500 dark:text-gray-400 mr-2">{idx + 1}.</span>
+                    {p.name}
+                  </span>
+                  <span className="font-semibold text-green-600 dark:text-green-400">
+                    {formatCurrency(p.amount || p.totalRevenue || 0)}
+                  </span>
                 </div>
               ))}
             </div>

@@ -7,7 +7,17 @@ export const mapDailyReport = (backendData) => {
     return getEmptyDailyReport();
   }
 
-  const { date, today: todayData, comparison, transactions, alerts, debtors, creditors } = backendData;
+  const {
+    date,
+    today: todayData,
+    comparison,
+    transactions,
+    alerts,
+    debtors,
+    creditors,
+    topCustomers,   // ← added
+    topProducts,    // ← added
+  } = backendData;
 
   return {
     date: date || today(),
@@ -57,6 +67,10 @@ export const mapDailyReport = (backendData) => {
       totalAmount: toNumber(creditors?.totalAmount),
       top3: Array.isArray(creditors?.top3) ? creditors.top3 : [],
     },
+
+    // ===== NEW: Pass through Top 5 =====
+    topCustomers: Array.isArray(topCustomers) ? topCustomers : [],
+    topProducts: Array.isArray(topProducts) ? topProducts : [],
   };
 };
 
@@ -99,4 +113,6 @@ const getEmptyDailyReport = () => ({
     totalAmount: 0,
     top3: [],
   },
+  topCustomers: [],
+  topProducts: [],
 });

@@ -1,4 +1,5 @@
 // src/application/useCases/expenses/RecordExpenseUseCase.js
+// v2.1.0-prod — Fixed missing business_id
 
 class RecordExpenseUseCase {
     constructor(expenseRepository, paymentRepository = null) {
@@ -14,12 +15,15 @@ class RecordExpenseUseCase {
         description = '',
         date = new Date(),
     }) {
-        // Validate
-        const validCategories = ['SALARY', 'RENT', 'TRANSPORT', 'UTILITIES', 'MARKETING', 'INSURANCE', 'OTHER'];
-        if (!category || !validCategories.includes(category.toUpperCase())) {
-            // Allow custom categories but normalize common ones
-            category = category ? category.toUpperCase() : 'OTHER';
+        if (!userId) {
+            throw new Error('User ID is required');
         }
+        if (!businessId) {
+            throw new Error('Business ID is required');
+        }
+
+        // Normalize category
+        category = category ? category.toUpperCase().trim() : 'OTHER';
 
         if (!amount || amount <= 0) {
             throw new Error('Amount must be greater than 0');
@@ -29,21 +33,21 @@ class RecordExpenseUseCase {
 
         const expenseData = {
             user_id: userId,
+            business_id: businessId,          // 🔑 CRITICAL FIX
             category: category,
             amount: amount,
             description: description || null,
             date: expenseDate.toISOString().split('T')[0],
-            payment_status: 'PAID',
         };
 
         // 1. Create the expense
         const savedExpense = await this.expenseRepository.create(expenseData);
 
-        // 2. Create corresponding Payment record (permanent fix)
+        // 2. Create corresponding Payment record
         if (this.paymentRepository) {
             try {
                 await this.paymentRepository.create({
-                    businessId: businessId || userId,
+                    businessId: businessId,
                     userId: userId,
                     type: 'MADE',
                     amount: amount,

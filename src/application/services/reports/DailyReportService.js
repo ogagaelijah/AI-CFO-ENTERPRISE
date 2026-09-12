@@ -1,5 +1,5 @@
 // src/application/services/reports/DailyReportService.js
-// v2.1.0-prod — multi-tenant aware, single-arg debtor/creditor repos
+// v2.2.0-prod — multi-tenant + Top 5 Customers + Top 5 Products
 
 const RevenueCalculator = require('./calculators/RevenueCalculator');
 const CogsCalculator = require('./calculators/CogsCalculator');
@@ -59,6 +59,92 @@ class DailyReportService {
     _safeNumber(value) {
         const num = Number(value);
         return isNaN(num) ? 0 : num;
+    }
+
+    /**
+     * Aggregate Top 5 Customers by revenue from sales
+     */
+    _getTopCustomers(sales, limit = 5) {
+        const map = {};
+
+        for (const sale of sales) {
+            const name = (sale.customer_name || 'Walk-in Customer').trim();
+            if (!map[name]) {
+                map[name] = {
+                    name,
+                    totalRevenue: 0,
+                    totalQuantity: 0,
+                    salesCount: 0,
+                };
+            }
+            map[name].totalRevenue += this._safeNumber(sale.total_price);
+            map[name].totalQuantity += this._safeNumber(sale.quantity);
+            map[name].salesCount += 1;
+        }
+
+        return Object.values(map)
+            .sort((a, b) => b.totalRevenue - a.totalRevenue)
+            .slice(0, limit)
+            .map((c, index) => ({
+                rank: index + 1,
+                name: c.name,
+                totalRevenue: Math.round(c.totalRevenue * 100) / 100,
+                totalQuantity: c.totalQuantity,
+                salesCount: c.salesCount,
+            }));
+    }
+
+    /**
+     * Aggregate Top 5 Products by quantity sold (and revenue)
+     */
+    _getTopProducts(sales, limit = 5) {
+        const map = {};
+
+        for (const sale of sales) {
+            // Support both single-item and multi-item sales
+            if (sale.items && Array.isArray(sale.items) && sale.items.length > 0) {
+                for (const item of sale.items) {
+                    const name = (item.name || item.itemName || 'Unknown Product').trim();
+                    if (!map[name]) {
+                        map[name] = {
+                            name,
+                            quantitySold: 0,
+                            totalRevenue: 0,
+                            salesCount: 0,
+                        };
+                    }
+                    const qty = this._safeNumber(item.quantity);
+                    const price = this._safeNumber(item.sellingPrice || item.unitPrice || item.unit_price);
+                    map[name].quantitySold += qty;
+                    map[name].totalRevenue += qty * price;
+                    map[name].salesCount += 1;
+                }
+            } else {
+                const name = (sale.item_name || 'Unknown Product').trim();
+                if (!map[name]) {
+                    map[name] = {
+                        name,
+                        quantitySold: 0,
+                        totalRevenue: 0,
+                        salesCount: 0,
+                    };
+                }
+                map[name].quantitySold += this._safeNumber(sale.quantity);
+                map[name].totalRevenue += this._safeNumber(sale.total_price);
+                map[name].salesCount += 1;
+            }
+        }
+
+        return Object.values(map)
+            .sort((a, b) => b.quantitySold - a.quantitySold || b.totalRevenue - a.totalRevenue)
+            .slice(0, limit)
+            .map((p, index) => ({
+                rank: index + 1,
+                name: p.name,
+                quantitySold: p.quantitySold,
+                totalRevenue: Math.round(p.totalRevenue * 100) / 100,
+                salesCount: p.salesCount,
+            }));
     }
 
     async generate({ userId, businessId, date }) {
@@ -128,7 +214,7 @@ class DailyReportService {
             lowStockThreshold: 5,
         });
 
-        // ===== DEBTORS & CREDITORS (single-arg repos) =====
+        // ===== DEBTORS & CREDITORS =====
         const activeDebtors = await this.debtorRepository.findActive(businessId);
         const debtorSummary = await this.debtorRepository.getSummary(businessId);
 
@@ -244,6 +330,10 @@ class DailyReportService {
             (s, p) => s + this._safeNumber(p.total_cost), 0
         );
 
+        // ===== TOP 5 CUSTOMERS & TOP 5 PRODUCTS =====
+        const topCustomers = this._getTopCustomers(todaySales, 5);
+        const topProducts = this._getTopProducts(todaySales, 5);
+
         return {
             date: dateStr,
             previousDate: prevDateStr,
@@ -298,6 +388,10 @@ class DailyReportService {
             transactions: keyTransactions,
             debtors: debtorsData,
             creditors: creditorsData,
+
+            // ===== NEW: Top 5 =====
+            topCustomers,
+            topProducts,
         };
     }
 }
