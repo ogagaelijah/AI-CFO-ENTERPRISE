@@ -1,138 +1,152 @@
 // src/application/services/reports/calculators/CashCalculator.js
-
 /**
  * CashCalculator - Single source of truth for cash calculations
  *
- * Calculates:
- * - Opening cash
- * - Cash inflows
- * - Cash outflows
- * - Net cash flow
- * - Closing cash
- * - Cash by category
+ * Opening balance is always calculated strictly BEFORE the start of the period
+ * to prevent double-counting of the boundary day.
  *
- * Fully multi-business aware.
- * Handles both legacy (RECEIVED/MADE) and standard (IN/OUT) payment types.
+ * Prefers repository.getNetCashBefore() when available.
+ * Falls back safely in all cases (including when paymentRepository is missing).
  */
 class CashCalculator {
-    constructor({ paymentRepository }) {
-        this.paymentRepository = paymentRepository;
+    constructor({ paymentRepository } = {}) {
+        this.paymentRepository = paymentRepository || null;
     }
 
     _safeNumber(value) {
         const num = Number(value);
-        return isNaN(num) ? 0 : num;
+        return Number.isFinite(num) ? num : 0;
     }
 
     _safeArray(result) {
         return Array.isArray(result) ? result : [];
     }
 
-    /**
-     * Check if a payment is cash IN (received)
-     * Handles both legacy and standard types
-     */
+    _toDateOnly(value) {
+        if (!value) return null;
+        if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+            return value;
+        }
+        const d = new Date(value);
+        if (Number.isNaN(d.getTime())) return null;
+        return d.toISOString().slice(0, 10);
+    }
+
+    _getPreviousDay(dateStr) {
+        const normalized = this._toDateOnly(dateStr);
+        if (!normalized) return null;
+        const d = new Date(normalized + 'T12:00:00Z');
+        d.setUTCDate(d.getUTCDate() - 1);
+        return d.toISOString().slice(0, 10);
+    }
+
     _isCashIn(payment) {
-        const type = String(payment.type || payment.payment_type || '').toUpperCase();
+        const type = String(payment?.type || payment?.payment_type || '').toUpperCase();
         return type === 'IN' || type === 'RECEIVED';
     }
 
-    /**
-     * Check if a payment is cash OUT (made)
-     * Handles both legacy and standard types
-     */
     _isCashOut(payment) {
-        const type = String(payment.type || payment.payment_type || '').toUpperCase();
+        const type = String(payment?.type || payment?.payment_type || '').toUpperCase();
         return type === 'OUT' || type === 'MADE';
     }
 
     /**
-     * Normalize payment type for display
+     * Safe opening balance calculation
      */
-    _normalizeType(payment) {
-        if (this._isCashIn(payment)) return 'IN';
-        if (this._isCashOut(payment)) return 'OUT';
-        return 'UNKNOWN';
+    async _getOpeningBalance(businessId, beforeDate) {
+        if (!beforeDate || !this.paymentRepository) return 0;
+
+        // Fast path – only if the method really exists
+        if (typeof this.paymentRepository.getNetCashBefore === 'function') {
+            try {
+                const result = await this.paymentRepository.getNetCashBefore(businessId, beforeDate);
+                return this._safeNumber(result);
+            } catch (err) {
+                console.warn('CashCalculator: getNetCashBefore failed, falling back:', err.message);
+            }
+        }
+
+        if (typeof this.paymentRepository.sumNetCashBefore === 'function') {
+            try {
+                const result = await this.paymentRepository.sumNetCashBefore(businessId, beforeDate);
+                return this._safeNumber(result);
+            } catch (err) {
+                console.warn('CashCalculator: sumNetCashBefore failed, falling back:', err.message);
+            }
+        }
+
+        // Fallback – original behaviour
+        if (typeof this.paymentRepository.findByDateRange === 'function') {
+            try {
+                const result = await this.paymentRepository.findByDateRange(
+                    businessId,
+                    '2000-01-01',
+                    beforeDate
+                );
+                return this._calculateNetCash(this._safeArray(result));
+            } catch (err) {
+                console.warn('CashCalculator: findByDateRange fallback failed:', err.message);
+            }
+        }
+
+        return 0;
     }
 
-    /**
-     * Calculate cash metrics for a date range
-     */
     async calculate({
-        userId,          // kept for compatibility, not used by repository
+        userId,
         businessId,
         startDate,
         endDate,
         openingDate = null,
         openingCash = null,
         includeDetails = false,
-    }) {
-        // =============================================
-        // 🔍 DEBUG LOGS
-        // =============================================
-        console.log('🔍🔍🔍 CASH CALCULATOR DEBUG 🔍🔍🔍');
-        console.log('businessId:', businessId);
-        console.log('startDate:', startDate);
-        console.log('endDate:', endDate);
-        console.log('userId:', userId);
-        console.log('paymentRepository exists?', !!this.paymentRepository);
-        // =============================================
-
-        // Validate inputs
+    } = {}) {
         if (!businessId) {
-            console.warn('⚠️ CashCalculator: businessId is required');
+            console.warn('CashCalculator: businessId is required');
             return this._getEmptyResult();
         }
 
-        // Determine opening date
-        const openDate = openingDate || startDate;
-
-        // Calculate opening cash
-        let openingBalance = openingCash;
-        if (openingBalance === null) {
-            let openingPayments = [];
-            try {
-                console.log('🔍 Fetching opening payments for date:', openDate);
-                const result = await this.paymentRepository.findByDateRange(
-                    businessId,
-                    '2000-01-01',
-                    openDate
-                );
-                openingPayments = this._safeArray(result);
-                console.log('🔍 Opening payments found:', openingPayments.length);
-            } catch (error) {
-                console.warn('⚠️ CashCalculator: Could not fetch opening payments:', error.message);
-                openingPayments = [];
-            }
-            openingBalance = this._calculateNetCash(openingPayments);
-            console.log('🔍 Opening balance calculated:', openingBalance);
+        if (!this.paymentRepository) {
+            console.warn('CashCalculator: paymentRepository is missing');
+            return this._getEmptyResult();
         }
 
-        // Get period payments
+        const normalizedStart = this._toDateOnly(startDate);
+        const normalizedEnd = this._toDateOnly(endDate);
+
+        if (!normalizedStart || !normalizedEnd) {
+            console.warn('CashCalculator: invalid startDate or endDate', { startDate, endDate });
+            return this._getEmptyResult();
+        }
+
+        const openDate = this._toDateOnly(openingDate) || normalizedStart;
+
+        // Opening balance (strictly before the period)
+        let openingBalance = (openingCash !== null && openingCash !== undefined)
+            ? this._safeNumber(openingCash)
+            : null;
+
+        if (openingBalance === null) {
+            const openingEnd = this._getPreviousDay(openDate);
+            openingBalance = await this._getOpeningBalance(businessId, openingEnd);
+        }
+
+        // Period payments
         let payments = [];
         try {
-            console.log('🔍 Fetching period payments:', startDate, 'to', endDate);
-            const result = await this.paymentRepository.findByDateRange(
-                businessId,
-                startDate,
-                endDate
-            );
-            payments = this._safeArray(result);
-            console.log('🔍 Period payments found:', payments.length);
-        } catch (error) {
-            console.warn('⚠️ CashCalculator: Could not fetch payments:', error.message);
+            if (typeof this.paymentRepository.findByDateRange === 'function') {
+                const result = await this.paymentRepository.findByDateRange(
+                    businessId,
+                    normalizedStart,
+                    normalizedEnd
+                );
+                payments = this._safeArray(result);
+            }
+        } catch (err) {
+            console.warn('CashCalculator: Could not fetch period payments:', err.message);
             payments = [];
         }
 
-        // Log first few payments to see structure
-        if (payments.length > 0) {
-            console.log('🔍 First payment sample:', JSON.stringify(payments[0], null, 2));
-            console.log('🔍 All payment types:', payments.map(p => p.type || p.payment_type));
-        } else {
-            console.log('🔍 No payments found in period');
-        }
-
-        // Calculate cash in/out using the unified check functions
         const cashIn = payments
             .filter(p => this._isCashIn(p))
             .reduce((sum, p) => sum + this._safeNumber(p.amount), 0);
@@ -141,18 +155,9 @@ class CashCalculator {
             .filter(p => this._isCashOut(p))
             .reduce((sum, p) => sum + this._safeNumber(p.amount), 0);
 
-        console.log('💰 Cash In (RECEIVED/IN):', cashIn);
-        console.log('💰 Cash Out (MADE/OUT):', cashOut);
-
         const netCashFlow = cashIn - cashOut;
         const closingCash = openingBalance + netCashFlow;
 
-        console.log('💰 Opening Balance:', openingBalance);
-        console.log('💰 Net Cash Flow:', netCashFlow);
-        console.log('💰 Closing Cash:', closingCash);
-        console.log('🔍🔍🔍 END CASH CALCULATOR DEBUG 🔍🔍🔍');
-
-        // Build details if requested
         let details = null;
         if (includeDetails) {
             details = {
@@ -161,7 +166,6 @@ class CashCalculator {
             };
         }
 
-        // Cash by reference type
         const cashInByType = this._groupByReferenceType(payments, 'IN');
         const cashOutByType = this._groupByReferenceType(payments, 'OUT');
 
@@ -175,16 +179,11 @@ class CashCalculator {
             cashOutByType,
             details,
             paymentCount: payments.length,
-            // Legacy support for older code that expects these fields
             totalInflows: Number(cashIn.toFixed(2)),
             totalOutflows: Number(cashOut.toFixed(2)),
         };
     }
 
-    /**
-     * Calculate net cash from payments
-     * Uses the unified check functions
-     */
     _calculateNetCash(payments) {
         if (!Array.isArray(payments) || payments.length === 0) return 0;
 
@@ -196,10 +195,6 @@ class CashCalculator {
         }, 0);
     }
 
-    /**
-     * Group cash by reference type
-     * Uses the unified check functions
-     */
     _groupByReferenceType(payments, direction) {
         if (!Array.isArray(payments)) return [];
 
@@ -220,9 +215,6 @@ class CashCalculator {
             .sort((a, b) => b.amount - a.amount);
     }
 
-    /**
-     * Get empty result for when no data is available
-     */
     _getEmptyResult() {
         return {
             openingCash: 0,

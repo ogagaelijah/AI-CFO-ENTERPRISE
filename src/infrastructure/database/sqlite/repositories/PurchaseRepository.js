@@ -1,4 +1,5 @@
 // src/infrastructure/database/sqlite/repositories/PurchaseRepository.js
+// v3.0.1-prod — Strict multi-tenant
 
 const BaseRepository = require('./BaseRepository');
 
@@ -14,14 +15,10 @@ class PurchaseRepository extends BaseRepository {
             try {
                 items = typeof row.items === 'string' ? JSON.parse(row.items) : row.items;
             } catch (e) {
-                console.warn('⚠️ Could not parse items:', e);
                 items = [];
             }
         }
-        return {
-            ...row,
-            items: items
-        };
+        return { ...row, items };
     }
 
     create(purchaseData) {
@@ -35,20 +32,20 @@ class PurchaseRepository extends BaseRepository {
         `);
 
         const result = stmt.run(
-            purchaseData.user_id,
-            purchaseData.business_id || null,
-            purchaseData.supplier_id || null,
-            purchaseData.supplier_name || null,
-            purchaseData.item_name || null,
+            purchaseData.userId ?? purchaseData.user_id ?? null,
+            purchaseData.businessId ?? purchaseData.business_id ?? null,
+            purchaseData.supplier_id ?? purchaseData.supplierId ?? null,
+            purchaseData.supplier_name ?? purchaseData.supplierName ?? null,
+            purchaseData.item_name ?? purchaseData.itemName ?? null,
             purchaseData.quantity || 0,
-            purchaseData.unit_cost || 0,
-            purchaseData.total_cost || 0,
-            purchaseData.payment_status || 'UNPAID',
-            purchaseData.amount_paid || 0,
-            purchaseData.balance_remaining || 0,
-            purchaseData.due_date || null,
-            purchaseData.purchase_date || new Date().toISOString(),
-            purchaseData.items || null,
+            (purchaseData.unit_cost ?? purchaseData.unitCost) || 0,
+            (purchaseData.total_cost ?? purchaseData.totalCost) || 0,
+            (purchaseData.payment_status ?? purchaseData.paymentStatus) || 'UNPAID',
+            (purchaseData.amount_paid ?? purchaseData.amountPaid) || 0,
+            (purchaseData.balance_remaining ?? purchaseData.balanceRemaining) || 0,
+            purchaseData.due_date ?? purchaseData.dueDate ?? null,
+            purchaseData.purchase_date ?? purchaseData.purchaseDate ?? new Date().toISOString(),
+            purchaseData.items ? JSON.stringify(purchaseData.items) : null,
             purchaseData.notes || null
         );
 
@@ -60,13 +57,6 @@ class PurchaseRepository extends BaseRepository {
         return this._hydrate(row);
     }
 
-    findByUserId(userId) {
-        const rows = this.db.prepare(
-            'SELECT * FROM purchases WHERE user_id = ? ORDER BY purchase_date DESC'
-        ).all(userId);
-        return rows.map(row => this._hydrate(row));
-    }
-
     findByBusinessId(businessId) {
         const rows = this.db.prepare(
             'SELECT * FROM purchases WHERE business_id = ? ORDER BY purchase_date DESC'
@@ -74,160 +64,130 @@ class PurchaseRepository extends BaseRepository {
         return rows.map(row => this._hydrate(row));
     }
 
-    findByDateRange(userId, startDate, endDate) {
-        const rows = this.db.prepare(`
-            SELECT * FROM purchases 
-            WHERE user_id = ? AND DATE(purchase_date) BETWEEN ? AND ? 
-            ORDER BY purchase_date DESC
-        `).all(userId, startDate, endDate);
+    findByUserId(userId) {
+        const rows = this.db.prepare(
+            'SELECT * FROM purchases WHERE user_id = ? ORDER BY purchase_date DESC'
+        ).all(userId);
         return rows.map(row => this._hydrate(row));
     }
 
-    findByItemName(userId, itemName) {
+    findByDateRange(businessId, startDate, endDate) {
         const rows = this.db.prepare(`
             SELECT * FROM purchases 
-            WHERE user_id = ? AND item_name LIKE ? 
+            WHERE business_id = ? AND DATE(purchase_date) BETWEEN ? AND ? 
             ORDER BY purchase_date DESC
-        `).all(userId, `%${itemName}%`);
+        `).all(businessId, startDate, endDate);
         return rows.map(row => this._hydrate(row));
     }
 
-    findBySupplier(userId, supplierName) {
+    findBySupplier(businessId, supplierName) {
         const rows = this.db.prepare(`
             SELECT * FROM purchases 
-            WHERE user_id = ? AND supplier_name LIKE ? 
+            WHERE business_id = ? AND supplier_name LIKE ? 
             ORDER BY purchase_date DESC
-        `).all(userId, `%${supplierName}%`);
+        `).all(businessId, `%${supplierName}%`);
         return rows.map(row => this._hydrate(row));
     }
 
-    findBySupplierId(userId, supplierId) {
+    findBySupplierId(businessId, supplierId) {
         const rows = this.db.prepare(`
             SELECT * FROM purchases 
-            WHERE user_id = ? AND supplier_id = ? 
+            WHERE business_id = ? AND supplier_id = ? 
             ORDER BY purchase_date DESC
-        `).all(userId, supplierId);
+        `).all(businessId, supplierId);
         return rows.map(row => this._hydrate(row));
     }
 
-    getTodayPurchases(userId) {
+    getTodayPurchases(businessId) {
         const today = new Date().toISOString().split('T')[0];
         const rows = this.db.prepare(`
             SELECT * FROM purchases 
-            WHERE user_id = ? AND DATE(purchase_date) = ? 
+            WHERE business_id = ? AND DATE(purchase_date) = ? 
             ORDER BY purchase_date DESC
-        `).all(userId, today);
+        `).all(businessId, today);
         return rows.map(row => this._hydrate(row));
+    }
+
+    getPurchaseSummary(businessId) {
+        return this.db.prepare(`
+            SELECT 
+                COUNT(*) as total_purchases,
+                COALESCE(SUM(total_cost), 0) as total_amount,
+                COALESCE(SUM(quantity), 0) as total_items,
+                COALESCE(AVG(total_cost), 0) as average_purchase,
+                COUNT(DISTINCT supplier_name) as suppliers_used,
+                COALESCE(SUM(CASE WHEN payment_status = 'PAID' THEN total_cost ELSE 0 END), 0) as total_paid,
+                COALESCE(SUM(CASE WHEN payment_status IN ('UNPAID', 'PARTIAL') THEN balance_remaining ELSE 0 END), 0) as total_outstanding
+            FROM purchases 
+            WHERE business_id = ?
+        `).get(businessId);
+    }
+
+    getMonthlySummary(businessId, month, year) {
+        const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+        const endDate = `${year}-${String(month).padStart(2, '0')}-31`;
+
+        return this.db.prepare(`
+            SELECT 
+                COUNT(*) as total_purchases,
+                COALESCE(SUM(total_cost), 0) as total_amount,
+                COALESCE(SUM(quantity), 0) as total_items,
+                COALESCE(AVG(total_cost), 0) as average_purchase
+            FROM purchases 
+            WHERE business_id = ? 
+              AND purchase_date BETWEEN ? AND ?
+        `).get(businessId, startDate, endDate);
     }
 
     update(id, data) {
         const fields = [];
         const values = [];
 
-        if (data.supplier_name !== undefined) {
-            fields.push('supplier_name = ?');
-            values.push(data.supplier_name);
+        const map = {
+            supplier_name: data.supplier_name ?? data.supplierName,
+            supplier_id: data.supplier_id ?? data.supplierId,
+            item_name: data.item_name ?? data.itemName,
+            quantity: data.quantity,
+            unit_cost: data.unit_cost ?? data.unitCost,
+            total_cost: data.total_cost ?? data.totalCost,
+            payment_status: data.payment_status ?? data.paymentStatus,
+            amount_paid: data.amount_paid ?? data.amountPaid,
+            balance_remaining: data.balance_remaining ?? data.balanceRemaining,
+            due_date: data.due_date ?? data.dueDate,
+            notes: data.notes,
+            business_id: data.businessId ?? data.business_id,
+            user_id: data.userId ?? data.user_id,
+        };
+
+        for (const [col, val] of Object.entries(map)) {
+            if (val !== undefined) {
+                fields.push(`${col} = ?`);
+                values.push(val);
+            }
         }
-        if (data.supplier_id !== undefined) {
-            fields.push('supplier_id = ?');
-            values.push(data.supplier_id);
-        }
-        if (data.item_name !== undefined) {
-            fields.push('item_name = ?');
-            values.push(data.item_name);
-        }
-        if (data.quantity !== undefined) {
-            fields.push('quantity = ?');
-            values.push(data.quantity);
-        }
-        if (data.unit_cost !== undefined) {
-            fields.push('unit_cost = ?');
-            values.push(data.unit_cost);
-        }
-        if (data.total_cost !== undefined) {
-            fields.push('total_cost = ?');
-            values.push(data.total_cost);
-        }
-        if (data.payment_status !== undefined) {
-            fields.push('payment_status = ?');
-            values.push(data.payment_status);
-        }
-        if (data.amount_paid !== undefined) {
-            fields.push('amount_paid = ?');
-            values.push(data.amount_paid);
-        }
-        if (data.balance_remaining !== undefined) {
-            fields.push('balance_remaining = ?');
-            values.push(data.balance_remaining);
-        }
-        if (data.due_date !== undefined) {
-            fields.push('due_date = ?');
-            values.push(data.due_date);
-        }
+
         if (data.items !== undefined) {
             fields.push('items = ?');
             values.push(JSON.stringify(data.items));
         }
-        if (data.notes !== undefined) {
-            fields.push('notes = ?');
-            values.push(data.notes);
-        }
 
         fields.push('updated_at = CURRENT_TIMESTAMP');
 
-        if (fields.length === 0) {
-            throw new Error('No fields to update');
-        }
+        if (fields.length === 1) throw new Error('No fields to update');
 
         values.push(id);
 
-        const stmt = this.db.prepare(
+        const result = this.db.prepare(
             `UPDATE purchases SET ${fields.join(', ')} WHERE id = ?`
-        );
-        const result = stmt.run(...values);
+        ).run(...values);
 
-        if (result.changes === 0) {
-            throw new Error('Purchase not found or no changes made');
-        }
-
+        if (result.changes === 0) throw new Error('Purchase not found or no changes made');
         return this.findById(id);
     }
 
     delete(id) {
-        const stmt = this.db.prepare('DELETE FROM purchases WHERE id = ?');
-        const result = stmt.run(id);
+        const result = this.db.prepare('DELETE FROM purchases WHERE id = ?').run(id);
         return result.changes > 0;
-    }
-
-    getPurchaseSummary(userId) {
-        return this.db.prepare(`
-            SELECT 
-                COUNT(*) as total_purchases,
-                SUM(total_cost) as total_amount,
-                SUM(quantity) as total_items,
-                AVG(total_cost) as average_purchase,
-                COUNT(DISTINCT supplier_name) as suppliers_used,
-                SUM(CASE WHEN payment_status = 'PAID' THEN total_cost ELSE 0 END) as total_paid,
-                SUM(CASE WHEN payment_status IN ('UNPAID', 'PARTIAL') THEN balance_remaining ELSE 0 END) as total_outstanding
-            FROM purchases 
-            WHERE user_id = ?
-        `).get(userId);
-    }
-
-    getMonthlySummary(userId, month, year) {
-        const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-        const endDate = `${year}-${String(month).padStart(2, '0')}-31`;
-        
-        return this.db.prepare(`
-            SELECT 
-                COUNT(*) as total_purchases,
-                SUM(total_cost) as total_amount,
-                SUM(quantity) as total_items,
-                AVG(total_cost) as average_purchase
-            FROM purchases 
-            WHERE user_id = ? 
-            AND purchase_date BETWEEN ? AND ?
-        `).get(userId, startDate, endDate);
     }
 }
 

@@ -1,34 +1,37 @@
 // src/interfaces/http/routes/inventoryRoutes.js
+
 const express = require('express');
 const router = express.Router();
 const InventoryRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryRepository');
 const { authMiddleware } = require('../middleware/authMiddleware');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
 
-// ✅ Initialize repository
 const inventoryRepo = new InventoryRepository();
 
-// All routes require authentication
 router.use(authMiddleware);
 
 // =============================================
-// GET /api/inventory - Get all inventory items
+// GET /api/inventory
 // =============================================
 router.get('/', async (req, res) => {
     try {
-        const userId = req.user.id;
+        const businessId = req.user.businessId;
         const { search, lowStock = 'false' } = req.query;
+
+        if (!businessId) {
+            return res.status(400).json({ success: false, message: 'Business context required' });
+        }
 
         let items;
         if (lowStock === 'true') {
-            items = await inventoryRepo.findLowStock(userId);
+            items = await inventoryRepo.findLowStock(businessId);
         } else if (search) {
-            items = await inventoryRepo.searchByName(userId, search);
+            items = await inventoryRepo.searchByName(businessId, search);
         } else {
-            items = await inventoryRepo.findByUserId(userId);
+            items = await inventoryRepo.findByBusinessId(businessId);
         }
 
-        const summary = await inventoryRepo.getSummary(userId);
+        const summary = await inventoryRepo.getSummary(businessId);
 
         res.json({
             success: true,
@@ -46,12 +49,70 @@ router.get('/', async (req, res) => {
 });
 
 // =============================================
-// GET /api/inventory/:id - Get single inventory item
+// GET /api/inventory/summary
+// =============================================
+router.get('/summary', async (req, res) => {
+    try {
+        const businessId = req.user.businessId;
+        if (!businessId) {
+            return res.status(400).json({ success: false, message: 'Business context required' });
+        }
+
+        const summary = await inventoryRepo.getSummary(businessId);
+
+        res.json({
+            success: true,
+            data: summary
+        });
+
+    } catch (error) {
+        console.error('❌ Error fetching inventory summary:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to fetch inventory summary'
+        });
+    }
+});
+
+// =============================================
+// GET /api/inventory/low-stock
+// =============================================
+router.get('/low-stock', async (req, res) => {
+    try {
+        const businessId = req.user.businessId;
+        if (!businessId) {
+            return res.status(400).json({ success: false, message: 'Business context required' });
+        }
+
+        const threshold = parseInt(req.query.threshold) || 5;
+        const items = await inventoryRepo.findLowStock(businessId, threshold);
+
+        res.json({
+            success: true,
+            data: {
+                items,
+                count: items.length,
+                threshold
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Error fetching low stock:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to fetch low stock items'
+        });
+    }
+});
+
+// =============================================
+// GET /api/inventory/:id
 // =============================================
 router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
+        const businessId = req.user.businessId;
 
         const item = await inventoryRepo.findById(id);
         if (!item) {
@@ -61,7 +122,7 @@ router.get('/:id', async (req, res) => {
             });
         }
 
-        if (item.user_id !== userId) {
+        if (item.business_id !== businessId && item.user_id !== userId) {
             return res.status(403).json({
                 success: false,
                 message: 'Access denied'
@@ -83,35 +144,35 @@ router.get('/:id', async (req, res) => {
 });
 
 // =============================================
-// POST /api/inventory - Add new inventory item (Add Stock)
+// POST /api/inventory
 // =============================================
 router.post('/', invalidateAfterWrite, async (req, res) => {
     try {
         const userId = req.user.id;
+        const businessId = req.user.businessId;
         const { itemName, quantity, costPrice, sellingPrice, reorderLevel = 5 } = req.body;
 
-        // Validate
+        if (!businessId) {
+            return res.status(400).json({ success: false, message: 'Business context required' });
+        }
         if (!itemName || itemName.length < 2) {
             return res.status(400).json({
                 success: false,
                 message: 'Item name must be at least 2 characters'
             });
         }
-
         if (!quantity || quantity <= 0) {
             return res.status(400).json({
                 success: false,
                 message: 'Quantity must be greater than 0'
             });
         }
-
         if (costPrice === undefined || costPrice < 0) {
             return res.status(400).json({
                 success: false,
                 message: 'Cost price must be a valid number'
             });
         }
-
         if (sellingPrice === undefined || sellingPrice < 0) {
             return res.status(400).json({
                 success: false,
@@ -119,8 +180,7 @@ router.post('/', invalidateAfterWrite, async (req, res) => {
             });
         }
 
-        // Check if item already exists
-        const existing = await inventoryRepo.findByNameIgnoreCase(userId, itemName);
+        const existing = await inventoryRepo.findByNameIgnoreCase(businessId, itemName);
         if (existing) {
             return res.status(400).json({
                 success: false,
@@ -129,9 +189,9 @@ router.post('/', invalidateAfterWrite, async (req, res) => {
             });
         }
 
-        // Create new inventory item
         const newItem = await inventoryRepo.create({
-            user_id: userId,
+            userId,
+            businessId,
             item_name: itemName,
             quantity: quantity,
             cost_price: costPrice,
@@ -156,12 +216,13 @@ router.post('/', invalidateAfterWrite, async (req, res) => {
 });
 
 // =============================================
-// PUT /api/inventory/:id - Update inventory item (Edit)
+// PUT /api/inventory/:id
 // =============================================
 router.put('/:id', invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
+        const businessId = req.user.businessId;
         const { itemName, costPrice, sellingPrice, reorderLevel } = req.body;
 
         const existing = await inventoryRepo.findById(id);
@@ -171,8 +232,7 @@ router.put('/:id', invalidateAfterWrite, async (req, res) => {
                 message: 'Inventory item not found'
             });
         }
-
-        if (existing.user_id !== userId) {
+        if (existing.business_id !== businessId && existing.user_id !== userId) {
             return res.status(403).json({
                 success: false,
                 message: 'Access denied'
@@ -203,12 +263,13 @@ router.put('/:id', invalidateAfterWrite, async (req, res) => {
 });
 
 // =============================================
-// PATCH /api/inventory/:id/stock - Adjust stock
+// PATCH /api/inventory/:id/stock
 // =============================================
 router.patch('/:id/stock', invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
+        const businessId = req.user.businessId;
         const { adjustment, reason } = req.body;
 
         if (adjustment === undefined || adjustment === null) {
@@ -217,7 +278,6 @@ router.patch('/:id/stock', invalidateAfterWrite, async (req, res) => {
                 message: 'Adjustment amount is required'
             });
         }
-
         if (adjustment === 0) {
             return res.status(400).json({
                 success: false,
@@ -232,8 +292,7 @@ router.patch('/:id/stock', invalidateAfterWrite, async (req, res) => {
                 message: 'Inventory item not found'
             });
         }
-
-        if (existing.user_id !== userId) {
+        if (existing.business_id !== businessId && existing.user_id !== userId) {
             return res.status(403).json({
                 success: false,
                 message: 'Access denied'
@@ -275,12 +334,13 @@ router.patch('/:id/stock', invalidateAfterWrite, async (req, res) => {
 });
 
 // =============================================
-// DELETE /api/inventory/:id - Delete inventory item
+// DELETE /api/inventory/:id
 // =============================================
 router.delete('/:id', invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
+        const businessId = req.user.businessId;
 
         const existing = await inventoryRepo.findById(id);
         if (!existing) {
@@ -289,8 +349,7 @@ router.delete('/:id', invalidateAfterWrite, async (req, res) => {
                 message: 'Inventory item not found'
             });
         }
-
-        if (existing.user_id !== userId) {
+        if (existing.business_id !== businessId && existing.user_id !== userId) {
             return res.status(403).json({
                 success: false,
                 message: 'Access denied'
@@ -309,57 +368,6 @@ router.delete('/:id', invalidateAfterWrite, async (req, res) => {
         res.status(500).json({
             success: false,
             message: error.message || 'Failed to delete inventory item'
-        });
-    }
-});
-
-// =============================================
-// GET /api/inventory/summary - Get inventory summary
-// =============================================
-router.get('/summary', async (req, res) => {
-    try {
-        const userId = req.user.id;
-
-        const summary = await inventoryRepo.getSummary(userId);
-
-        res.json({
-            success: true,
-            data: summary
-        });
-
-    } catch (error) {
-        console.error('❌ Error fetching inventory summary:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to fetch inventory summary'
-        });
-    }
-});
-
-// =============================================
-// GET /api/inventory/low-stock - Get low stock items
-// =============================================
-router.get('/low-stock', async (req, res) => {
-    try {
-        const userId = req.user.id;
-        const threshold = parseInt(req.query.threshold) || 5;
-
-        const items = await inventoryRepo.findLowStock(userId, threshold);
-
-        res.json({
-            success: true,
-            data: {
-                items,
-                count: items.length,
-                threshold
-            }
-        });
-
-    } catch (error) {
-        console.error('❌ Error fetching low stock:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to fetch low stock items'
         });
     }
 });

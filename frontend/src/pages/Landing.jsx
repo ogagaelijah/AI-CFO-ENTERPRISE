@@ -1,5 +1,6 @@
 // frontend/src/pages/Landing.jsx
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import {
   Moon, Sun, TrendingUp, Package, Users, FileText, BarChart3, Zap,
@@ -8,25 +9,23 @@ import {
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
-// Curated list of what each plan includes, mapped to backend feature keys.
-// Order matters — this is the display order on the landing page.
 const PLAN_FEATURES = [
-  { key: 'sales',                 label: 'Sales & Income tracking' },
-  { key: 'inventory',             label: 'Inventory management' },
-  { key: 'debtors',               label: 'Debtors & Creditors' },
-  { key: 'reports_basic',         label: 'Daily / Weekly / Monthly reports' },
-  { key: 'reports_financial',     label: 'P&L · Cash Flow · Balance Sheet' },
-  { key: 'reports_executive',     label: 'Executive reports' },
-  { key: 'reports_export',        label: 'Export PDF / Excel' },
-  { key: 'analytics',             label: 'Analytics dashboard' },
-  { key: 'forecast',              label: 'Forecasting' },
-  { key: 'risk',                  label: 'Risk detection' },
-  { key: 'decisions',             label: 'Decision engine' },
-  { key: 'ai_advisor',            label: 'AI CFO Advisor' },
-  { key: 'team_roles',            label: 'Team roles' },
-  { key: 'multi_business',        label: 'Multi-business' },
-  { key: 'api_access',            label: 'API access' },
-  { key: 'white_label',           label: 'White-label' },
+  { key: 'sales', label: 'Sales & Income tracking' },
+  { key: 'inventory', label: 'Inventory management' },
+  { key: 'debtors', label: 'Debtors & Creditors' },
+  { key: 'reports_basic', label: 'Daily / Weekly / Monthly reports' },
+  { key: 'reports_financial', label: 'P&L · Cash Flow · Balance Sheet' },
+  { key: 'reports_executive', label: 'Executive reports' },
+  { key: 'reports_export', label: 'Export PDF / Excel' },
+  { key: 'analytics', label: 'Analytics dashboard' },
+  { key: 'forecast', label: 'Forecasting' },
+  { key: 'risk', label: 'Risk detection' },
+  { key: 'decisions', label: 'Decision engine' },
+  { key: 'ai_advisor', label: 'AI CFO Advisor' },
+  { key: 'team_roles', label: 'Team roles' },
+  { key: 'multi_business', label: 'Multi-business' },
+  { key: 'api_access', label: 'API access' },
+  { key: 'white_label', label: 'White-label' },
 ];
 
 const Landing = () => {
@@ -37,7 +36,6 @@ const Landing = () => {
   const [plansLoading, setPlansLoading] = useState(true);
   const [plansError, setPlansError] = useState('');
 
-  // ── Load public plans from backend SSOT
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
@@ -64,7 +62,6 @@ const Landing = () => {
     };
   }, []);
 
-  // ── Fade-in animations
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -107,10 +104,11 @@ const Landing = () => {
       <header className="fixed top-0 left-0 right-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md z-50 border-b border-gray-200 dark:border-slate-700 transition-colors duration-300">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <div className="flex items-center space-x-2">
+            {/* Logo → home */}
+            <Link to="/" className="flex items-center space-x-2">
               <span className="text-2xl font-bold text-primary-600 dark:text-gold-400">AI CFO</span>
               <span className="text-sm font-medium text-gray-600 dark:text-gray-400 hidden sm:inline">ENTERPRISE</span>
-            </div>
+            </Link>
 
             <nav className="hidden md:flex items-center space-x-8">
               <a href="#features" className="text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-gold-400 transition">Features</a>
@@ -126,12 +124,12 @@ const Landing = () => {
               >
                 {theme === 'dark' ? <Sun className="w-5 h-5 text-gold-400" /> : <Moon className="w-5 h-5 text-gray-600" />}
               </button>
-              <a href="/login" className="px-4 py-2 text-sm font-medium text-primary-600 dark:text-gold-400 hover:underline transition">
+              <Link to="/login" className="px-4 py-2 text-sm font-medium text-primary-600 dark:text-gold-400 hover:underline transition">
                 Log in
-              </a>
-              <a href="/register" className="px-4 py-2 text-sm font-medium text-white bg-primary-600 dark:bg-gold-500 dark:text-slate-900 rounded-lg hover:bg-primary-700 dark:hover:bg-gold-600 transition shadow-md hover:shadow-lg">
+              </Link>
+              <Link to="/register" className="px-4 py-2 text-sm font-medium text-white bg-primary-600 dark:bg-gold-500 dark:text-slate-900 rounded-lg hover:bg-primary-700 dark:hover:bg-gold-600 transition shadow-md hover:shadow-lg">
                 Sign up free
-              </a>
+              </Link>
             </div>
 
             <div className="flex items-center space-x-2 md:hidden">
@@ -160,10 +158,10 @@ const Landing = () => {
               <a href="#industries" className="block text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-gold-400 transition py-2" onClick={closeMenu}>Industries</a>
               <a href="#pricing" className="block text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-gold-400 transition py-2" onClick={closeMenu}>Pricing</a>
               <hr className="border-gray-200 dark:border-slate-700" />
-              <a href="/login" className="block text-primary-600 dark:text-gold-400 font-medium py-2" onClick={closeMenu}>Log in</a>
-              <a href="/register" className="block text-center text-white bg-primary-600 dark:bg-gold-500 dark:text-slate-900 rounded-lg px-4 py-3 font-medium" onClick={closeMenu}>
+              <Link to="/login" className="block text-primary-600 dark:text-gold-400 font-medium py-2" onClick={closeMenu}>Log in</Link>
+              <Link to="/register" className="block text-center text-white bg-primary-600 dark:bg-gold-500 dark:text-slate-900 rounded-lg px-4 py-3 font-medium" onClick={closeMenu}>
                 Sign up free
-              </a>
+              </Link>
             </div>
           </div>
         )}
@@ -183,10 +181,10 @@ const Landing = () => {
             AI CFO ENTERPRISE helps African SMEs track sales, inventory, debtors, and profits — all in one place.
           </p>
           <div className="flex flex-col sm:flex-row justify-center gap-4">
-            <a href="/register" className="px-8 py-4 text-lg font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-xl transition shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] inline-flex items-center justify-center">
+            <Link to="/register" className="px-8 py-4 text-lg font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-xl transition shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] inline-flex items-center justify-center">
               Start 14-day free trial
               <ChevronRight className="w-5 h-5 ml-2" />
-            </a>
+            </Link>
             <a href="#features" className="px-8 py-4 text-lg font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-xl transition inline-flex items-center justify-center">
               See how it works
             </a>
@@ -252,7 +250,6 @@ const Landing = () => {
             Start with a 14-day Pro trial. No card required.
           </p>
 
-          {/* Billing cycle toggle */}
           <div className="flex justify-center mb-12 fade-in">
             <div className="inline-flex items-center bg-gray-100 dark:bg-slate-900 rounded-full p-1">
               <button
@@ -286,19 +283,14 @@ const Landing = () => {
               <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
             </div>
           ) : plansError ? (
-            <div className="text-center text-red-600 dark:text-red-400 py-8">
-              {plansError}
-            </div>
+            <div className="text-center text-red-600 dark:text-red-400 py-8">{plansError}</div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
               {plans.map((plan, index) => {
                 const isYearly = billingCycle === 'yearly';
                 const amount = isYearly ? plan.pricing?.yearly : plan.pricing?.monthly;
                 const isPopular = plan.id === 'pro';
-
-                const featureList = PLAN_FEATURES.filter(
-                  (f) => plan.features?.[f.key]
-                ).map((f) => f.label);
+                const featureList = PLAN_FEATURES.filter((f) => plan.features?.[f.key]).map((f) => f.label);
 
                 return (
                   <div
@@ -314,13 +306,8 @@ const Landing = () => {
                       </span>
                     )}
 
-                    <h3 className="text-2xl font-bold text-gray-900 dark:text-white">
-                      {plan.name}
-                    </h3>
-
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 min-h-[40px]">
-                      {plan.description}
-                    </p>
+                    <h3 className="text-2xl font-bold text-gray-900 dark:text-white">{plan.name}</h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 min-h-[40px]">{plan.description}</p>
 
                     <div className="my-4">
                       <span className="text-4xl font-bold text-primary-600 dark:text-gold-400">
@@ -350,8 +337,8 @@ const Landing = () => {
                       )}
                     </ul>
 
-                    <a
-                      href={`/register?plan=${plan.id}`}
+                    <Link
+                      to={`/register?plan=${plan.id}`}
                       className={`block w-full py-3 rounded-lg font-medium transition text-center ${
                         isPopular
                           ? 'bg-primary-600 hover:bg-primary-700 text-white shadow-md hover:shadow-lg'
@@ -359,7 +346,7 @@ const Landing = () => {
                       }`}
                     >
                       Start 14-day free trial
-                    </a>
+                    </Link>
                   </div>
                 );
               })}
@@ -382,8 +369,7 @@ const Landing = () => {
           <div className="flex flex-wrap justify-center gap-6 text-sm text-gray-400">
             <a href="#features" className="hover:text-white transition">Features</a>
             <a href="#pricing" className="hover:text-white transition">Pricing</a>
-            <a href="#" className="hover:text-white transition">Privacy</a>
-            <a href="#" className="hover:text-white transition">Contact</a>
+            <a href="mailto:support@aicfotechnologies.com" className="hover:text-white transition">Contact</a>
           </div>
           <div className="mt-6 text-sm text-gray-500">
             © 2026 AI CFO ENTERPRISE. All rights reserved.

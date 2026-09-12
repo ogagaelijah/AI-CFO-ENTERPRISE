@@ -1,4 +1,5 @@
 // src/interfaces/http/routes/salesRoutes.js
+// v2.0.0-prod — multi-tenant aware
 
 const express = require('express');
 const router = express.Router();
@@ -11,14 +12,12 @@ const PaymentRepository = require('../../../infrastructure/database/sqlite/repos
 const { authMiddleware } = require('../middleware/authMiddleware');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
 
-// Initialize repositories
 const saleRepo = new SaleRepository();
 const inventoryRepo = new InventoryRepository();
 const debtorRepo = new DebtorRepository();
 const customerRepo = new CustomerRepository();
 const paymentRepo = new PaymentRepository();
 
-// Initialize Use Case (paymentRepository is now correctly injected)
 const recordSaleUseCase = new RecordSaleUseCase(
     saleRepo,
     inventoryRepo,
@@ -27,49 +26,47 @@ const recordSaleUseCase = new RecordSaleUseCase(
     paymentRepo
 );
 
-// All routes require authentication
 router.use(authMiddleware);
 
 // =============================================
-// ✅ GET /api/sales - Get all sales
+// GET /api/sales
 // =============================================
 router.get('/', async (req, res) => {
     try {
-        const userId = req.user.id;
-        
-        console.log('🔍 GET /sales - User ID:', userId);
+        const businessId = req.user.businessId;
+        if (!businessId) {
+            return res.status(400).json({ success: false, message: 'Business context missing' });
+        }
 
-        const sales = await saleRepo.findByUserId(userId);
-
-        console.log('🔍 GET /sales - Found:', sales?.length || 0, 'sales');
+        const sales = await saleRepo.findByBusinessId(businessId);
 
         res.json({
             success: true,
             data: {
                 sales: sales || [],
-                count: sales?.length || 0
-            }
+                count: sales?.length || 0,
+            },
         });
-
     } catch (error) {
-        console.error('❌ Error fetching sales:', error);
+        console.error('[salesRoutes] GET error:', error.message);
         res.status(500).json({
             success: false,
-            message: error.message || 'Failed to fetch sales'
+            message: error.message || 'Failed to fetch sales',
         });
     }
 });
 
 // =============================================
-// ✅ POST /api/sales - Record a new sale (Single or Multi-item)
+// POST /api/sales
 // =============================================
 router.post('/', invalidateAfterWrite, async (req, res) => {
     try {
         const userId = req.user.id;
-        const businessId = userId;
+        const businessId = req.user.businessId;
 
-        console.log('🔍 POST /sales - User ID:', userId);
-        console.log('🔍 POST /sales - Body:', req.body);
+        if (!businessId) {
+            return res.status(400).json({ success: false, message: 'Business context missing' });
+        }
 
         const {
             itemName,
@@ -90,10 +87,9 @@ router.post('/', invalidateAfterWrite, async (req, res) => {
             notes = '',
         } = req.body;
 
-        // ✅ Handle both single and multi-item in ONE call
         const result = await recordSaleUseCase.execute({
             userId,
-            businessId: userId,
+            businessId,
             itemName,
             quantity: quantity || (items.length > 0 ? items[0]?.quantity : 0),
             unitPrice: unitPrice || (items.length > 0 ? items[0]?.sellingPrice : 0),
@@ -105,77 +101,61 @@ router.post('/', invalidateAfterWrite, async (req, res) => {
             skipInventory,
             inventoryId,
             saleDate: saleDate || new Date(),
-            items: items,
+            items,
             totalCost,
             totalRevenue,
             totalProfit,
             notes: notes || '',
         });
 
-        // ✅ Get all sales after recording
-        const allSales = await saleRepo.findByUserId(userId);
+        const allSales = await saleRepo.findByBusinessId(businessId);
 
         res.status(201).json({
             success: true,
-            message: `Sale recorded successfully`,
+            message: 'Sale recorded successfully',
             data: {
                 sale: result,
-                allSales: allSales,
-                count: allSales.length
-            }
+                allSales,
+                count: allSales.length,
+            },
         });
-
     } catch (error) {
-        console.error('❌ Error recording sale:', error);
+        console.error('[salesRoutes] POST error:', error.message);
         res.status(500).json({
             success: false,
-            message: error.message || 'Failed to record sale'
+            message: error.message || 'Failed to record sale',
         });
     }
 });
 
 // =============================================
-// ✅ GET /api/sales/:id - Get single sale
+// GET /api/sales/:id
 // =============================================
 router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const userId = req.user.id;
+        const businessId = req.user.businessId;
 
         const saleId = parseInt(id);
         if (isNaN(saleId)) {
-            return res.status(400).json({
-                success: false,
-                message: 'Invalid sale ID'
-            });
+            return res.status(400).json({ success: false, message: 'Invalid sale ID' });
         }
 
         const sale = await saleRepo.findById(saleId);
-
         if (!sale) {
-            return res.status(404).json({
-                success: false,
-                message: 'Sale not found'
-            });
+            return res.status(404).json({ success: false, message: 'Sale not found' });
         }
 
-        if (sale.user_id !== userId) {
-            return res.status(403).json({
-                success: false,
-                message: 'Access denied'
-            });
+        if (sale.business_id !== businessId) {
+            return res.status(403).json({ success: false, message: 'Access denied' });
         }
 
-        res.json({
-            success: true,
-            data: sale
-        });
-
+        res.json({ success: true, data: sale });
     } catch (error) {
-        console.error('❌ Error fetching sale:', error);
+        console.error('[salesRoutes] GET :id error:', error.message);
         res.status(500).json({
             success: false,
-            message: error.message || 'Failed to fetch sale'
+            message: error.message || 'Failed to fetch sale',
         });
     }
 });

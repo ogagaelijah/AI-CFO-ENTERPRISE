@@ -1,13 +1,23 @@
 // frontend/src/pages/Register.jsx
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
-import { Moon, Sun, User, Mail, Phone, Lock, Building2, ChevronRight, Eye, EyeOff, CheckCircle } from 'lucide-react';
+import {
+  Moon, Sun, User, Mail, Phone, Lock, Building2, ChevronRight,
+  Eye, EyeOff, CheckCircle, Sparkles,
+} from 'lucide-react';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 const Register = () => {
   const { theme, toggleTheme } = useTheme();
   const { register } = useAuth();
+  const [searchParams] = useSearchParams();
+
+  const requestedPlanId = searchParams.get('plan'); // 'basic' | 'pro' | 'enterprise' | null
+  const [selectedPlan, setSelectedPlan] = useState(null);
+
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -31,6 +41,27 @@ const Register = () => {
     'Education',
     'Logistics',
   ];
+
+  // ── Load plan details for the requested plan (SSOT from backend)
+  useEffect(() => {
+    if (!requestedPlanId) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch(`${API_URL}/subscription/plans`);
+        const json = await res.json();
+        if (cancelled) return;
+        const match = (json?.plans || []).find((p) => p.id === requestedPlanId);
+        if (match) setSelectedPlan(match);
+      } catch {
+        /* silent — non-critical */
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [requestedPlanId]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -59,7 +90,6 @@ const Register = () => {
 
     setIsLoading(true);
     try {
-      // Map form data to API expected format
       const userData = {
         fullName: formData.fullName,
         email: formData.email,
@@ -80,7 +110,7 @@ const Register = () => {
     }
   };
 
-  // Success state
+  // ── Success state
   if (isSuccess) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-slate-900 transition-colors duration-300 flex flex-col">
@@ -106,9 +136,11 @@ const Register = () => {
             <div className="flex justify-center mb-6">
               <CheckCircle className="w-20 h-20 text-green-500" />
             </div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">Account Created! 🎉</h1>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+              Account Created! 🎉
+            </h1>
             <p className="text-gray-600 dark:text-gray-300 mb-8">
-              Your account has been successfully created. You can now log in to your dashboard.
+              Your 14-day Pro trial has started. Log in to access your dashboard and full intelligence features.
             </p>
             <Link
               to="/login"
@@ -117,9 +149,6 @@ const Register = () => {
               Log in to Dashboard
               <ChevronRight className="w-5 h-5 ml-2" />
             </Link>
-            <p className="mt-6 text-sm text-gray-500 dark:text-gray-400">
-              A confirmation email has been sent to your inbox.
-            </p>
           </div>
         </div>
       </div>
@@ -158,13 +187,32 @@ const Register = () => {
       {/* Register Form */}
       <div className="flex-1 flex items-center justify-center px-4 py-12">
         <div className="w-full max-w-md">
+          {/* ── Trial / Plan banner (only if ?plan= present) */}
+          {selectedPlan && (
+            <div className="mb-4 flex items-start gap-3 px-4 py-3 rounded-lg border bg-primary-50 dark:bg-primary-900/30 border-primary-200 dark:border-primary-800 text-primary-800 dark:text-gold-300">
+              <Sparkles className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <div className="text-sm">
+                <p className="font-semibold">
+                  You're signing up for {selectedPlan.name}
+                </p>
+                <p className="text-xs mt-0.5">
+                  {selectedPlan.trialDays > 0
+                    ? `Start with a ${selectedPlan.trialDays}-day free trial. No card required.`
+                    : 'Start using AI CFO ENTERPRISE today.'}
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-gray-200 dark:border-slate-700 p-8 transition-colors duration-300">
             <div className="text-center mb-8">
               <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary-50 dark:bg-primary-900/30 mb-4">
                 <User className="w-8 h-8 text-primary-600 dark:text-gold-400" />
               </div>
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Get Started</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-1">Create your free account</p>
+              <p className="text-gray-600 dark:text-gray-400 mt-1">
+                Create your account — 14 days of Pro, free
+              </p>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -312,7 +360,6 @@ const Register = () => {
                 </div>
               )}
 
-              {/* Submit Button */}
               <button
                 type="submit"
                 disabled={isLoading}
@@ -328,7 +375,7 @@ const Register = () => {
                   </>
                 ) : (
                   <>
-                    Create Account
+                    Start 14-day free trial
                     <ChevronRight className="w-5 h-5 ml-2" />
                   </>
                 )}
@@ -355,7 +402,6 @@ const Register = () => {
         </div>
       </div>
 
-      {/* Footer */}
       <footer className="py-4 px-4 text-center text-sm text-gray-500 dark:text-gray-500 border-t border-gray-200 dark:border-slate-700">
         <p>Built for African SMEs 🇳🇬</p>
       </footer>

@@ -8,6 +8,7 @@ import ProfileTab from './settings/ProfileTab';
 import BusinessTab from './settings/BusinessTab';
 import SubscriptionTab from './settings/SubscriptionTab';
 import { NAV_ITEMS } from './settings/SettingsSidebar';
+import PageHeader from '../components/common/PageHeader';
 
 const Settings = () => {
   const { theme, toggleTheme } = useTheme();
@@ -58,7 +59,6 @@ const Settings = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-900 transition-colors duration-300 flex">
-      {/* Sidebar */}
       <aside className="hidden md:flex flex-col w-64 bg-white dark:bg-slate-800 border-r border-gray-200 dark:border-slate-700 p-4 overflow-y-auto fixed h-full z-40">
         <div className="flex items-center space-x-2 mb-6">
           <span className="text-2xl font-bold text-primary-600 dark:text-gold-400">AI CFO</span>
@@ -91,9 +91,7 @@ const Settings = () => {
         </div>
       </aside>
 
-      {/* Main Content */}
       <div className="flex-1 flex flex-col min-h-screen md:ml-64">
-        {/* Header */}
         <header className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border-b border-gray-200 dark:border-slate-700 px-4 sm:px-6 py-3 sticky top-0 z-30">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3 md:hidden">
@@ -127,7 +125,6 @@ const Settings = () => {
           </div>
         </header>
 
-        {/* Mobile Sidebar */}
         {isMobileMenuOpen && (
           <div className="md:hidden fixed inset-0 z-50 bg-black/50" onClick={closeMenu}>
             <div className="w-72 h-full bg-white dark:bg-slate-800 p-4 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -170,9 +167,12 @@ const Settings = () => {
           </div>
         )}
 
-        {/* Content */}
         <main className="flex-1 p-4 sm:p-6">
-          {/* Tabs */}
+          <PageHeader
+            title="Settings"
+            subtitle="Manage your account and preferences"
+          />
+
           <div className="flex flex-wrap gap-2 mb-6">
             {tabs.map((tab) => (
               <button
@@ -190,7 +190,6 @@ const Settings = () => {
             ))}
           </div>
 
-          {/* Render Active Tab */}
           {!loading && (
             <>
               {activeTab === 'profile' && <ProfileTab profileData={profileData} setProfileData={setProfileData} />}

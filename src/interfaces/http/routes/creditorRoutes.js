@@ -9,19 +9,16 @@ const RecordCreditorPaymentUseCase = require('../../../application/useCases/cred
 const { authMiddleware } = require('../middleware/authMiddleware');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
 
-// Initialize repositories
 const creditorRepo = new CreditorRepository();
 const paymentRepo = new PaymentRepository();
 const transactionRepo = new TransactionRepository();
 
-// Initialize Use Case
 const recordCreditorPaymentUseCase = new RecordCreditorPaymentUseCase({
     creditorRepository: creditorRepo,
     paymentRepository: paymentRepo,
     transactionRepository: transactionRepo,
 });
 
-// All routes require authentication
 router.use(authMiddleware);
 
 // =============================================
@@ -30,22 +27,27 @@ router.use(authMiddleware);
 router.get('/', async (req, res) => {
     try {
         const userId = req.user.id;
+        const businessId = req.user.businessId;
         const { status, limit = 50, offset = 0 } = req.query;
+
+        if (!businessId) {
+            return res.status(400).json({ success: false, message: 'Business context required' });
+        }
 
         let creditors;
         if (status) {
             creditors = await creditorRepo.findByFilters({
-                businessId: userId,
+                businessId,
                 status,
                 limit: parseInt(limit),
                 offset: parseInt(offset),
             });
         } else {
-            creditors = await creditorRepo.findByUserId(userId);
+            creditors = await creditorRepo.findByBusinessId(businessId);
         }
 
-        const summary = await creditorRepo.getSummary(userId);
-        const totalOutstanding = await creditorRepo.getTotalOutstanding(userId);
+        const summary = await creditorRepo.getSummary(businessId);
+        const totalOutstanding = await creditorRepo.getTotalOutstanding(businessId);
 
         res.json({
             success: true,
@@ -79,9 +81,13 @@ router.get('/', async (req, res) => {
 // =============================================
 router.get('/active', async (req, res) => {
     try {
-        const userId = req.user.id;
-        const creditors = await creditorRepo.findActive(userId);
-        const totalOutstanding = await creditorRepo.getTotalOutstanding(userId);
+        const businessId = req.user.businessId;
+        if (!businessId) {
+            return res.status(400).json({ success: false, message: 'Business context required' });
+        }
+
+        const creditors = await creditorRepo.findActive(businessId);
+        const totalOutstanding = await creditorRepo.getTotalOutstanding(businessId);
 
         res.json({
             success: true,
@@ -98,12 +104,39 @@ router.get('/active', async (req, res) => {
 });
 
 // =============================================
+// GET /api/creditors/summary
+// =============================================
+router.get('/summary', async (req, res) => {
+    try {
+        const businessId = req.user.businessId;
+        if (!businessId) {
+            return res.status(400).json({ success: false, message: 'Business context required' });
+        }
+
+        const summary = await creditorRepo.getSummary(businessId);
+        const totalOutstanding = await creditorRepo.getTotalOutstanding(businessId);
+
+        res.json({
+            success: true,
+            data: {
+                ...summary,
+                totalOutstanding,
+            }
+        });
+    } catch (error) {
+        console.error('❌ Error fetching creditor summary:', error);
+        res.status(500).json({ success: false, message: error.message || 'Failed to fetch creditor summary' });
+    }
+});
+
+// =============================================
 // GET /api/creditors/:id
 // =============================================
 router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
+        const businessId = req.user.businessId;
         const creditorId = parseInt(id);
 
         if (isNaN(creditorId)) {
@@ -114,7 +147,9 @@ router.get('/:id', async (req, res) => {
         if (!creditor) {
             return res.status(404).json({ success: false, message: 'Creditor not found' });
         }
-        if (creditor.user_id !== userId) {
+
+        // Ownership check
+        if (creditor.business_id !== businessId && creditor.user_id !== userId) {
             return res.status(403).json({ success: false, message: 'Access denied' });
         }
 
@@ -126,13 +161,17 @@ router.get('/:id', async (req, res) => {
 });
 
 // =============================================
-// POST /api/creditors - Create creditor
+// POST /api/creditors
 // =============================================
 router.post('/', invalidateAfterWrite, async (req, res) => {
     try {
         const userId = req.user.id;
+        const businessId = req.user.businessId;
         const { supplierName, totalOwed, dueDate, notes = '' } = req.body;
 
+        if (!businessId) {
+            return res.status(400).json({ success: false, message: 'Business context required' });
+        }
         if (!supplierName) {
             return res.status(400).json({ success: false, message: 'Supplier name is required' });
         }
@@ -141,7 +180,8 @@ router.post('/', invalidateAfterWrite, async (req, res) => {
         }
 
         const creditor = await creditorRepo.create({
-            user_id: userId,
+            userId,
+            businessId,
             supplier_name: supplierName,
             total_owed: totalOwed,
             balance_remaining: totalOwed,
@@ -162,13 +202,18 @@ router.post('/', invalidateAfterWrite, async (req, res) => {
 });
 
 // =============================================
-// POST /api/creditors/:id/payment - Record payment (NOW USES USE CASE)
+// POST /api/creditors/:id/payment
 // =============================================
 router.post('/:id/payment', invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
+        const businessId = req.user.businessId;
         const { amount, notes = '', paymentMethod = 'CASH' } = req.body;
+
+        if (!businessId) {
+            return res.status(400).json({ success: false, message: 'Business context required' });
+        }
 
         const creditorId = parseInt(id);
         if (isNaN(creditorId)) {
@@ -180,7 +225,7 @@ router.post('/:id/payment', invalidateAfterWrite, async (req, res) => {
 
         const result = await recordCreditorPaymentUseCase.execute({
             userId,
-            businessId: userId,          // currently userId === businessId in your system
+            businessId,
             creditorId,
             amount,
             paymentDate: new Date(),
@@ -217,6 +262,7 @@ router.delete('/:id', invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
+        const businessId = req.user.businessId;
         const creditorId = parseInt(id);
 
         if (isNaN(creditorId)) {
@@ -227,7 +273,7 @@ router.delete('/:id', invalidateAfterWrite, async (req, res) => {
         if (!existing) {
             return res.status(404).json({ success: false, message: 'Creditor not found' });
         }
-        if (existing.user_id !== userId) {
+        if (existing.business_id !== businessId && existing.user_id !== userId) {
             return res.status(403).json({ success: false, message: 'Access denied' });
         }
 
@@ -236,28 +282,6 @@ router.delete('/:id', invalidateAfterWrite, async (req, res) => {
     } catch (error) {
         console.error('❌ Error deleting creditor:', error);
         res.status(500).json({ success: false, message: error.message || 'Failed to delete creditor' });
-    }
-});
-
-// =============================================
-// GET /api/creditors/summary
-// =============================================
-router.get('/summary', async (req, res) => {
-    try {
-        const userId = req.user.id;
-        const summary = await creditorRepo.getSummary(userId);
-        const totalOutstanding = await creditorRepo.getTotalOutstanding(userId);
-
-        res.json({
-            success: true,
-            data: {
-                ...summary,
-                totalOutstanding,
-            }
-        });
-    } catch (error) {
-        console.error('❌ Error fetching creditor summary:', error);
-        res.status(500).json({ success: false, message: error.message || 'Failed to fetch creditor summary' });
     }
 });
 

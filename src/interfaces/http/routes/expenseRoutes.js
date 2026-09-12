@@ -19,28 +19,30 @@ router.use(authMiddleware);
 // =============================================
 router.get('/', async (req, res) => {
     try {
-        const userId = req.user.id;
+        const businessId = req.user.businessId;
         const { startDate, endDate, category, limit, offset } = req.query;
+
+        if (!businessId) {
+            return res.status(400).json({ success: false, message: 'Business context required' });
+        }
 
         let expenses;
         if (startDate && endDate) {
-            expenses = await expenseRepo.findByDateRange(userId, startDate, endDate);
+            expenses = await expenseRepo.findByDateRange(businessId, startDate, endDate);
         } else if (category) {
-            expenses = await expenseRepo.findByCategory(userId, category);
-        } else if (limit || offset) {
+            expenses = await expenseRepo.findByCategory(businessId, category);
+        } else {
             expenses = await expenseRepo.findByFilters({
-                businessId: userId,
+                businessId,
                 category,
                 startDate,
                 endDate,
                 limit: parseInt(limit) || 50,
                 offset: parseInt(offset) || 0,
             });
-        } else {
-            expenses = await expenseRepo.findByUserId(userId);
         }
 
-        const summary = await expenseRepo.getExpenseSummary(userId);
+        const summary = await expenseRepo.getExpenseSummary(businessId);
 
         res.json({
             success: true,
@@ -68,8 +70,12 @@ router.get('/', async (req, res) => {
 // =============================================
 router.get('/today', async (req, res) => {
     try {
-        const userId = req.user.id;
-        const expenses = await expenseRepo.getTodayExpenses(userId);
+        const businessId = req.user.businessId;
+        if (!businessId) {
+            return res.status(400).json({ success: false, message: 'Business context required' });
+        }
+
+        const expenses = await expenseRepo.getTodayExpenses(businessId);
 
         res.json({
             success: true,
@@ -93,14 +99,18 @@ router.get('/today', async (req, res) => {
 // =============================================
 router.get('/summary', async (req, res) => {
     try {
-        const userId = req.user.id;
+        const businessId = req.user.businessId;
+        if (!businessId) {
+            return res.status(400).json({ success: false, message: 'Business context required' });
+        }
+
         const { year, month } = req.query;
 
         let summary;
         if (year && month) {
-            summary = await expenseRepo.getMonthlySummary(userId, parseInt(year), parseInt(month));
+            summary = await expenseRepo.getMonthlySummary(businessId, parseInt(year), parseInt(month));
         } else {
-            summary = await expenseRepo.getExpenseSummary(userId);
+            summary = await expenseRepo.getExpenseSummary(businessId);
         }
 
         res.json({
@@ -127,9 +137,12 @@ router.get('/summary', async (req, res) => {
 router.post('/', invalidateAfterWrite, async (req, res) => {
     try {
         const userId = req.user.id;
-        const businessId = req.user.businessId || userId;
+        const businessId = req.user.businessId;
         const { category, amount, description, date } = req.body;
 
+        if (!businessId) {
+            return res.status(400).json({ success: false, message: 'Business context required' });
+        }
         if (!category) {
             return res.status(400).json({ success: false, message: 'Category is required' });
         }
@@ -167,12 +180,13 @@ router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
+        const businessId = req.user.businessId;
 
         const expense = await expenseRepo.findById(parseInt(id));
         if (!expense) {
             return res.status(404).json({ success: false, message: 'Expense record not found' });
         }
-        if (expense.user_id !== userId) {
+        if (expense.business_id !== businessId && expense.user_id !== userId) {
             return res.status(403).json({ success: false, message: 'Access denied' });
         }
 
@@ -190,13 +204,14 @@ router.put('/:id', invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
+        const businessId = req.user.businessId;
         const { category, amount, description, date } = req.body;
 
         const existing = await expenseRepo.findById(parseInt(id));
         if (!existing) {
             return res.status(404).json({ success: false, message: 'Expense record not found' });
         }
-        if (existing.user_id !== userId) {
+        if (existing.business_id !== businessId && existing.user_id !== userId) {
             return res.status(403).json({ success: false, message: 'Access denied' });
         }
 
@@ -222,12 +237,13 @@ router.delete('/:id', invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
+        const businessId = req.user.businessId;
 
         const existing = await expenseRepo.findById(parseInt(id));
         if (!existing) {
             return res.status(404).json({ success: false, message: 'Expense record not found' });
         }
-        if (existing.user_id !== userId) {
+        if (existing.business_id !== businessId && existing.user_id !== userId) {
             return res.status(403).json({ success: false, message: 'Access denied' });
         }
 

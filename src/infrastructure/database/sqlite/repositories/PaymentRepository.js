@@ -176,17 +176,10 @@ class PaymentRepository extends BaseRepository {
     }
 
     /**
-     * Find payments by date range with fail-safes
+     * Find payments by date range
      * Tries businessId first, falls back to userId if needed
      */
     findByDateRange(businessIdOrUserId, startDate, endDate, options = {}) {
-        console.log('🔍 PaymentRepository.findByDateRange called with:', {
-            businessIdOrUserId,
-            startDate,
-            endDate,
-            options
-        });
-
         // Try with businessId first
         let results = [];
 
@@ -196,29 +189,66 @@ class PaymentRepository extends BaseRepository {
                 startDate,
                 endDate,
             });
-            console.log('🔍 findByBusinessId found:', results.length);
         } catch (error) {
-            console.warn('⚠️ findByBusinessId failed:', error.message);
+            console.warn('PaymentRepository.findByBusinessId failed:', error.message);
             results = [];
         }
 
         // If no results, try with userId (fail-safe)
         if (results.length === 0) {
-            console.log('🔍 Trying findByUserId as fail-safe...');
             try {
                 results = this.findByUserId(businessIdOrUserId, {
                     ...options,
                     startDate,
                     endDate,
                 });
-                console.log('🔍 findByUserId found:', results.length);
             } catch (error) {
-                console.warn('⚠️ findByUserId failed:', error.message);
+                console.warn('PaymentRepository.findByUserId failed:', error.message);
                 results = [];
             }
         }
 
         return results;
+    }
+
+    /**
+     * Efficient net cash calculation before a given date (exclusive).
+     * Used by CashCalculator for opening balance.
+     * Handles both standard (IN/OUT) and legacy (RECEIVED/MADE) types.
+     *
+     * @param {number|string} businessId
+     * @param {string} beforeDate - YYYY-MM-DD (exclusive)
+     * @returns {number} net cash before the date
+     */
+    getNetCashBefore(businessId, beforeDate) {
+        if (!businessId || !beforeDate) return 0;
+
+        try {
+            const result = this.db.prepare(`
+                SELECT COALESCE(SUM(
+                    CASE
+                        WHEN UPPER(payment_type) IN ('IN', 'RECEIVED') THEN amount
+                        WHEN UPPER(payment_type) IN ('OUT', 'MADE') THEN -amount
+                        ELSE 0
+                    END
+                ), 0) AS net
+                FROM payments
+                WHERE business_id = ?
+                  AND DATE(payment_date) < DATE(?)
+            `).get(businessId, this._toISOString(beforeDate));
+
+            return Number(result?.net) || 0;
+        } catch (error) {
+            console.warn('PaymentRepository.getNetCashBefore failed:', error.message);
+            return 0;
+        }
+    }
+
+    /**
+     * Alias for compatibility
+     */
+    sumNetCashBefore(businessId, beforeDate) {
+        return this.getNetCashBefore(businessId, beforeDate);
     }
 
     /**

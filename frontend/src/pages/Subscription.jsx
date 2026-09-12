@@ -1,21 +1,19 @@
 // frontend/src/pages/Subscription.jsx
-// v2.1.0-prod — Pricing page with double-submit guard, telemetry, live trial.
+// v2.1.1-prod — pricing page with back button
 
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Loader2, Crown } from 'lucide-react';
 
 import api, { subscriptionApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { usePlan } from '../hooks/usePlan';
 import PlanCard from '../components/subscription/PlanCard';
+import PageHeader from '../components/common/PageHeader';
 import { reportError, reportEvent } from '../services/telemetry';
 
 const Subscription = () => {
-  const navigate = useNavigate();
   const { user } = useAuth();
-  const { planId: currentPlanId, isTrial, isReadOnly, daysRemaining, plan } =
-    usePlan();
+  const { planId: currentPlanId, isTrial, isReadOnly, daysRemaining, plan } = usePlan();
 
   const [billingCycle, setBillingCycle] = useState('monthly');
   const [plans, setPlans] = useState([]);
@@ -34,9 +32,7 @@ const Subscription = () => {
       } catch (err) {
         if (cancelled) return;
         reportError(err, { scope: 'Subscription.loadPlans' });
-        setError(
-          err.response?.data?.message || err.message || 'Failed to load plans'
-        );
+        setError(err.response?.data?.message || err.message || 'Failed to load plans');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -49,7 +45,7 @@ const Subscription = () => {
   }, []);
 
   const handleSelectPlan = async (planId) => {
-    if (paying) return; // double-submit guard
+    if (paying) return;
     if (!user?.email) {
       setError('Missing account email. Please log in again.');
       return;
@@ -60,8 +56,6 @@ const Subscription = () => {
       setError('');
       reportEvent('subscription.upgrade_clicked', { planId, billingCycle });
 
-      // NOTE: payment endpoints move to the payment phase. This call will be
-      // reconciled with /payment/initialize when we handle that module.
       const res = await api.post('/payment/initialize', {
         plan: planId,
         billingCycle,
@@ -76,32 +70,27 @@ const Subscription = () => {
       }
     } catch (err) {
       reportError(err, { scope: 'Subscription.initializePayment' });
-      setError(
-        err.response?.data?.message || err.message || 'Payment initialization failed'
-      );
+      setError(err.response?.data?.message || err.message || 'Payment initialization failed');
       setPaying(null);
     }
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="text-center mb-8">
-        <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white">
-          Choose your plan
-        </h1>
-        <p className="mt-2 text-gray-600 dark:text-gray-400">
-          Unlock intelligence features that help you grow your business.
-        </p>
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+      <PageHeader
+        title="Choose your plan"
+        subtitle="Unlock intelligence features that help you grow your business."
+      />
 
+      <div className="text-center mb-8">
         {isTrial && (
-          <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-gold-300 text-sm">
+          <div className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-gold-300 text-sm">
             <Crown className="w-4 h-4" />
-            On {plan?.name} trial — {daysRemaining} day
-            {daysRemaining === 1 ? '' : 's'} remaining
+            On {plan?.name} trial — {daysRemaining} day{daysRemaining === 1 ? '' : 's'} remaining
           </div>
         )}
         {isReadOnly && (
-          <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-sm">
+          <div className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-sm">
             ⚠️ Read-only mode — subscribe to continue
           </div>
         )}

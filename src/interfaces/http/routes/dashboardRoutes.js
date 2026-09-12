@@ -1,6 +1,6 @@
 // src/interfaces/http/routes/dashboardRoutes.js
 // Aggregated dashboard endpoint — SSOT consumer
-// v1.3.0-prod | Daily-first KPIs + debtors/creditors aliases | 10K+ users ready
+// v2.0.0-prod — multi-tenant aligned, single-arg repos
 
 'use strict';
 
@@ -10,7 +10,7 @@ const router = express.Router();
 const { authMiddleware } = require('../middleware/authMiddleware');
 const { cacheService } = require('../../../infrastructure/services/cache/CacheService');
 
-// ===== Engines (SSOT consumers) =====
+// ===== Engines =====
 const AnalyticsProvider = require('../../../application/services/analytics/integration/AnalyticsProvider');
 const ReportEngineAdapter = require('../../../application/services/analytics/integration/ReportEngineAdapter');
 const RiskOrchestrator = require('../../../application/services/risk/RiskOrchestrator');
@@ -78,16 +78,19 @@ const balanceSheetService = new BalanceSheetService({
 
 const dailyReportService = new DailyReportService({
   saleRepository: saleRepo,
+  purchaseRepository: purchaseRepo,
   expenseRepository: expenseRepo,
   incomeRepository: incomeRepo,
   debtorRepository: debtorRepo,
   creditorRepository: creditorRepo,
   inventoryRepository: inventoryRepo,
+  paymentRepository: paymentRepo,
   reportRepository: reportRepo,
 });
 
 const weeklyReportService = new WeeklyReportService({
   saleRepository: saleRepo,
+  purchaseRepository: purchaseRepo,
   expenseRepository: expenseRepo,
   incomeRepository: incomeRepo,
   debtorRepository: debtorRepo,
@@ -98,6 +101,7 @@ const weeklyReportService = new WeeklyReportService({
 
 const monthlyReportService = new MonthlyReportService({
   saleRepository: saleRepo,
+  purchaseRepository: purchaseRepo,
   expenseRepository: expenseRepo,
   incomeRepository: incomeRepo,
   debtorRepository: debtorRepo,
@@ -108,6 +112,7 @@ const monthlyReportService = new MonthlyReportService({
 
 const yearlyReportService = new YearlyReportService({
   saleRepository: saleRepo,
+  purchaseRepository: purchaseRepo,
   expenseRepository: expenseRepo,
   incomeRepository: incomeRepo,
   debtorRepository: debtorRepo,
@@ -118,6 +123,7 @@ const yearlyReportService = new YearlyReportService({
 
 const executiveReportService = new ExecutiveReportService({
   saleRepository: saleRepo,
+  purchaseRepository: purchaseRepo,
   expenseRepository: expenseRepo,
   incomeRepository: incomeRepo,
   debtorRepository: debtorRepo,
@@ -171,7 +177,7 @@ const riskOrchestrator = new RiskOrchestrator({
   logger: console,
 });
 
-// ===== Apply auth to all routes =====
+// ===== Auth on all routes =====
 router.use(authMiddleware);
 
 // =============================================
@@ -179,7 +185,7 @@ router.use(authMiddleware);
 // =============================================
 router.get('/summary', async (req, res) => {
   try {
-    const userId = req.user.id || req.user.userId;
+    const userId = req.user.id;
     const businessId = req.user.businessId;
 
     if (!userId || !businessId) {
@@ -189,8 +195,7 @@ router.get('/summary', async (req, res) => {
       });
     }
 
-    // v2 cache key — drops old zeros after alias fix
-    const cacheKey = `aicfo:dashboard:${businessId}:daily:v2`;
+    const cacheKey = `aicfo:dashboard:${businessId}:daily:v5`;
 
     const data = await cacheService.getOrSet(
       cacheKey,
@@ -238,7 +243,6 @@ async function fetchDashboardData({ userId, businessId }) {
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
   const startDateStr = thirtyDaysAgo.toISOString().split('T')[0];
 
-  // Repo signatures: getTotalOutstanding(businessId, userId = null)
   const [
     dailyResult,
     analyticsResult,
@@ -247,11 +251,7 @@ async function fetchDashboardData({ userId, businessId }) {
     creditorsTotalRaw,
     inventorySummary,
   ] = await Promise.allSettled([
-    dailyReportService.generate({
-      userId,
-      businessId,
-      date: todayStr,
-    }),
+    dailyReportService.generate({ userId, businessId, date: todayStr }),
     analyticsProvider.generateAnalytics({
       userId,
       businessId,
@@ -259,14 +259,10 @@ async function fetchDashboardData({ userId, businessId }) {
       endDate: todayStr,
       periodType: 'monthly',
     }),
-    riskOrchestrator.assess({
-      userId,
-      businessId,
-      data: {},
-    }),
-    debtorRepo.getTotalOutstanding(businessId, userId),
-    creditorRepo.getTotalOutstanding(businessId, userId),
-    inventoryRepo.getSummary(userId),
+    riskOrchestrator.assess({ userId, businessId, data: {} }),
+    debtorRepo.getTotalOutstanding(businessId),
+    creditorRepo.getTotalOutstanding(businessId),
+    inventoryRepo.getSummary(businessId),
   ]);
 
   const daily = dailyResult.status === 'fulfilled' ? dailyResult.value : null;
@@ -283,18 +279,8 @@ async function fetchDashboardData({ userId, businessId }) {
     ? inventorySummary.value || {}
     : {};
 
-  if (process.env.NODE_ENV === 'development') {
-    console.log('📊 [Dashboard] Raw repo values:', {
-      debtorsTotal,
-      creditorsTotal,
-      inventoryTotal: inventorySummaryData.totalValue ?? inventorySummaryData.total_value,
-      userId,
-      businessId,
-    });
-  }
-
   // ─────────────────────────────────────────────
-  // Navigate analytics structure
+  // Navigate analytics
   // ─────────────────────────────────────────────
   const snapshot = analytics?.snapshot || {};
   const analyticsData = analytics?.analytics || {};
@@ -314,52 +300,30 @@ async function fetchDashboardData({ userId, businessId }) {
   };
 
   // ─────────────────────────────────────────────
-  // Daily report structure
+  // Daily report — from daily.today.*
   // ─────────────────────────────────────────────
-  const dailySummary = daily?.summary || daily || {};
-  const dailyKpis = daily?.kpis || daily?.kpiDashboard || {};
-  const dailySales = daily?.sales || {};
-  const dailyCash = daily?.cash || {};
-  const dailyExpenses = daily?.expenses || {};
-  const dailyProfit = daily?.profit || daily?.profitability || {};
+  const today = daily?.today || {};
 
-  const todayRevenue = Number(
-    dailySummary.revenue ?? dailyKpis.revenue ??
-    dailySales.total ?? dailySales.revenue ?? 0
-  );
-  const todaySalesCount = Number(
-    dailySummary.salesCount ?? dailyKpis.totalSales ??
-    dailySales.count ?? dailySales.salesCount ?? 0
-  );
-  const todayExpenses = Number(
-    dailySummary.expenses ?? dailyKpis.expenses ??
-    dailyExpenses.total ?? dailyExpenses.totalExpenses ?? 0
-  );
-  const todayProfit = Number(
-    dailySummary.netProfit ?? dailySummary.profit ??
-    dailyKpis.netProfit ?? dailyProfit.netProfit ?? dailyProfit.amount ?? 0
-  );
-  const todayNetMargin = Number(
-    dailySummary.netMargin ?? dailyKpis.netMargin ??
-    dailyProfit.netMargin ?? 0
-  );
+  const todayRevenue = Number(today.revenue ?? 0);
+  const todaySalesCount = Number(today.salesCount ?? 0);
+  const todayExpenses = Number(today.expenses ?? 0);
+  const todayProfit = Number(today.netProfit ?? 0);
+  const todayNetMargin = Number(today.netMargin ?? 0);
+  const todayCashClosing = Number(today.cash?.closing ?? 0);
 
+  // ─────────────────────────────────────────────
+  // Inventory
+  // ─────────────────────────────────────────────
   const inventoryTotal = Number(
     inventorySummaryData.totalValue ?? inventorySummaryData.total_value ??
     metrics.inventory ?? 0
   );
   const lowStockCount = Number(
-    inventorySummaryData.lowStockCount ?? inventorySummaryData.low_stock_count ?? 0
+    inventorySummaryData.lowStockCount ?? inventorySummaryData.low_stock_count ??
+    today.inventory?.lowStockCount ?? 0
   );
 
-  const receivablesTotal = debtorsTotal;
-  const payablesTotal = creditorsTotal;
-
-  const cashCurrent = Number(
-    dailyCash.closingCash ?? dailyCash.closing ??
-    dailySummary.cash ?? metrics.cash ??
-    getKpiValue(kpis.netCashFlow) ?? 0
-  );
+  const cashCurrent = todayCashClosing;
 
   const healthScore = Number(snapshot?.health?.overallScore ?? 0);
   const healthStatus = snapshot?.health?.overallStatus || 'NEUTRAL';
@@ -384,10 +348,6 @@ async function fetchDashboardData({ userId, businessId }) {
     cashFlow: { forecast: 0, confidence: 0 },
   };
 
-  // ─────────────────────────────────────────────
-  // KPI response — includes debtors/creditors aliases
-  // so industryConfig keys (debtors / creditors) work
-  // ─────────────────────────────────────────────
   const kpiResponse = {
     revenue: {
       today: todayRevenue,
@@ -409,35 +369,30 @@ async function fetchDashboardData({ userId, businessId }) {
       formatted: `₦${Number(cashCurrent).toLocaleString()}`,
       label: 'Cash Position',
     },
-
-    // Canonical keys
     receivables: {
-      total: receivablesTotal,
+      total: debtorsTotal,
       overdue: 0,
-      formatted: `₦${Number(receivablesTotal).toLocaleString()}`,
+      formatted: `₦${Number(debtorsTotal).toLocaleString()}`,
       label: 'Debtors Owed',
     },
     payables: {
-      total: payablesTotal,
+      total: creditorsTotal,
       overdue: 0,
-      formatted: `₦${Number(payablesTotal).toLocaleString()}`,
+      formatted: `₦${Number(creditorsTotal).toLocaleString()}`,
       label: 'You Owe',
     },
-
-    // Aliases for industryConfig.stats keys (production-safe, additive only)
     debtors: {
-      total: receivablesTotal,
+      total: debtorsTotal,
       overdue: 0,
-      formatted: `₦${Number(receivablesTotal).toLocaleString()}`,
+      formatted: `₦${Number(debtorsTotal).toLocaleString()}`,
       label: 'Debtors Owed',
     },
     creditors: {
-      total: payablesTotal,
+      total: creditorsTotal,
       overdue: 0,
-      formatted: `₦${Number(payablesTotal).toLocaleString()}`,
+      formatted: `₦${Number(creditorsTotal).toLocaleString()}`,
       label: 'You Owe',
     },
-
     inventory: {
       total: inventoryTotal,
       lowStock: lowStockCount,
@@ -452,7 +407,7 @@ async function fetchDashboardData({ userId, businessId }) {
     },
     sales: {
       today: todaySalesCount,
-      month: 0,
+      month: null,
       growth: 0,
       label: 'Sales Today',
     },
@@ -478,7 +433,7 @@ async function fetchDashboardData({ userId, businessId }) {
       businessId,
       generatedAt: new Date().toISOString(),
       source: 'daily+analytics+risk+repos',
-      version: '1.3.0',
+      version: '2.0.0',
     },
   };
 }
