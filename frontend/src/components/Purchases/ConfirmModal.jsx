@@ -1,7 +1,7 @@
 // frontend/src/components/Purchases/ConfirmModal.jsx
-import { X } from 'lucide-react';
+import { X, Loader2 } from 'lucide-react';
 
-const ConfirmModal = ({ isOpen, data, onConfirm, onCancel }) => {
+const ConfirmModal = ({ isOpen, data, onConfirm, onCancel, submitting = false }) => {
   if (!isOpen) return null;
 
   const formatDate = (date) => {
@@ -13,7 +13,6 @@ const ConfirmModal = ({ isOpen, data, onConfirm, onCancel }) => {
     });
   };
 
-  // Calculate totals from items
   const calculateTotals = () => {
     if (!data?.items || data.items.length === 0) {
       return { totalCost: 0, totalItems: 0, totalQuantity: 0 };
@@ -22,14 +21,13 @@ const ConfirmModal = ({ isOpen, data, onConfirm, onCancel }) => {
     let totalQuantity = 0;
     for (const item of data.items) {
       totalCost += (item.quantity || 0) * (item.unitCost || 0);
-      totalQuantity += (item.quantity || 0);
+      totalQuantity += item.quantity || 0;
     }
     return { totalCost, totalItems: data.items.length, totalQuantity };
   };
 
   const { totalCost, totalItems, totalQuantity } = calculateTotals();
   
-  // ✅ Calculate amount paid and remaining for partial payments
   const amountPaid = data?.amountPaid || 0;
   const isPartial = data?.paymentStatus === 'PARTIAL' && amountPaid > 0;
   const remainingBalance = isPartial ? totalCost - amountPaid : 0;
@@ -41,7 +39,8 @@ const ConfirmModal = ({ isOpen, data, onConfirm, onCancel }) => {
           <h2 className="text-xl font-bold text-gray-900 dark:text-white">Confirm Purchase</h2>
           <button
             onClick={onCancel}
-            className="p-1 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition"
+            disabled={submitting}
+            className="p-1 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <X className="w-6 h-6 text-gray-500 dark:text-gray-400" />
           </button>
@@ -67,7 +66,6 @@ const ConfirmModal = ({ isOpen, data, onConfirm, onCancel }) => {
               <span className="font-medium">Payment Status:</span> {data?.paymentStatus || 'UNPAID'}
             </p>
             
-            {/* ✅ Show partial payment details */}
             {isPartial && (
               <>
                 <p className="text-sm text-green-600 dark:text-green-300 mt-2 pt-2 border-t border-gray-200 dark:border-slate-600">
@@ -86,7 +84,6 @@ const ConfirmModal = ({ isOpen, data, onConfirm, onCancel }) => {
               <span className="font-medium">Date:</span> {formatDate(data?.purchaseDate)}
             </p>
 
-            {/* Show items summary */}
             {data?.items && data.items.length > 0 && (
               <div className="mt-2 pt-2 border-t border-gray-200 dark:border-slate-600">
                 <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Items:</p>
@@ -113,16 +110,25 @@ const ConfirmModal = ({ isOpen, data, onConfirm, onCancel }) => {
             <button
               type="button"
               onClick={onCancel}
-              className="flex-1 px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition"
+              disabled={submitting}
+              className="flex-1 px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={onConfirm}
-              className="flex-1 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
+              disabled={submitting}
+              className="flex-1 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
             >
-              Confirm Purchase
+              {submitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Recording...</span>
+                </>
+              ) : (
+                <span>Confirm Purchase</span>
+              )}
             </button>
           </div>
         </div>

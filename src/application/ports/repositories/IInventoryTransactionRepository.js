@@ -1,5 +1,13 @@
 // src/application/ports/repositories/IInventoryTransactionRepository.js
 
+// src/application/ports/repositories/IInventoryTransactionRepository.js
+//
+// @deprecated — RETIRED. Use IInventoryMovementRepository instead.
+// Scheduled for removal after migration 033 drops the inventory_transactions table.
+// Do not reference in new code.
+
+// ... rest of file unchanged
+
 class IInventoryTransactionRepository {
     /**
      * Create a new inventory transaction

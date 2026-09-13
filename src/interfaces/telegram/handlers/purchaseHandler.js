@@ -1,11 +1,12 @@
 // src/interfaces/telegram/handlers/purchaseHandler.js
+// v2.1.0-prod — Uses InventoryMovementRepository (inventory_movements ledger)
 
 const { getSessionManager } = require('../sessionManager');
 const UserRepository = require('../../../infrastructure/database/sqlite/repositories/UserRepository');
 const BusinessRepository = require('../../../infrastructure/database/sqlite/repositories/BusinessRepository');
 const PurchaseRepository = require('../../../infrastructure/database/sqlite/repositories/PurchaseRepository');
 const InventoryRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryRepository');
-const InventoryTransactionRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryTransactionRepository');
+const InventoryMovementRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryMovementRepository');
 const CreditorRepository = require('../../../infrastructure/database/sqlite/repositories/CreditorRepository');
 const SupplierRepository = require('../../../infrastructure/database/sqlite/repositories/SupplierRepository');
 const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository');
@@ -18,17 +19,16 @@ const userRepo = new UserRepository();
 const businessRepo = new BusinessRepository();
 const purchaseRepo = new PurchaseRepository();
 const inventoryRepo = new InventoryRepository();
-const inventoryTransactionRepo = new InventoryTransactionRepository();
+const inventoryMovementRepo = new InventoryMovementRepository();
 const creditorRepo = new CreditorRepository();
 const supplierRepo = new SupplierRepository();
 const paymentRepo = new PaymentRepository();
 
-// ✅ paymentRepository is now correctly injected
 const recordPurchaseUseCase = new RecordPurchaseUseCase({
     purchaseRepository: purchaseRepo,
     transactionRepository: null,
     inventoryRepository: inventoryRepo,
-    inventoryTransactionRepository: inventoryTransactionRepo,
+    inventoryMovementRepository: inventoryMovementRepo,
     creditorRepository: creditorRepo,
     supplierRepository: supplierRepo,
     paymentRepository: paymentRepo,
@@ -37,7 +37,6 @@ const recordPurchaseUseCase = new RecordPurchaseUseCase({
 async function purchaseHandler(ctx) {
     try {
         const telegramId = ctx.from.id;
-        console.log('🔍 [purchaseHandler] Started for:', telegramId);
 
         const user = await userRepo.findByTelegramId(telegramId);
         if (!user) {
@@ -62,7 +61,6 @@ async function purchaseHandler(ctx) {
 
         if (ctx.callbackQuery) {
             const data = ctx.callbackQuery.data;
-            console.log('🔍 [purchaseHandler] Callback query:', data);
             await ctx.answerCbQuery();
 
             if (data === 'menu_purchase') {
@@ -76,7 +74,6 @@ async function purchaseHandler(ctx) {
 
         const session = sessionManager.getSession(telegramId);
         const state = session ? session.state : null;
-        console.log('🔍 [purchaseHandler] State:', state);
 
         switch (state) {
             case 'PURCHASE_WAITING_ITEM':
@@ -692,7 +689,6 @@ async function purchaseToday(ctx) {
 
 async function handleButtonClick(ctx, businessId, telegramId, userId) {
     const data = ctx.callbackQuery?.data;
-    console.log('🔍 [handleButtonClick] Data:', data);
 
     if (data === 'purchase_add') {
         sessionManager.clearSession(telegramId);

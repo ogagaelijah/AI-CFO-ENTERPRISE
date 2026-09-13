@@ -1,5 +1,16 @@
 // src/infrastructure/database/sqlite/repositories/InventoryTransactionRepository.js
 
+// src/infrastructure/database/sqlite/repositories/InventoryTransactionRepository.js
+//
+// @deprecated — RETIRED. Use InventoryMovementRepository (inventory_movements) instead.
+// This repository targets the inventory_transactions table, which has been
+// superseded by inventory_movements (created in migration 022). The table has
+// no `date` column; every write attempt through this repository fails silently.
+// Scheduled for removal after migration 033 drops the table.
+// Do not use in new code.
+
+// ... rest of file unchanged
+
 const BaseRepository = require('./BaseRepository');
 
 class InventoryTransactionRepository extends BaseRepository {

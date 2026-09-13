@@ -1,12 +1,17 @@
 // src/application/useCases/purchases/RecordPurchaseUseCase.js
-// v3.1.0-prod — Fixed multi-tenant inventory update + Weighted Average Cost
+// v3.3.1-prod — Fully transactional (manual BEGIN/COMMIT/ROLLBACK). No silent failures.
+//
+// Why manual instead of better-sqlite3's transaction() helper:
+// transaction() requires a synchronous function; our use case is async.
+// All repositories here are synchronous under the hood (no real awaits), so
+// running BEGIN … COMMIT around the async body gives atomicity without interleaving.
 
 class RecordPurchaseUseCase {
     constructor({
         purchaseRepository,
         transactionRepository,
         inventoryRepository,
-        inventoryTransactionRepository,
+        inventoryMovementRepository,
         creditorRepository,
         supplierRepository,
         paymentRepository = null,
@@ -14,10 +19,16 @@ class RecordPurchaseUseCase {
         this.purchaseRepository = purchaseRepository;
         this.transactionRepository = transactionRepository;
         this.inventoryRepository = inventoryRepository;
-        this.inventoryTransactionRepository = inventoryTransactionRepository;
+        this.inventoryMovementRepository = inventoryMovementRepository;
         this.creditorRepository = creditorRepository;
         this.supplierRepository = supplierRepository;
         this.paymentRepository = paymentRepository;
+
+        if (!this.purchaseRepository) throw new Error('PurchaseRepository is required');
+        if (!this.inventoryRepository) throw new Error('InventoryRepository is required');
+        if (!this.inventoryMovementRepository) throw new Error('InventoryMovementRepository is required');
+        if (!this.creditorRepository) throw new Error('CreditorRepository is required');
+        if (!this.supplierRepository) throw new Error('SupplierRepository is required');
     }
 
     async execute({
@@ -37,278 +48,101 @@ class RecordPurchaseUseCase {
         notes = '',
         purchaseDate = new Date(),
     }) {
-        if (!userId) {
-            throw new Error('User ID is required');
-        }
+        if (!userId) throw new Error('User ID is required');
+        if (!businessId) throw new Error('Business ID is required');
 
-        if (!businessId) {
-            throw new Error('Business ID is required');
-        }
-
-        // ✅ Process items - support both formats
-        let processedItems = [];
-        let totalPurchaseCost = 0;
-        let totalQuantity = 0;
-
-        if (items && items.length > 0) {
-            for (const item of items) {
-                if (!item.name || !item.name.trim()) {
-                    throw new Error('All items must have a name');
-                }
-                const qty = parseInt(item.quantity) || 1;
-                const cost = parseFloat(item.unitCost) || 0;
-
-                if (qty <= 0) {
-                    throw new Error(`Quantity for "${item.name}" must be greater than 0`);
-                }
-                if (cost <= 0) {
-                    throw new Error(`Unit cost for "${item.name}" must be greater than 0`);
-                }
-
-                processedItems.push({
-                    name: item.name.trim(),
-                    quantity: qty,
-                    unitCost: cost,
-                });
-
-                totalPurchaseCost += qty * cost;
-                totalQuantity += qty;
-            }
-        } else if (itemName) {
-            if (!quantity || quantity <= 0) {
-                throw new Error('Quantity must be greater than zero');
-            }
-            if (!unitCost || unitCost <= 0) {
-                throw new Error('Unit cost must be greater than zero');
-            }
-
-            processedItems = [{
-                name: itemName.trim(),
-                quantity: parseInt(quantity),
-                unitCost: parseFloat(unitCost),
-            }];
-
-            totalPurchaseCost = quantity * unitCost;
-            totalQuantity = quantity;
-        } else {
-            throw new Error('At least one item is required');
-        }
-
+        // ────── 1. Validate + normalize (pure, no DB) ──────
+        const processedItems = this._processItems({ items, itemName, quantity, unitCost });
+        const { totalPurchaseCost, totalQuantity } = this._sumItems(processedItems);
         const finalTotalCost = totalCost || totalPurchaseCost;
+        const balanceRemaining = this._computeBalance(paymentStatus, finalTotalCost, amountPaid);
+        const purchaseDateObj = purchaseDate instanceof Date ? purchaseDate : new Date(purchaseDate);
 
-        // ✅ Find or create supplier
-        let finalSupplierId = null;
-        let finalSupplierName = supplierName || 'Unknown Supplier';
-
-        if (supplierName && this.supplierRepository) {
-            try {
-                const existingSuppliers = await this.supplierRepository.findByBusinessId(businessId, {
-                    search: supplierName,
-                    limit: 10,
-                });
-
-                let supplier = null;
-                if (existingSuppliers && existingSuppliers.length > 0) {
-                    supplier = existingSuppliers.find(s =>
-                        s.name.toLowerCase() === supplierName.toLowerCase()
-                    );
-                }
-
-                if (!supplier) {
-                    const supplierData = {
-                        businessId: businessId,
-                        name: supplierName,
-                        phone: supplierPhone || null,
-                        email: supplierEmail || null,
-                    };
-                    supplier = await this.supplierRepository.create(supplierData);
-                    console.log(`✅ Created new supplier: ${supplierName} (ID: ${supplier.id})`);
-                } else {
-                    console.log(`✅ Found existing supplier: ${supplierName} (ID: ${supplier.id})`);
-                }
-
-                if (supplier) {
-                    finalSupplierId = supplier.id;
-                    finalSupplierName = supplier.name;
-                }
-            } catch (error) {
-                console.error('Supplier creation/lookup error:', error.message);
-            }
+        // ────── 2. Get raw DB handle ──────
+        const db = this.purchaseRepository.db;
+        if (!db || typeof db.prepare !== 'function') {
+            throw new Error('PurchaseRepository must expose a sqlite db handle');
         }
 
-        const balanceRemaining = paymentStatus === 'PAID' ? 0 :
-            paymentStatus === 'PARTIAL' ? finalTotalCost - amountPaid :
-            finalTotalCost;
+        // ────── 3. BEGIN — everything below is atomic ──────
+        db.prepare('BEGIN IMMEDIATE').run();
 
-        // ✅ Create ONE purchase record with items as JSON
-        const itemNames = processedItems.map(i => i.name).join(', ');
+        let result;
+        try {
+            // 3a. Supplier find-or-create
+            const supplier = await this._findOrCreateSupplier({
+                businessId, supplierName, supplierPhone, supplierEmail,
+            });
+            const finalSupplierId = supplier ? supplier.id : null;
+            const finalSupplierName = supplier ? supplier.name : (supplierName || 'Unknown Supplier');
 
-        const purchase = await this.purchaseRepository.create({
-            user_id: userId,
-            business_id: businessId,
-            supplier_id: finalSupplierId,
-            supplier_name: finalSupplierName,
-            item_name: itemNames,
-            quantity: totalQuantity,
-            unit_cost: totalQuantity > 0 ? totalPurchaseCost / totalQuantity : 0,
-            total_cost: finalTotalCost,
-            payment_status: paymentStatus,
-            amount_paid: paymentStatus === 'PAID' ? finalTotalCost : (amountPaid || 0),
-            balance_remaining: balanceRemaining,
-            due_date: dueDate,
-            purchase_date: purchaseDate instanceof Date ? purchaseDate.toISOString() : purchaseDate,
-            items: JSON.stringify(processedItems),
-            notes: notes || '',
-        });
+            // 3b. Purchase record
+            const itemNames = processedItems.map(i => i.name).join(', ');
+            const purchase = await this.purchaseRepository.create({
+                user_id: userId,
+                business_id: businessId,
+                supplier_id: finalSupplierId,
+                supplier_name: finalSupplierName,
+                item_name: itemNames,
+                quantity: totalQuantity,
+                unit_cost: totalQuantity > 0 ? totalPurchaseCost / totalQuantity : 0,
+                total_cost: finalTotalCost,
+                payment_status: paymentStatus,
+                amount_paid: paymentStatus === 'PAID' ? finalTotalCost : (amountPaid || 0),
+                balance_remaining: balanceRemaining,
+                due_date: dueDate,
+                purchase_date: purchaseDateObj.toISOString(),
+                items: processedItems,
+                notes: notes || '',
+            });
 
-        // ✅ UPDATE SUPPLIER METADATA
-        if (finalSupplierId) {
-            try {
-                const supplier = await this.supplierRepository.findById(finalSupplierId);
-                if (supplier) {
-                    const currentMetadata = supplier.metadata || {};
-                    const purchaseCount = (currentMetadata.purchaseCount || 0) + 1;
-                    const totalPurchaseAmount = (currentMetadata.totalPurchaseAmount || 0) + finalTotalCost;
-
+            // 3c. Supplier metadata
+            if (finalSupplierId) {
+                const existingSupplier = await this.supplierRepository.findById(finalSupplierId);
+                if (existingSupplier) {
+                    const meta = existingSupplier.metadata || {};
                     await this.supplierRepository.update(finalSupplierId, {
                         metadata: {
-                            ...currentMetadata,
-                            purchaseCount: purchaseCount,
-                            totalPurchaseAmount: totalPurchaseAmount,
+                            ...meta,
+                            purchaseCount: (meta.purchaseCount || 0) + 1,
+                            totalPurchaseAmount: (meta.totalPurchaseAmount || 0) + finalTotalCost,
                             lastPurchaseDate: new Date().toISOString(),
-                        }
+                        },
                     });
                 }
-            } catch (error) {
-                console.error('❌ Failed to update supplier metadata:', error.message);
             }
-        }
 
-        // ✅ CREATE PAYMENT RECORD IF PAID OR PARTIAL
-        if (this.paymentRepository && (paymentStatus === 'PAID' || paymentStatus === 'PARTIAL')) {
-            const paidAmount = amountPaid || (paymentStatus === 'PAID' ? finalTotalCost : 0);
-            if (paidAmount > 0) {
-                const paymentDateObj = purchaseDate instanceof Date ? purchaseDate : new Date();
-                await this.paymentRepository.create({
-                    businessId: businessId,
-                    userId: userId,
-                    type: 'MADE',
-                    amount: paidAmount,
-                    paymentDate: paymentDateObj,
-                    referenceType: 'PURCHASE',
-                    referenceId: purchase.id,
-                    paymentMethod: 'CASH',
-                    notes: `Payment for purchase ${purchase.id}`,
+            // 3d. Payment record
+            if (this.paymentRepository && (paymentStatus === 'PAID' || paymentStatus === 'PARTIAL')) {
+                const paidAmount = amountPaid || (paymentStatus === 'PAID' ? finalTotalCost : 0);
+                if (paidAmount > 0) {
+                    await this.paymentRepository.create({
+                        businessId,
+                        userId,
+                        type: 'MADE',
+                        amount: paidAmount,
+                        paymentDate: purchaseDateObj,
+                        referenceType: 'PURCHASE',
+                        referenceId: purchase.id,
+                        paymentMethod: 'CASH',
+                        notes: `Payment for purchase ${purchase.id}`,
+                    });
+                }
+            }
+
+            // 3e. Inventory + ledger
+            const inventoryUpdates = [];
+            for (const item of processedItems) {
+                const update = await this._applyInventoryAndLedger({
+                    businessId, userId, item, purchaseId: purchase.id, notes, purchaseDateObj,
                 });
+                inventoryUpdates.push(update);
             }
-        }
 
-        // ✅ Process each item for inventory (FIXED: now uses businessId)
-        let inventoryUpdates = [];
-
-        for (const item of processedItems) {
-            try {
-                // 🔑 CRITICAL FIX: Use businessId, not userId
-                let inventoryItemData = await this.inventoryRepository.findByNameIgnoreCase(businessId, item.name);
-
-                let inventoryItemId = null;
-                let previousQuantity = 0;
-                let previousCostPrice = 0;
-                let newQuantity = 0;
-                let newCostPrice = 0;
-
-                if (!inventoryItemData) {
-                    // Create new inventory item
-                    const savedData = await this.inventoryRepository.create({
-                        userId: userId,
-                        businessId: businessId,
-                        item_name: item.name,
-                        quantity: item.quantity,
-                        cost_price: item.unitCost,
-                        selling_price: 0,
-                        last_purchase_cost: item.unitCost,
-                        reorder_level: 5,
-                    });
-
-                    inventoryItemId = savedData.id;
-                    previousQuantity = 0;
-                    previousCostPrice = 0;
-                    newQuantity = item.quantity;
-                    newCostPrice = item.unitCost;
-
-                    console.log(`✅ Created new inventory item: ${item.name} (Qty: ${item.quantity}, Cost: ₦${item.unitCost})`);
-                } else {
-                    // Existing item → Weighted Average Cost
-                    previousQuantity = inventoryItemData.quantity || 0;
-                    previousCostPrice = inventoryItemData.cost_price || 0;
-
-                    const totalCurrentValue = previousQuantity * previousCostPrice;
-                    const totalNewValue = item.quantity * item.unitCost;
-                    const totalQty = previousQuantity + item.quantity;
-
-                    newQuantity = totalQty;
-                    newCostPrice = totalQty > 0
-                        ? (totalCurrentValue + totalNewValue) / totalQty
-                        : item.unitCost;
-
-                    await this.inventoryRepository.update(inventoryItemData.id, {
-                        quantity: newQuantity,
-                        cost_price: newCostPrice,
-                        last_purchase_cost: item.unitCost,
-                    });
-
-                    inventoryItemId = inventoryItemData.id;
-
-                    console.log(`✅ Inventory updated (WAC): ${item.name} (${previousQuantity} → ${newQuantity}) | Cost: ₦${previousCostPrice.toFixed(2)} → ₦${newCostPrice.toFixed(2)}`);
-                }
-
-                // Create inventory transaction
-                if (this.inventoryTransactionRepository && inventoryItemId) {
-                    try {
-                        await this.inventoryTransactionRepository.create({
-                            inventoryItemId: inventoryItemId,
-                            businessId: businessId,
-                            type: 'IN',
-                            quantity: item.quantity,
-                            previousQuantity: previousQuantity,
-                            newQuantity: newQuantity,
-                            referenceType: 'PURCHASE',
-                            referenceId: purchase.id,
-                            reason: `Purchase of ${item.name}`,
-                            notes: notes || '',
-                            metadata: {
-                                unitCost: item.unitCost,
-                                previousCostPrice,
-                                newCostPrice,
-                            },
-                            date: purchaseDate instanceof Date ? purchaseDate : new Date(purchaseDate),
-                        });
-                    } catch (txError) {
-                        console.warn(`⚠️ Inventory transaction not recorded for ${item.name}:`, txError.message);
-                    }
-                }
-
-                inventoryUpdates.push({
-                    name: item.name,
-                    previousQuantity,
-                    newQuantity,
-                    previousCostPrice,
-                    newCostPrice,
-                    lastPurchaseCost: item.unitCost,
-                    inventoryValue: newQuantity * newCostPrice,
-                });
-
-            } catch (error) {
-                console.error(`❌ Inventory update error for ${item.name}:`, error.message);
-                console.error(error.stack);
-            }
-        }
-
-        // ✅ Create creditor if not fully paid
-        let creditorCreated = false;
-        if (paymentStatus !== 'PAID' && balanceRemaining > 0) {
-            try {
-                await this.creditorRepository.create({
+            // 3f. Creditor for UNPAID / PARTIAL
+            let creditor = null;
+            if (paymentStatus !== 'PAID' && balanceRemaining > 0) {
+                creditor = await this.creditorRepository.create({
                     user_id: userId,
                     business_id: businessId,
                     supplier_id: finalSupplierId,
@@ -321,24 +155,174 @@ class RecordPurchaseUseCase {
                     reference_type: 'PURCHASE',
                     reference_id: purchase.id,
                 });
-                creditorCreated = true;
-                console.log(`✅ Creditor created for supplier: ${finalSupplierName}`);
-            } catch (error) {
-                console.error('Creditor creation error:', error.message);
             }
+
+            // ────── 4. COMMIT ──────
+            db.prepare('COMMIT').run();
+
+            result = {
+                success: true,
+                purchase,
+                supplierId: finalSupplierId,
+                supplierName: finalSupplierName,
+                supplierCreated: finalSupplierId !== null,
+                balanceRemaining,
+                creditorCreated: creditor !== null,
+                creditorId: creditor ? creditor.id : null,
+                items: processedItems,
+                inventoryUpdates,
+                message: 'Purchase recorded successfully',
+            };
+        } catch (err) {
+            // ────── ROLLBACK on any failure ──────
+            try {
+                db.prepare('ROLLBACK').run();
+            } catch (rollbackErr) {
+                console.error('[RecordPurchaseUseCase] ROLLBACK failed:', rollbackErr.message);
+            }
+            throw err;
         }
 
+        return result;
+    }
+
+    // ────── Pure helpers ──────
+
+    _processItems({ items, itemName, quantity, unitCost }) {
+        if (items && items.length > 0) {
+            return items.map(it => {
+                if (!it.name || !it.name.trim()) throw new Error('All items must have a name');
+                const qty = parseInt(it.quantity) || 1;
+                const cost = parseFloat(it.unitCost) || 0;
+                if (qty <= 0) throw new Error(`Quantity for "${it.name}" must be greater than 0`);
+                if (cost <= 0) throw new Error(`Unit cost for "${it.name}" must be greater than 0`);
+                return { name: it.name.trim(), quantity: qty, unitCost: cost };
+            });
+        }
+        if (itemName) {
+            if (!quantity || quantity <= 0) throw new Error('Quantity must be greater than zero');
+            if (!unitCost || unitCost <= 0) throw new Error('Unit cost must be greater than zero');
+            return [{ name: itemName.trim(), quantity: parseInt(quantity), unitCost: parseFloat(unitCost) }];
+        }
+        throw new Error('At least one item is required');
+    }
+
+    _sumItems(processedItems) {
+        let totalPurchaseCost = 0;
+        let totalQuantity = 0;
+        for (const it of processedItems) {
+            totalPurchaseCost += it.quantity * it.unitCost;
+            totalQuantity += it.quantity;
+        }
+        return { totalPurchaseCost, totalQuantity };
+    }
+
+    _computeBalance(paymentStatus, finalTotalCost, amountPaid) {
+        if (paymentStatus === 'PAID') return 0;
+        if (paymentStatus === 'PARTIAL') return finalTotalCost - (amountPaid || 0);
+        return finalTotalCost;
+    }
+
+    async _findOrCreateSupplier({ businessId, supplierName, supplierPhone, supplierEmail }) {
+        if (!supplierName) return null;
+
+        const existing = await this.supplierRepository.findByBusinessId(businessId, {
+            search: supplierName,
+            limit: 10,
+        });
+
+        let supplier = null;
+        if (existing && existing.length > 0) {
+            supplier = existing.find(s => s.name.toLowerCase() === supplierName.toLowerCase());
+        }
+
+        if (!supplier) {
+            supplier = await this.supplierRepository.create({
+                businessId,
+                name: supplierName,
+                phone: supplierPhone || null,
+                email: supplierEmail || null,
+            });
+        }
+        return supplier;
+    }
+
+    async _applyInventoryAndLedger({ businessId, userId, item, purchaseId, notes, purchaseDateObj }) {
+        const inventoryItemData = await this.inventoryRepository.findByNameIgnoreCase(businessId, item.name);
+
+        let inventoryItemId;
+        let previousQuantity = 0;
+        let previousCostPrice = 0;
+        let newQuantity;
+        let newCostPrice;
+
+        if (!inventoryItemData) {
+            const savedData = await this.inventoryRepository.create({
+                userId,
+                businessId,
+                item_name: item.name,
+                quantity: item.quantity,
+                cost_price: item.unitCost,
+                selling_price: 0,
+                last_purchase_cost: item.unitCost,
+                reorder_level: 5,
+            });
+            inventoryItemId = savedData.id;
+            newQuantity = item.quantity;
+            newCostPrice = item.unitCost;
+        } else {
+            previousQuantity = inventoryItemData.quantity || 0;
+            previousCostPrice = inventoryItemData.cost_price || 0;
+
+            const totalCurrentValue = previousQuantity * previousCostPrice;
+            const totalNewValue = item.quantity * item.unitCost;
+            const totalQty = previousQuantity + item.quantity;
+
+            newQuantity = totalQty;
+            newCostPrice = totalQty > 0
+                ? (totalCurrentValue + totalNewValue) / totalQty
+                : item.unitCost;
+
+            await this.inventoryRepository.update(inventoryItemData.id, {
+                quantity: newQuantity,
+                cost_price: newCostPrice,
+                last_purchase_cost: item.unitCost,
+            });
+            inventoryItemId = inventoryItemData.id;
+        }
+
+        await this.inventoryMovementRepository.create({
+            inventoryItemId,
+            businessId,
+            userId,
+            movementType: 'IN',
+            quantity: item.quantity,
+            unitCost: item.unitCost,
+            totalCost: item.quantity * item.unitCost,
+            quantityBefore: previousQuantity,
+            quantityAfter: newQuantity,
+            costPriceBefore: previousCostPrice,
+            costPriceAfter: newCostPrice,
+            referenceType: 'PURCHASE',
+            referenceId: purchaseId,
+            reason: `Purchase of ${item.name}`,
+            notes: notes || '',
+            metadata: {
+                unitCost: item.unitCost,
+                previousCostPrice,
+                newCostPrice,
+            },
+            createdAt: purchaseDateObj,
+        });
+
         return {
-            success: true,
-            purchase: purchase,
-            supplierId: finalSupplierId,
-            supplierName: finalSupplierName,
-            supplierCreated: finalSupplierId !== null,
-            balanceRemaining: balanceRemaining,
-            creditorCreated: creditorCreated,
-            items: processedItems,
-            inventoryUpdates: inventoryUpdates,
-            message: 'Purchase recorded successfully',
+            name: item.name,
+            previousQuantity,
+            newQuantity,
+            previousCostPrice,
+            newCostPrice,
+            lastPurchaseCost: item.unitCost,
+            inventoryValue: newQuantity * newCostPrice,
         };
     }
 }

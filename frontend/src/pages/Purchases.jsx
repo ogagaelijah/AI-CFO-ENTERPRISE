@@ -31,6 +31,7 @@ const Purchases = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedPurchase, setSelectedPurchase] = useState(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false); // 🔒 guards double-submit
   const [confirmData, setConfirmData] = useState(null);
   const [partialAmount, setPartialAmount] = useState('');
   const [error, setError] = useState('');
@@ -38,13 +39,12 @@ const Purchases = () => {
 
   const [formData, setFormData] = useState({
     supplierName: '',
-    items: [{ name: '', quantity: 1, unitCost: 0 }], // ✅ REMOVED: sellingPrice
+    items: [{ name: '', quantity: 1, unitCost: 0 }],
     paymentStatus: 'UNPAID',
     purchaseDate: new Date().toISOString().split('T')[0],
     notes: '',
   });
 
-  // Fetch purchases
   useEffect(() => {
     fetchPurchases();
   }, []);
@@ -72,7 +72,6 @@ const Purchases = () => {
     }
   };
 
-  // Fetch single purchase detail
   const fetchPurchaseDetail = async (id) => {
     try {
       setIsLoadingDetail(true);
@@ -90,7 +89,6 @@ const Purchases = () => {
     }
   };
 
-  // ✅ Step 1: Validate and show confirmation or partial modal
   const handleSubmit = (e) => {
     e.preventDefault();
     setError('');
@@ -116,10 +114,8 @@ const Purchases = () => {
         setError(`Unit cost for "${item.name || 'item'}" must be greater than 0`);
         return;
       }
-      // ✅ REMOVED: selling price validation
     }
 
-    // ✅ If PARTIAL, show partial payment modal
     if (formData.paymentStatus === 'PARTIAL') {
       setShowModal(false);
       setConfirmData({ ...formData });
@@ -127,13 +123,11 @@ const Purchases = () => {
       return;
     }
 
-    // ✅ For PAID or UNPAID, show confirmation directly
     setShowModal(false);
     setConfirmData({ ...formData });
     setShowConfirmModal(true);
   };
 
-  // ✅ Step 2a: Handle partial payment amount
   const handlePartialConfirm = () => {
     const amount = parseFloat(partialAmount);
     if (isNaN(amount) || amount <= 0) {
@@ -141,7 +135,6 @@ const Purchases = () => {
       return;
     }
     
-    // Calculate total cost
     const totalCost = (confirmData.items || []).reduce((sum, item) => sum + (item.quantity * item.unitCost), 0);
     
     if (amount > totalCost) {
@@ -155,8 +148,10 @@ const Purchases = () => {
     setShowConfirmModal(true);
   };
 
-  // ✅ Step 2b: Confirm and save
   const handleConfirm = async () => {
+    // 🔒 Hard guard: ignore re-entry while a submit is in flight.
+    if (isSubmitting) return;
+
     setError('');
     setSuccess('');
 
@@ -165,12 +160,13 @@ const Purchases = () => {
       return;
     }
 
+    setIsSubmitting(true);
+
     try {
       const items = confirmData.items.map(item => ({
         name: item.name.trim(),
         quantity: parseInt(item.quantity) || 1,
         unitCost: parseFloat(item.unitCost) || 0,
-        // ✅ REMOVED: sellingPrice
       }));
 
       const totalCost = items.reduce((sum, item) => sum + (item.quantity * item.unitCost), 0);
@@ -184,9 +180,8 @@ const Purchases = () => {
         purchaseDate: confirmData.purchaseDate,
         notes: confirmData.notes?.trim() || '',
         businessId: user?.businessId || user?.id,
+        confirmed: true,
       };
-
-      console.log('📤 Sending purchase data:', payload);
 
       const response = await api.post('/purchases', payload);
 
@@ -197,7 +192,7 @@ const Purchases = () => {
         setPartialAmount('');
         setFormData({
           supplierName: '',
-          items: [{ name: '', quantity: 1, unitCost: 0 }], // ✅ REMOVED: sellingPrice
+          items: [{ name: '', quantity: 1, unitCost: 0 }],
           paymentStatus: 'UNPAID',
           purchaseDate: new Date().toISOString().split('T')[0],
           notes: '',
@@ -216,15 +211,15 @@ const Purchases = () => {
       }
     } catch (error) {
       console.error('❌ Error recording purchase:', error);
-      console.error('❌ Error response:', error.response?.data);
       const errorMsg = error.response?.data?.message || 'Failed to record purchase';
       setError(errorMsg);
       setShowConfirmModal(false);
       setShowModal(true);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  // Edit purchase
   const handleEditSubmit = async (updatedData) => {
     setError('');
     setSuccess('');
@@ -254,7 +249,6 @@ const Purchases = () => {
     }
   };
 
-  // Delete purchase
   const handleDelete = async (id) => {
     if (!confirm('Are you sure you want to delete this purchase record? This will also affect inventory.')) return;
 
@@ -273,6 +267,7 @@ const Purchases = () => {
   };
 
   const handleCancelConfirm = () => {
+    if (isSubmitting) return;
     setShowConfirmModal(false);
     setConfirmData(null);
     setShowModal(true);
@@ -298,7 +293,6 @@ const Purchases = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Purchases</h1>
         <button
@@ -316,7 +310,6 @@ const Purchases = () => {
         </button>
       </div>
 
-      {/* Error/Success */}
       {error && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg flex items-center space-x-2">
           <AlertCircle className="w-5 h-5 flex-shrink-0" />
@@ -336,10 +329,8 @@ const Purchases = () => {
         </div>
       )}
 
-      {/* Summary Cards */}
       <SummaryCards summary={summary} />
 
-      {/* Purchase Table */}
       <PurchaseTable
         purchases={purchases}
         onView={fetchPurchaseDetail}
@@ -350,7 +341,6 @@ const Purchases = () => {
         onDelete={handleDelete}
       />
 
-      {/* Record Purchase Modal */}
       <RecordPurchaseModal
         isOpen={showModal}
         form={formData}
@@ -360,7 +350,6 @@ const Purchases = () => {
         error={error}
       />
 
-      {/* Partial Payment Modal */}
       <PartialPaymentModal
         isOpen={showPartialModal}
         data={confirmData}
@@ -372,15 +361,14 @@ const Purchases = () => {
         setError={setError}
       />
 
-      {/* Confirm Modal */}
       <ConfirmModal
         isOpen={showConfirmModal}
         data={confirmData}
         onConfirm={handleConfirm}
         onCancel={handleCancelConfirm}
+        submitting={isSubmitting}
       />
 
-      {/* Purchase Detail Modal */}
       <PurchaseDetailModal
         isOpen={showDetailModal}
         purchase={selectedPurchase}
@@ -391,7 +379,6 @@ const Purchases = () => {
         }}
       />
 
-      {/* Edit Purchase Modal */}
       <EditPurchaseModal
         isOpen={showEditModal}
         purchase={selectedPurchase}

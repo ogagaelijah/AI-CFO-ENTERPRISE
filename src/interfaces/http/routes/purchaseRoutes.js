@@ -1,11 +1,11 @@
 // src/interfaces/http/routes/purchaseRoutes.js
-// v2.0.0-prod — multi-tenant aware
+// v2.2.0-prod — Backend-enforced confirmation
 
 const express = require('express');
 const router = express.Router();
 const PurchaseRepository = require('../../../infrastructure/database/sqlite/repositories/PurchaseRepository');
 const InventoryRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryRepository');
-const InventoryTransactionRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryTransactionRepository');
+const InventoryMovementRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryMovementRepository');
 const CreditorRepository = require('../../../infrastructure/database/sqlite/repositories/CreditorRepository');
 const SupplierRepository = require('../../../infrastructure/database/sqlite/repositories/SupplierRepository');
 const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository');
@@ -15,7 +15,7 @@ const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
 
 const purchaseRepo = new PurchaseRepository();
 const inventoryRepo = new InventoryRepository();
-const inventoryTransactionRepo = new InventoryTransactionRepository();
+const inventoryMovementRepo = new InventoryMovementRepository();
 const creditorRepo = new CreditorRepository();
 const supplierRepo = new SupplierRepository();
 const paymentRepo = new PaymentRepository();
@@ -24,7 +24,7 @@ const recordPurchaseUseCase = new RecordPurchaseUseCase({
     purchaseRepository: purchaseRepo,
     transactionRepository: null,
     inventoryRepository: inventoryRepo,
-    inventoryTransactionRepository: inventoryTransactionRepo,
+    inventoryMovementRepository: inventoryMovementRepo,
     creditorRepository: creditorRepo,
     supplierRepository: supplierRepo,
     paymentRepository: paymentRepo,
@@ -141,7 +141,7 @@ router.get('/summary', async (req, res) => {
 });
 
 // =============================================
-// POST /api/purchases
+// POST /api/purchases  — REQUIRES confirmed: true
 // =============================================
 router.post('/', invalidateAfterWrite, async (req, res) => {
     try {
@@ -166,7 +166,17 @@ router.post('/', invalidateAfterWrite, async (req, res) => {
             notes = '',
             purchaseDate = new Date(),
             items = [],
+            confirmed,
         } = req.body;
+
+        // 🔒 Backend enforcement: nothing records without explicit confirmation.
+        if (confirmed !== true) {
+            return res.status(400).json({
+                success: false,
+                message: 'Purchase not confirmed. Set "confirmed": true to record.',
+                code: 'CONFIRMATION_REQUIRED',
+            });
+        }
 
         const hasItems = items && items.length > 0;
         const hasSingleItem = itemName && quantity && unitCost;
