@@ -1,10 +1,11 @@
 /**
  * Report Engine Adapter - Investor Grade Production Configuration
- * Version: 1.7.0 (Production) - Fixed Cash Flow extraction for CashFlowService
+ * Version: 1.8.0 (Production)
  *
- * Correctly maps the real nested shapes returned by:
- * - CashFlowService
- * - BalanceSheetService
+ * Pure consumer of the Report Services (SSOT).
+ * - Never recalculates financial numbers
+ * - Correctly extracts nested shapes from ProfitLossService, DailyReportService, MonthlyReportService, etc.
+ * - Period-aware (daily / weekly / monthly / yearly)
  */
 
 class ReportEngineAdapter {
@@ -139,16 +140,24 @@ class ReportEngineAdapter {
         : Promise.resolve(null),
     ]);
 
-    const normalizedPl = this._normalizeProfitLoss(profitLoss, monthly);
-    const normalizedCf = this._normalizeCashFlow(cashFlow, monthly, balanceSheet);
-    const normalizedBs = this._normalizeBalanceSheet(balanceSheet, monthly);
-    const normalizedInv = this._normalizeInventory(inventoryReport, monthly);
-    const normalizedAging = this._normalizeAging(aging, monthly);
-    const comparison = this._buildComparison(profitLoss, monthly);
+    // Period-specific report (SSOT for the requested period)
+    const periodReport =
+      periodType === 'daily'   ? daily :
+      periodType === 'weekly'  ? weekly :
+      periodType === 'monthly' ? monthly :
+      periodType === 'yearly'  ? yearly :
+      null;
+
+    const normalizedPl     = this._normalizeProfitLoss(profitLoss, periodReport, periodType);
+    const normalizedCf     = this._normalizeCashFlow(cashFlow, periodReport, balanceSheet);
+    const normalizedBs     = this._normalizeBalanceSheet(balanceSheet, periodReport);
+    const normalizedInv    = this._normalizeInventory(inventoryReport, periodReport);
+    const normalizedAging  = this._normalizeAging(aging, periodReport);
+    const comparison       = this._buildComparison(profitLoss, periodReport, periodType);
 
     return {
       source: 'ReportEngineAdapter',
-      version: '1.7.0',
+      version: '1.8.0',
       generatedAt: new Date().toISOString(),
       period,
       periodType,
@@ -164,22 +173,31 @@ class ReportEngineAdapter {
         yearly: yearly || {},
       },
       metrics: {
-        revenue: normalizedPl.revenue,
-        grossProfit: normalizedPl.grossProfit,
-        grossMargin: normalizedPl.grossMargin,
-        netProfit: normalizedPl.netProfit,
-        netMargin: normalizedPl.netMargin,
+        revenue:           normalizedPl.revenue,
+        grossProfit:       normalizedPl.grossProfit,
+        grossMargin:       normalizedPl.grossMargin,
+        netProfit:         normalizedPl.netProfit,
+        netMargin:         normalizedPl.netMargin,
         operatingExpenses: normalizedPl.operatingExpenses,
-        cash: normalizedCf.closingCash,
-        cashFlow: normalizedCf.netChange,
-        receivables: normalizedBs.receivables,
-        payables: normalizedBs.payables,
-        inventory: normalizedInv.totalValue,
-        totalAssets: normalizedBs.totalAssets,
-        totalLiabilities: normalizedBs.totalLiabilities,
-        totalEquity: normalizedBs.totalEquity,
-        salesCount: this._safeNumber(monthly?.kpiDashboard?.totalSales ?? 0),
-        uniqueCustomers: this._safeNumber(monthly?.kpiDashboard?.uniqueCustomers ?? 0),
+        cash:              normalizedCf.closingCash,
+        cashFlow:          normalizedCf.netChange,
+        receivables:       normalizedBs.receivables,
+        payables:          normalizedBs.payables,
+        inventory:         normalizedInv.totalValue,
+        totalAssets:       normalizedBs.totalAssets,
+        totalLiabilities:  normalizedBs.totalLiabilities,
+        totalEquity:       normalizedBs.totalEquity,
+        salesCount: this._safeNumber(
+          periodReport?.today?.salesCount ??
+          periodReport?.kpiDashboard?.totalSales ??
+          periodReport?.salesCount ??
+          0
+        ),
+        uniqueCustomers: this._safeNumber(
+          periodReport?.kpiDashboard?.uniqueCustomers ??
+          periodReport?.uniqueCustomers ??
+          0
+        ),
       },
       comparison,
     };
@@ -202,7 +220,7 @@ class ReportEngineAdapter {
     });
   }
 
-  _buildComparison(profitLoss, monthly = null) {
+  _buildComparison(profitLoss, periodReport = null, periodType = 'monthly') {
     const plComp = profitLoss?.comparison || {};
     const plPrev = plComp.previousPeriod || {};
 
@@ -215,18 +233,39 @@ class ReportEngineAdapter {
     let profitChange = this._safeNumber(plComp.profitChange);
     let marginChange = this._safeNumber(plComp.marginChange);
 
-    if (monthly) {
-      const mom = monthly.monthOverMonth || {};
-      const exec = monthly.executiveSummary || {};
-      const prevMonth = mom.previousMonth || {};
+    // Prefer period-specific comparison data when available
+    if (periodReport) {
+      if (periodType === 'daily') {
+        const prevDay = periodReport.comparison?.previousDay || {};
+        if (prevRevenue === 0) prevRevenue = this._safeNumber(prevDay.revenue);
+        if (prevGrossProfit === 0) prevGrossProfit = this._safeNumber(prevDay.grossProfit);
+        if (prevNetProfit === 0) prevNetProfit = this._safeNumber(prevDay.netProfit);
+        if (prevExpenses === 0) prevExpenses = this._safeNumber(prevDay.expenses);
 
-      if (prevRevenue === 0) prevRevenue = this._safeNumber(prevMonth.revenue ?? prevMonth.totalRevenue);
-      if (prevGrossProfit === 0) prevGrossProfit = this._safeNumber(prevMonth.grossProfit);
-      if (prevNetProfit === 0) prevNetProfit = this._safeNumber(prevMonth.netProfit);
-      if (prevExpenses === 0) prevExpenses = this._safeNumber(prevMonth.expenses ?? prevMonth.operatingExpenses);
+        if (revenueChange === 0) {
+          revenueChange = this._safeNumber(periodReport.comparison?.revenueChange);
+        }
+        if (profitChange === 0) {
+          profitChange = this._safeNumber(periodReport.comparison?.netProfitChange);
+        }
+      } else {
+        // monthly / weekly / yearly
+        const mom = periodReport.monthOverMonth || {};
+        const exec = periodReport.executiveSummary || {};
+        const prevMonth = mom.previousMonth || {};
 
-      if (revenueChange === 0) revenueChange = this._safeNumber(mom.revenueChange ?? exec.revenueChange);
-      if (profitChange === 0) profitChange = this._safeNumber(mom.profitChange ?? exec.profitChange);
+        if (prevRevenue === 0) prevRevenue = this._safeNumber(prevMonth.revenue ?? prevMonth.totalRevenue);
+        if (prevGrossProfit === 0) prevGrossProfit = this._safeNumber(prevMonth.grossProfit);
+        if (prevNetProfit === 0) prevNetProfit = this._safeNumber(prevMonth.netProfit);
+        if (prevExpenses === 0) prevExpenses = this._safeNumber(prevMonth.expenses ?? prevMonth.operatingExpenses);
+
+        if (revenueChange === 0) {
+          revenueChange = this._safeNumber(mom.revenueChange ?? exec.revenueChange);
+        }
+        if (profitChange === 0) {
+          profitChange = this._safeNumber(mom.profitChange ?? exec.profitChange);
+        }
+      }
     }
 
     return {
@@ -242,65 +281,105 @@ class ReportEngineAdapter {
     };
   }
 
-  _normalizeProfitLoss(pl, monthly = null) {
+  /**
+   * Pure extraction of already-calculated numbers.
+   * Handles:
+   * - ProfitLossService nested shape (revenue.totalRevenue)
+   * - DailyReportService (today.revenue)
+   * - MonthlyReportService (top-level + executiveSummary + kpiDashboard)
+   */
+  _normalizeProfitLoss(pl, periodReport = null, periodType = 'monthly') {
     const summary = pl?.summary || pl?.profitLoss || pl || {};
 
+    // 1. Prefer official ProfitLossService nested shape
     let rev = this._safeNumber(
-      summary.totalRevenue ?? summary.revenue ?? summary.sales ?? summary.totalSales ??
-      summary.netSales ?? summary.income ?? summary.turnover ??
-      summary.revenue?.amount ?? summary.totalRevenue?.amount ?? summary.sales?.amount ?? 0
+      summary.revenue?.totalRevenue ??          // ← critical fix
+      summary.totalRevenue ??
+      (typeof summary.revenue === 'number' ? summary.revenue : 0) ??
+      summary.sales ??
+      summary.totalSales ??
+      summary.netSales ??
+      summary.income ??
+      0
     );
 
-    if (rev === 0 && monthly) {
-      rev = this._safeNumber(
-        monthly.revenue ?? monthly.totalRevenue ?? monthly.sales ?? monthly.totalSales ??
-        monthly.netSales ?? monthly.income ?? monthly.turnover ??
-        monthly.profitLoss?.revenue ?? monthly.profitLoss?.totalRevenue ?? 0
-      );
+    // 2. Fall back to the period-specific report
+    if (rev === 0 && periodReport) {
+      if (periodType === 'daily') {
+        rev = this._safeNumber(
+          periodReport.today?.revenue ??
+          periodReport.revenue ??
+          0
+        );
+      } else {
+        rev = this._safeNumber(
+          periodReport.revenue ??
+          periodReport.totalRevenue ??
+          periodReport.executiveSummary?.totalRevenue ??
+          periodReport.kpiDashboard?.revenue ??
+          periodReport.profitLoss?.revenue ??
+          periodReport.profitLoss?.totalRevenue ??
+          0
+        );
+      }
     }
 
-    const gp = this._safeNumber(summary.grossProfit?.amount ?? summary.grossProfit ?? summary.grossProfitAmount ?? 0);
-    let gm = this._safeNumber(summary.grossProfit?.margin ?? summary.grossMargin ?? 0);
-    if (gm === 0 && rev > 0 && gp !== 0) gm = Number(((gp / rev) * 100).toFixed(2));
-    if (rev === 0 && gm > 0 && gp !== 0) rev = Math.round(gp / (gm / 100));
-
-    const np = this._safeNumber(summary.netProfit?.amount ?? summary.netProfit ?? summary.netProfitAmount ?? 0);
-    let nm = this._safeNumber(summary.netProfit?.margin ?? summary.netMargin ?? 0);
-    if (nm === 0 && rev > 0 && np !== 0) nm = Number(((np / rev) * 100).toFixed(2));
-
-    const exp = this._safeNumber(
-      summary.operatingExpenses?.total ?? summary.operatingExpenses ??
-      summary.expenses ?? summary.totalExpenses ?? summary.expenseTotal ?? 0
+    // Prefer numbers already calculated by the report services — never recompute
+    const gp = this._safeNumber(
+      summary.grossProfit?.amount ??
+      summary.grossProfit ??
+      (periodType === 'daily' ? periodReport?.today?.grossProfit : periodReport?.grossProfit) ??
+      0
     );
 
-    return { revenue: rev, grossProfit: gp, grossMargin: gm, netProfit: np, netMargin: nm, operatingExpenses: exp };
+    const gm = this._safeNumber(
+      summary.grossProfit?.margin ??
+      summary.grossMargin ??
+      (periodType === 'daily' ? periodReport?.today?.grossMargin : periodReport?.grossMargin) ??
+      0
+    );
+
+    const np = this._safeNumber(
+      summary.netProfit?.amount ??
+      summary.netProfit ??
+      (periodType === 'daily' ? periodReport?.today?.netProfit : periodReport?.netProfit) ??
+      0
+    );
+
+    const nm = this._safeNumber(
+      summary.netProfit?.margin ??
+      summary.netMargin ??
+      (periodType === 'daily' ? periodReport?.today?.netMargin : periodReport?.netMargin) ??
+      0
+    );
+
+    const exp = this._safeNumber(
+      summary.operatingExpenses?.total ??
+      summary.operatingExpenses ??
+      summary.expenses ??
+      summary.totalExpenses ??
+      (periodType === 'daily' ? periodReport?.today?.expenses : periodReport?.expenses) ??
+      0
+    );
+
+    return {
+      revenue: rev,
+      grossProfit: gp,
+      grossMargin: gm,
+      netProfit: np,
+      netMargin: nm,
+      operatingExpenses: exp,
+    };
   }
 
   /**
    * FIXED: Matches the exact shape returned by CashFlowService
-   * CashFlowService returns:
-   *   {
-   *     netChangeInCash: number,
-   *     summary: { netChange: number, closingCash: number },
-   *     operatingActivities: { netOperatingCash: number },
-   *     closingCash: number
-   *   }
    */
-  _normalizeCashFlow(cf, monthly = null, balanceSheet = null) {
+  _normalizeCashFlow(cf, periodReport = null, balanceSheet = null) {
     if (!cf) {
       return { closingCash: 0, netChange: 0, openingCash: 0 };
     }
 
-    // Log the actual structure for debugging
-    console.log('🔍 [ReportEngineAdapter] CashFlowService response structure:', {
-      hasNetChangeInCash: cf.netChangeInCash !== undefined,
-      hasSummary: !!cf.summary,
-      hasOperatingActivities: !!cf.operatingActivities,
-      hasClosingCash: cf.closingCash !== undefined,
-      keys: Object.keys(cf),
-    });
-
-    // Extract net change from CashFlowService
     let netChange = this._safeNumber(
       cf.netChangeInCash ??
       cf.summary?.netChange ??
@@ -309,21 +388,27 @@ class ReportEngineAdapter {
       0
     );
 
-    // Extract closing cash
     let closingCash = this._safeNumber(
       cf.closingCash ??
       cf.summary?.closingCash ??
       0
     );
 
-    // Extract opening cash
     let openingCash = this._safeNumber(
       cf.openingCash ??
       cf.summary?.openingCash ??
       0
     );
 
-    // If we have netChange but no closingCash, use it
+    // DailyReportService cash shape fallback
+    if (closingCash === 0 && periodReport?.today?.cash) {
+      closingCash = this._safeNumber(periodReport.today.cash.closing);
+      openingCash = this._safeNumber(periodReport.today.cash.opening);
+      if (netChange === 0 && openingCash !== 0) {
+        netChange = closingCash - openingCash;
+      }
+    }
+
     if (netChange !== 0 && closingCash === 0) {
       if (openingCash !== 0) {
         closingCash = openingCash + netChange;
@@ -332,12 +417,6 @@ class ReportEngineAdapter {
       }
     }
 
-    console.log('📊 [ReportEngineAdapter] Cash Flow extracted:', {
-      netChange,
-      closingCash,
-      openingCash,
-    });
-
     return {
       closingCash,
       netChange,
@@ -345,10 +424,7 @@ class ReportEngineAdapter {
     };
   }
 
-  /**
-   * Matches the exact nested shape returned by your BalanceSheetService
-   */
-  _normalizeBalanceSheet(bs, monthly = null) {
+  _normalizeBalanceSheet(bs, periodReport = null) {
     if (!bs) {
       return {
         totalAssets: 0,
@@ -368,58 +444,77 @@ class ReportEngineAdapter {
     const totalLiabilities = this._safeNumber(bs.liabilities?.totalLiabilities ?? currentLiabilities.total ?? 0);
     const totalEquity = this._safeNumber(bs.equity?.totalEquity ?? (totalAssets - totalLiabilities));
 
-    const receivables = this._safeNumber(currentAssets.accountsReceivable ?? 0);
-    const payables = this._safeNumber(currentLiabilities.accountsPayable ?? 0);
-    const inventory = this._safeNumber(currentAssets.inventory ?? 0);
+    let receivables = this._safeNumber(currentAssets.accountsReceivable ?? 0);
+    let payables = this._safeNumber(currentLiabilities.accountsPayable ?? 0);
+    let inventory = this._safeNumber(currentAssets.inventory ?? 0);
     const cash = this._safeNumber(currentAssets.cash ?? 0);
 
-    // Monthly fallbacks
-    let finalReceivables = receivables;
-    let finalPayables = payables;
-    let finalInventory = inventory;
-
-    if (finalReceivables === 0 && monthly?.debtors) {
-      finalReceivables = this._safeNumber(monthly.debtors.totalAmount ?? 0);
+    // Fallbacks from period report
+    if (receivables === 0 && periodReport?.debtors) {
+      receivables = this._safeNumber(periodReport.debtors.totalAmount ?? 0);
     }
-    if (finalPayables === 0 && monthly?.creditors) {
-      finalPayables = this._safeNumber(monthly.creditors.totalAmount ?? 0);
+    if (payables === 0 && periodReport?.creditors) {
+      payables = this._safeNumber(periodReport.creditors.totalAmount ?? 0);
     }
-    if (finalInventory === 0 && monthly?.inventory) {
-      finalInventory = this._safeNumber(monthly.inventory.totalValue ?? 0);
+    if (inventory === 0 && periodReport?.inventory) {
+      inventory = this._safeNumber(periodReport.inventory.totalValue ?? 0);
+    }
+    // Daily shape
+    if (receivables === 0 && periodReport?.today?.receivables) {
+      receivables = this._safeNumber(periodReport.today.receivables.outstanding ?? 0);
+    }
+    if (payables === 0 && periodReport?.today?.payables) {
+      payables = this._safeNumber(periodReport.today.payables.outstanding ?? 0);
     }
 
     return {
       totalAssets,
       totalLiabilities,
       totalEquity,
-      receivables: finalReceivables,
-      payables: finalPayables,
-      inventory: finalInventory,
+      receivables,
+      payables,
+      inventory,
       cash,
     };
   }
 
-  _normalizeInventory(inv, monthly = null) {
+  _normalizeInventory(inv, periodReport = null) {
     const summary = inv?.summary || inv || {};
     let totalValue = this._safeNumber(summary.totalValue ?? summary.inventoryValue ?? summary.value ?? 0);
     let lowStockCount = this._safeNumber(summary.lowStockCount ?? summary.alerts ?? 0);
 
-    if (totalValue === 0 && monthly?.inventory) {
-      totalValue = this._safeNumber(monthly.inventory.totalValue ?? 0);
-      lowStockCount = this._safeNumber(monthly.inventory.lowStockCount ?? 0);
+    if (totalValue === 0 && periodReport?.inventory) {
+      totalValue = this._safeNumber(periodReport.inventory.totalValue ?? 0);
+      lowStockCount = this._safeNumber(periodReport.inventory.lowStockCount ?? 0);
+    }
+    // Daily shape
+    if (totalValue === 0 && periodReport?.today?.inventory) {
+      totalValue = this._safeNumber(periodReport.today.inventory.totalValue ?? 0);
+      lowStockCount = this._safeNumber(periodReport.today.inventory.lowStockCount ?? 0);
     }
 
     return { totalValue, lowStockCount };
   }
 
-  _normalizeAging(aging, monthly = null) {
+  _normalizeAging(aging, periodReport = null) {
     let arTotal = this._safeNumber(aging?.ar?.totalOutstanding ?? aging?.ar?.summary?.total ?? aging?.ar ?? 0);
     let arOverdue = this._safeNumber(aging?.ar?.overdueCount ?? 0);
     let apTotal = this._safeNumber(aging?.ap?.totalOutstanding ?? aging?.ap?.summary?.total ?? aging?.ap ?? 0);
     let apOverdue = this._safeNumber(aging?.ap?.overdueCount ?? 0);
 
-    if (arTotal === 0 && monthly?.debtors) arTotal = this._safeNumber(monthly.debtors.totalAmount ?? 0);
-    if (apTotal === 0 && monthly?.creditors) apTotal = this._safeNumber(monthly.creditors.totalAmount ?? 0);
+    if (arTotal === 0 && periodReport?.debtors) {
+      arTotal = this._safeNumber(periodReport.debtors.totalAmount ?? 0);
+    }
+    if (apTotal === 0 && periodReport?.creditors) {
+      apTotal = this._safeNumber(periodReport.creditors.totalAmount ?? 0);
+    }
+    // Daily shape
+    if (arTotal === 0 && periodReport?.today?.receivables) {
+      arTotal = this._safeNumber(periodReport.today.receivables.outstanding ?? 0);
+    }
+    if (apTotal === 0 && periodReport?.today?.payables) {
+      apTotal = this._safeNumber(periodReport.today.payables.outstanding ?? 0);
+    }
 
     return {
       ar: { totalOutstanding: arTotal, overdueCount: arOverdue },
