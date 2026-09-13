@@ -27,10 +27,10 @@ export const INDUSTRY_CONFIGS = {
       { key: 'cash',        label: 'Cash Position',   icon: Wallet,       color: 'purple' },
     ],
     quickActions: [
-      { label: 'Record Sale', icon: ShoppingCart, href: '/sales/record' },
-      { label: 'Add Stock', icon: Package, href: '/inventory/add' },
-      { label: 'Record Payment', icon: Users, href: '/debtors/pay' },
-      { label: 'View Reports', icon: FileText, href: '/reports/daily' },
+      { label: 'Record Sale', icon: ShoppingCart, href: '/sales' },
+      { label: 'Add Stock', icon: Package, href: '/inventory' },
+      { label: 'Record Payment', icon: Users, href: '/debtors' },
+      { label: 'View Reports', icon: FileText, href: '/reports' },
     ],
     features: ['Sales', 'Inventory', 'Debtors', 'Creditors', 'Customers', 'Suppliers', 'Reports'],
     sidebar: [
