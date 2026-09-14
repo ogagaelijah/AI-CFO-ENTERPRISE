@@ -31,6 +31,7 @@ const Creditors = () => {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedCreditor, setSelectedCreditor] = useState(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmData, setConfirmData] = useState(null);
   const [confirmType, setConfirmType] = useState('');
   const [error, setError] = useState('');
@@ -98,9 +99,11 @@ const Creditors = () => {
   };
 
   const handleConfirmAdd = async () => {
+    if (isSubmitting) return;
+
     setError('');
     setSuccess('');
-    setShowConfirmModal(false);
+    setIsSubmitting(true);
 
     try {
       const response = await api.post('/creditors', {
@@ -114,11 +117,15 @@ const Creditors = () => {
         setSuccess('✅ Creditor added successfully!');
         setAddForm({ supplierName: '', totalOwed: 0, dueDate: '', notes: '' });
         setConfirmData(null);
+        setShowConfirmModal(false);
         await fetchCreditors();
       }
     } catch (error) {
       setError(error.response?.data?.message || 'Failed to add creditor');
+      setShowConfirmModal(false);
       setShowAddModal(true);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -148,9 +155,11 @@ const Creditors = () => {
   };
 
   const handleConfirmPayment = async () => {
+    if (isSubmitting) return;
+
     setError('');
     setSuccess('');
-    setShowConfirmModal(false);
+    setIsSubmitting(true);
 
     try {
       const response = await api.post(`/creditors/${selectedCreditor.id}/payment`, {
@@ -164,11 +173,15 @@ const Creditors = () => {
         setSelectedCreditor(null);
         setPaymentForm({ amount: 0, notes: '' });
         setConfirmData(null);
+        setShowConfirmModal(false);
         await fetchCreditors();
       }
     } catch (error) {
       setError(error.response?.data?.message || 'Failed to record payment');
+      setShowConfirmModal(false);
       setShowPaymentModal(true);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -204,6 +217,7 @@ const Creditors = () => {
   };
 
   const handleCancelConfirm = () => {
+    if (isSubmitting) return;
     setShowConfirmModal(false);
     setConfirmData(null);
     if (confirmType === 'add') {
@@ -305,6 +319,7 @@ const Creditors = () => {
         onConfirm={confirmType === 'add' ? handleConfirmAdd : handleConfirmPayment}
         onCancel={handleCancelConfirm}
         type={confirmType}
+        submitting={isSubmitting}
       />
 
       <CreditorDetailModal

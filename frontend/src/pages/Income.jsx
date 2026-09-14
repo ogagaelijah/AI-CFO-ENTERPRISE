@@ -29,6 +29,7 @@ const Income = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedIncome, setSelectedIncome] = useState(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmData, setConfirmData] = useState(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -104,6 +105,8 @@ const Income = () => {
   };
 
   const handleConfirm = async () => {
+    if (isSubmitting) return;
+
     setError('');
     setSuccess('');
 
@@ -111,6 +114,8 @@ const Income = () => {
       setError('No data to confirm');
       return;
     }
+
+    setIsSubmitting(true);
 
     try {
       const response = await api.post('/income', {
@@ -140,6 +145,8 @@ const Income = () => {
       setError(errorMsg);
       setShowConfirmModal(false);
       setShowModal(true);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -187,6 +194,7 @@ const Income = () => {
   };
 
   const handleCancelConfirm = () => {
+    if (isSubmitting) return;
     setShowConfirmModal(false);
     setConfirmData(null);
     setShowModal(true);
@@ -269,6 +277,7 @@ const Income = () => {
         data={confirmData}
         onConfirm={handleConfirm}
         onCancel={handleCancelConfirm}
+        submitting={isSubmitting}
       />
 
       <IncomeDetailModal

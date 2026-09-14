@@ -29,6 +29,7 @@ const Expenses = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedExpense, setSelectedExpense] = useState(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmData, setConfirmData] = useState(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -104,6 +105,8 @@ const Expenses = () => {
   };
 
   const handleConfirm = async () => {
+    if (isSubmitting) return;
+
     setError('');
     setSuccess('');
 
@@ -111,6 +114,8 @@ const Expenses = () => {
       setError('No data to confirm');
       return;
     }
+
+    setIsSubmitting(true);
 
     try {
       const response = await api.post('/expenses', {
@@ -140,6 +145,8 @@ const Expenses = () => {
       setError(errorMsg);
       setShowConfirmModal(false);
       setShowModal(true);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -187,6 +194,7 @@ const Expenses = () => {
   };
 
   const handleCancelConfirm = () => {
+    if (isSubmitting) return;
     setShowConfirmModal(false);
     setConfirmData(null);
     setShowModal(true);
@@ -269,6 +277,7 @@ const Expenses = () => {
         data={confirmData}
         onConfirm={handleConfirm}
         onCancel={handleCancelConfirm}
+        submitting={isSubmitting}
       />
 
       <ExpenseDetailModal

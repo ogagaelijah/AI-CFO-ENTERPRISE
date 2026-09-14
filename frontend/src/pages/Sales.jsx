@@ -23,6 +23,7 @@ const Sales = () => {
   // Data
   const [selectedSale, setSelectedSale] = useState(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmData, setConfirmData] = useState(null);
   const [partialAmount, setPartialAmount] = useState('');
   const [totalRevenue, setTotalRevenue] = useState(0);
@@ -77,7 +78,13 @@ const Sales = () => {
   };
 
   const handleConfirmSale = async () => {
+    if (isSubmitting) return;
+
     const data = confirmData;
+    if (!data) return;
+
+    setIsSubmitting(true);
+
     try {
       const saleData = {
         customerName: data.customerName.trim(),
@@ -111,6 +118,8 @@ const Sales = () => {
     } catch (error) {
       console.error('❌ Error recording sale:', error);
       setError(error.response?.data?.message || 'Failed to record sale');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -236,10 +245,12 @@ const Sales = () => {
         totalRevenue={totalRevenue}
         onConfirm={handleConfirmSale}
         onCancel={() => {
+          if (isSubmitting) return;
           setShowConfirmModal(false);
           setConfirmData(null);
           setShowModal(true);
         }}
+        submitting={isSubmitting}
       />
 
       <PartialPaymentModal

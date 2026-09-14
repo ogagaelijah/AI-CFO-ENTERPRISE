@@ -1,6 +1,6 @@
 // frontend/src/components/debtors/RecordPaymentModal.jsx
 import { useState } from 'react';
-import { X, AlertCircle, CheckCircle, CreditCard, ArrowRight } from 'lucide-react';
+import { X, AlertCircle, CheckCircle, CreditCard, ArrowRight, Loader2 } from 'lucide-react';
 import api from '../../services/api';
 
 const RecordPaymentModal = ({ isOpen, onClose, onSuccess, debtor }) => {
@@ -17,7 +17,6 @@ const RecordPaymentModal = ({ isOpen, onClose, onSuccess, debtor }) => {
     e.preventDefault();
     setError('');
 
-    // Validate
     if (!amount || amount <= 0) {
       setError('Payment amount must be greater than 0');
       return;
@@ -28,11 +27,12 @@ const RecordPaymentModal = ({ isOpen, onClose, onSuccess, debtor }) => {
       return;
     }
 
-    // Show confirmation
     setShowConfirmation(true);
   };
 
   const handleConfirmPayment = async () => {
+    if (isLoading) return; // 🔒 hard guard
+
     setError('');
     setSuccess('');
     setIsLoading(true);
@@ -62,6 +62,7 @@ const RecordPaymentModal = ({ isOpen, onClose, onSuccess, debtor }) => {
   };
 
   const handleClose = () => {
+    if (isLoading) return; // 🔒 prevent close mid-flight
     setShowConfirmation(false);
     setAmount(0);
     setNotes('');
@@ -77,26 +78,22 @@ const RecordPaymentModal = ({ isOpen, onClose, onSuccess, debtor }) => {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-        {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-slate-700 sticky top-0 bg-white dark:bg-slate-800 z-10">
           <h2 className="text-xl font-bold text-gray-900 dark:text-white">
             {showConfirmation ? 'Confirm Payment' : 'Record Payment'}
           </h2>
           <button
             onClick={handleClose}
-            className="p-1 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition"
+            className="p-1 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
             disabled={isLoading}
           >
             <X className="w-6 h-6 text-gray-500 dark:text-gray-400" />
           </button>
         </div>
 
-        {/* Body */}
         <div className="p-4">
           {!showConfirmation ? (
-            // Step 1: Enter Payment Details
             <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Error */}
               {error && (
                 <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-3 py-2 rounded-lg flex items-center space-x-2 text-sm">
                   <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -104,7 +101,6 @@ const RecordPaymentModal = ({ isOpen, onClose, onSuccess, debtor }) => {
                 </div>
               )}
 
-              {/* Customer Info */}
               <div className="p-3 bg-gray-50 dark:bg-slate-700 rounded-lg space-y-1">
                 <p className="text-sm text-gray-600 dark:text-gray-300">
                   <span className="font-medium">Customer:</span> {debtor.customer_name}
@@ -117,7 +113,6 @@ const RecordPaymentModal = ({ isOpen, onClose, onSuccess, debtor }) => {
                 </p>
               </div>
 
-              {/* Payment Amount */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Payment Amount (₦) <span className="text-red-500">*</span>
@@ -139,7 +134,6 @@ const RecordPaymentModal = ({ isOpen, onClose, onSuccess, debtor }) => {
                 </p>
               </div>
 
-              {/* Notes */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Notes <span className="text-gray-400 text-xs">(Optional)</span>
@@ -154,7 +148,6 @@ const RecordPaymentModal = ({ isOpen, onClose, onSuccess, debtor }) => {
                 />
               </div>
 
-              {/* Actions */}
               <div className="flex space-x-3 pt-4 border-t border-gray-200 dark:border-slate-700">
                 <button
                   type="button"
@@ -175,9 +168,7 @@ const RecordPaymentModal = ({ isOpen, onClose, onSuccess, debtor }) => {
               </div>
             </form>
           ) : (
-            // Step 2: Confirmation
             <div className="space-y-4">
-              {/* Success/Error */}
               {error && (
                 <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-3 py-2 rounded-lg flex items-center space-x-2 text-sm">
                   <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -191,7 +182,6 @@ const RecordPaymentModal = ({ isOpen, onClose, onSuccess, debtor }) => {
                 </div>
               )}
 
-              {/* Confirmation Details */}
               <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
                 <div className="flex items-center space-x-2 mb-3">
                   <CreditCard className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
@@ -223,12 +213,11 @@ const RecordPaymentModal = ({ isOpen, onClose, onSuccess, debtor }) => {
                 Are you sure you want to record this payment?
               </p>
 
-              {/* Actions */}
               <div className="flex space-x-3 pt-4 border-t border-gray-200 dark:border-slate-700">
                 <button
                   type="button"
                   onClick={() => setShowConfirmation(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition"
+                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
                   disabled={isLoading}
                 >
                   Go Back
@@ -236,10 +225,17 @@ const RecordPaymentModal = ({ isOpen, onClose, onSuccess, debtor }) => {
                 <button
                   type="button"
                   onClick={handleConfirmPayment}
-                  className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
                   disabled={isLoading}
                 >
-                  {isLoading ? 'Processing...' : 'Confirm Payment ✅'}
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Processing...</span>
+                    </>
+                  ) : (
+                    <span>Confirm Payment ✅</span>
+                  )}
                 </button>
               </div>
             </div>

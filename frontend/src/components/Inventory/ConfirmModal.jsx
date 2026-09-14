@@ -1,5 +1,5 @@
 // frontend/src/components/Inventory/ConfirmModal.jsx
-import { X, AlertTriangle } from 'lucide-react';
+import { X, AlertTriangle, Loader2 } from 'lucide-react';
 
 const ConfirmModal = ({
   isOpen,
@@ -10,6 +10,7 @@ const ConfirmModal = ({
   onCancel,
   confirmLabel = 'Confirm',
   confirmColor = 'primary',
+  submitting = false,
 }) => {
   if (!isOpen) return null;
 
@@ -28,7 +29,8 @@ const ConfirmModal = ({
           <h2 className="text-xl font-bold text-gray-900 dark:text-white">{title}</h2>
           <button
             onClick={onCancel}
-            className="p-1 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition"
+            disabled={submitting}
+            className="p-1 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <X className="w-6 h-6 text-gray-500 dark:text-gray-400" />
           </button>
@@ -80,16 +82,25 @@ const ConfirmModal = ({
             <button
               type="button"
               onClick={onCancel}
-              className="flex-1 px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition"
+              disabled={submitting}
+              className="flex-1 px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={onConfirm}
-              className={`flex-1 px-4 py-2 text-white rounded-lg transition ${colorClasses[confirmColor] || colorClasses.primary}`}
+              disabled={submitting}
+              className={`flex-1 px-4 py-2 text-white rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 ${colorClasses[confirmColor] || colorClasses.primary}`}
             >
-              {confirmLabel}
+              {submitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Working...</span>
+                </>
+              ) : (
+                <span>{confirmLabel}</span>
+              )}
             </button>
           </div>
         </div>
