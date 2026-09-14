@@ -1,5 +1,5 @@
 // src/interfaces/http/server.js
-// v2.1.0-prod — Sentry v8+, structured logging, plan gating in correct order
+// v2.2.0-prod — Sentry v8+, structured logging, plan gating, PORT compatible (Render)
 
 const { initSentry, Sentry } = require('../../shared/utils/sentry');
 initSentry();
@@ -13,7 +13,7 @@ require('dotenv').config();
 const logger = require('../../shared/utils/logger');
 
 const app = express();
-const PORT = process.env.HTTP_PORT || 5000;
+const PORT = process.env.PORT || process.env.HTTP_PORT || 5000;
 
 const {
   strictLimiter,
