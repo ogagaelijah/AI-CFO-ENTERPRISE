@@ -10,6 +10,7 @@ import { mapExecutive } from './executiveMapper';
 /**
  * Master mapper – converts backend AnalyticsProvider response
  * into a clean, UI-ready structure
+ * Supports both top-level fields (new Transformer) and nested fields (legacy)
  */
 export function mapAnalyticsResponse(raw) {
   if (!raw) return getEmptyAnalytics();
@@ -24,23 +25,44 @@ export function mapAnalyticsResponse(raw) {
       businessId: raw.businessId,
       generatedAt: raw.generatedAt || snapshot.generatedAt,
       source: raw.source || 'AnalyticsProvider',
-      version: raw.version || '1.0.0',
+      version: raw.version || '2.6.0-prod',
       period: raw.period || snapshot.period || {},
     },
 
     // Executive layer
     executive: mapExecutive(executive, snapshot, reportData),
 
-    // Core analytics – pass reportData as fallback
-    kpis: mapKpis(snapshot.kpis || analytics.kpis || {}, reportData),
-    ratios: mapRatios(snapshot.ratios || analytics.ratios || {}),
-    trends: mapTrends(snapshot.trends || analytics.trends || {}),
-    performance: mapPerformance(snapshot.performance || analytics.performance || {}),
-    health: mapHealth(snapshot.health || analytics.health || {}),
-    concentration: mapConcentration(snapshot.concentration || analytics.concentration || {}),
-    comparisons: mapComparisons(snapshot.comparisons || analytics.comparisons || {}),
+    // Core analytics – prefer top-level (new Transformer), then nested
+    kpis: mapKpis(
+      raw.kpis || snapshot.kpis || analytics.kpis || {},
+      reportData
+    ),
 
-    signals: snapshot.signals || executive.signalSummary?.allSignals || {
+    ratios: mapRatios(
+      raw.ratios || snapshot.ratios || analytics.ratios || {}
+    ),
+
+    trends: mapTrends(
+      raw.trends || snapshot.trends || analytics.trends || {}
+    ),
+
+    performance: mapPerformance(
+      raw.performance || snapshot.performance || analytics.performance || {}
+    ),
+
+    health: mapHealth(
+      raw.health || snapshot.health || analytics.health || {}
+    ),
+
+    concentration: mapConcentration(
+      raw.concentration || snapshot.concentration || analytics.concentration || {}
+    ),
+
+    comparisons: mapComparisons(
+      raw.comparisons || snapshot.comparisons || analytics.comparisons || {}
+    ),
+
+    signals: raw.signals || snapshot.signals || executive.signalSummary?.allSignals || {
       positives: [],
       warnings: [],
       criticals: [],

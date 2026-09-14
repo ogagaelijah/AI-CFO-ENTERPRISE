@@ -1,6 +1,6 @@
 // src/interfaces/http/routes/dashboardRoutes.js
 // Aggregated dashboard endpoint — SSOT consumer
-// v2.0.0-prod — multi-tenant aligned, single-arg repos
+// v2.1.1-prod — Cash Position now taken from CashFlowService (report engine)
 
 'use strict';
 
@@ -58,6 +58,7 @@ const profitLossService = new ProfitLossService({
 });
 
 const cashFlowService = new CashFlowService({
+  paymentRepository: paymentRepo,          // ← required by CashCalculator
   saleRepository: saleRepo,
   expenseRepository: expenseRepo,
   incomeRepository: incomeRepo,
@@ -195,7 +196,8 @@ router.get('/summary', async (req, res) => {
       });
     }
 
-    const cacheKey = `aicfo:dashboard:${businessId}:daily:v5`;
+    // bumped cache version so the old wrong cash value is discarded
+    const cacheKey = `aicfo:dashboard:${businessId}:daily:v7`;
 
     const data = await cacheService.getOrSet(
       cacheKey,
@@ -250,6 +252,7 @@ async function fetchDashboardData({ userId, businessId }) {
     debtorsTotalRaw,
     creditorsTotalRaw,
     inventorySummary,
+    cashFlowResult,                    // ← NEW: authoritative cash from report engine
   ] = await Promise.allSettled([
     dailyReportService.generate({ userId, businessId, date: todayStr }),
     analyticsProvider.generateAnalytics({
@@ -263,11 +266,19 @@ async function fetchDashboardData({ userId, businessId }) {
     debtorRepo.getTotalOutstanding(businessId),
     creditorRepo.getTotalOutstanding(businessId),
     inventoryRepo.getSummary(businessId),
+    // Full history → current cash position (matches the correct Cashflow report)
+    cashFlowService.generate({
+      userId,
+      businessId,
+      startDate: '2000-01-01',
+      endDate: todayStr,
+    }),
   ]);
 
   const daily = dailyResult.status === 'fulfilled' ? dailyResult.value : null;
   const analytics = analyticsResult.status === 'fulfilled' ? analyticsResult.value : null;
   const risk = riskResult.status === 'fulfilled' ? riskResult.value : null;
+  const cashFlow = cashFlowResult.status === 'fulfilled' ? cashFlowResult.value : null;
 
   const debtorsTotal = debtorsTotalRaw.status === 'fulfilled'
     ? Number(debtorsTotalRaw.value) || 0
@@ -280,7 +291,7 @@ async function fetchDashboardData({ userId, businessId }) {
     : {};
 
   // ─────────────────────────────────────────────
-  // Navigate analytics
+  // Navigate analytics (SSOT)
   // ─────────────────────────────────────────────
   const snapshot = analytics?.snapshot || {};
   const analyticsData = analytics?.analytics || {};
@@ -309,7 +320,6 @@ async function fetchDashboardData({ userId, businessId }) {
   const todayExpenses = Number(today.expenses ?? 0);
   const todayProfit = Number(today.netProfit ?? 0);
   const todayNetMargin = Number(today.netMargin ?? 0);
-  const todayCashClosing = Number(today.cash?.closing ?? 0);
 
   // ─────────────────────────────────────────────
   // Inventory
@@ -323,10 +333,28 @@ async function fetchDashboardData({ userId, businessId }) {
     today.inventory?.lowStockCount ?? 0
   );
 
-  const cashCurrent = todayCashClosing;
+  // ─────────────────────────────────────────────
+  // CASH POSITION — taken from CashFlowService (SSOT)
+  // ─────────────────────────────────────────────
+  const cashCurrent = Number(cashFlow?.closingCash ?? cashFlow?.summary?.closingCash ?? 0);
 
-  const healthScore = Number(snapshot?.health?.overallScore ?? 0);
-  const healthStatus = snapshot?.health?.overallStatus || 'NEUTRAL';
+  // ─────────────────────────────────────────────
+  // FIXED: Health Score extraction
+  // Prefer top-level health from the new Transformer,
+  // then fall back to any nested legacy shape
+  // ─────────────────────────────────────────────
+  const healthObj = analytics?.health || snapshot?.health || {};
+
+  const healthScore = Number(
+    healthObj.score ??
+    healthObj.overallScore ??
+    0
+  );
+
+  const healthStatus =
+    healthObj.status ||
+    healthObj.overallStatus ||
+    'NEUTRAL';
 
   const topRisks = (risk?.risks?.all || [])
     .filter((r) => r.severity === 'CRITICAL' || r.severity === 'HIGH')
@@ -432,8 +460,8 @@ async function fetchDashboardData({ userId, businessId }) {
       userId,
       businessId,
       generatedAt: new Date().toISOString(),
-      source: 'daily+analytics+risk+repos',
-      version: '2.0.0',
+      source: 'cashflow+daily+analytics+risk+repos',
+      version: '2.1.1',
     },
   };
 }
