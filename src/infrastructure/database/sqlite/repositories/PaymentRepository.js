@@ -1,16 +1,14 @@
 // src/infrastructure/database/sqlite/repositories/PaymentRepository.js
+// Postgres async. Same logic as SQLite.
 
 const BaseRepository = require('./BaseRepository');
 const Payment = require('../../../../domain/entities/Payment');
 
 class PaymentRepository extends BaseRepository {
-    constructor(db = null) {
-        super('payments', db);
+    constructor() {
+        super('payments');
     }
 
-    /**
-     * Safely convert any date input to ISO string
-     */
     _toISOString(dateInput) {
         if (!dateInput) return null;
 
@@ -19,7 +17,6 @@ class PaymentRepository extends BaseRepository {
         }
 
         if (typeof dateInput === 'string') {
-            // If it's only YYYY-MM-DD, append time for consistency
             if (/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
                 return `${dateInput}T00:00:00.000Z`;
             }
@@ -29,162 +26,132 @@ class PaymentRepository extends BaseRepository {
         return null;
     }
 
-    /**
-     * Create a new payment
-     */
-    create(paymentData) {
-        const stmt = this.db.prepare(`
-            INSERT INTO payments (
+    async create(paymentData) {
+        const result = await this._query(
+            `INSERT INTO payments (
                 business_id, user_id, payment_type, amount, reference_type, reference_id,
                 payment_date, payment_method, reference_number, notes, metadata
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `);
-
-        const result = stmt.run(
-            paymentData.businessId,
-            paymentData.userId ?? null,
-            paymentData.type,
-            paymentData.amount,
-            paymentData.referenceType || null,
-            paymentData.referenceId || null,
-            this._toISOString(paymentData.paymentDate || paymentData.date) || new Date().toISOString(),
-            paymentData.paymentMethod || 'CASH',
-            paymentData.referenceNumber || null,
-            paymentData.notes || '',
-            JSON.stringify(paymentData.metadata || {})
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            RETURNING id`,
+            [
+                paymentData.businessId,
+                paymentData.userId ?? null,
+                paymentData.type,
+                paymentData.amount,
+                paymentData.referenceType || null,
+                paymentData.referenceId || null,
+                this._toISOString(paymentData.paymentDate || paymentData.date) || new Date().toISOString(),
+                paymentData.paymentMethod || 'CASH',
+                paymentData.referenceNumber || null,
+                paymentData.notes || '',
+                JSON.stringify(paymentData.metadata || {}),
+            ]
         );
-
-        return this.findById(result.lastInsertRowid);
+        return this.findById(result.rows[0].id);
     }
 
-    /**
-     * Find payment by ID
-     */
-    findById(id) {
-        const result = this.db.prepare('SELECT * FROM payments WHERE id = ?').get(id);
-        if (!result) return null;
-        return this._hydrate(result);
+    async findById(id) {
+        const result = await this._query('SELECT * FROM payments WHERE id = $1', [id]);
+        if (!result.rows[0]) return null;
+        return this._hydrate(result.rows[0]);
     }
 
-    /**
-     * Find payments by business ID
-     */
-    findByBusinessId(businessId, options = {}) {
-        let query = 'SELECT * FROM payments WHERE business_id = ?';
+    async findByBusinessId(businessId, options = {}) {
+        let query = 'SELECT * FROM payments WHERE business_id = $1';
         const params = [businessId];
+        let i = 2;
 
         if (options.type) {
-            query += ' AND payment_type = ?';
+            query += ` AND payment_type = $${i++}`;
             params.push(options.type);
         }
-
         if (options.referenceType) {
-            query += ' AND reference_type = ?';
+            query += ` AND reference_type = $${i++}`;
             params.push(options.referenceType);
         }
-
         if (options.referenceId) {
-            query += ' AND reference_id = ?';
+            query += ` AND reference_id = $${i++}`;
             params.push(options.referenceId);
         }
-
         if (options.startDate) {
-            query += ' AND DATE(payment_date) >= DATE(?)';
+            query += ` AND DATE(payment_date) >= DATE($${i++})`;
             params.push(this._toISOString(options.startDate));
         }
-
         if (options.endDate) {
-            query += ' AND DATE(payment_date) <= DATE(?)';
+            query += ` AND DATE(payment_date) <= DATE($${i++})`;
             params.push(this._toISOString(options.endDate));
         }
 
         query += ' ORDER BY payment_date DESC';
 
         if (options.limit) {
-            query += ' LIMIT ?';
+            query += ` LIMIT $${i++}`;
             params.push(options.limit);
         }
-
         if (options.offset) {
-            query += ' OFFSET ?';
+            query += ` OFFSET $${i++}`;
             params.push(options.offset);
         }
 
-        const results = this.db.prepare(query).all(...params);
-        return results.map(r => this._hydrate(r));
+        const result = await this._query(query, params);
+        return result.rows.map(r => this._hydrate(r));
     }
 
-    /**
-     * Find payments by user ID
-     */
-    findByUserId(userId, options = {}) {
-        let query = 'SELECT * FROM payments WHERE user_id = ?';
+    async findByUserId(userId, options = {}) {
+        let query = 'SELECT * FROM payments WHERE user_id = $1';
         const params = [userId];
+        let i = 2;
 
         if (options.type) {
-            query += ' AND payment_type = ?';
+            query += ` AND payment_type = $${i++}`;
             params.push(options.type);
         }
-
         if (options.referenceType) {
-            query += ' AND reference_type = ?';
+            query += ` AND reference_type = $${i++}`;
             params.push(options.referenceType);
         }
-
         if (options.referenceId) {
-            query += ' AND reference_id = ?';
+            query += ` AND reference_id = $${i++}`;
             params.push(options.referenceId);
         }
-
         if (options.startDate) {
-            query += ' AND DATE(payment_date) >= DATE(?)';
+            query += ` AND DATE(payment_date) >= DATE($${i++})`;
             params.push(this._toISOString(options.startDate));
         }
-
         if (options.endDate) {
-            query += ' AND DATE(payment_date) <= DATE(?)';
+            query += ` AND DATE(payment_date) <= DATE($${i++})`;
             params.push(this._toISOString(options.endDate));
         }
 
         query += ' ORDER BY payment_date DESC';
 
         if (options.limit) {
-            query += ' LIMIT ?';
+            query += ` LIMIT $${i++}`;
             params.push(options.limit);
         }
-
         if (options.offset) {
-            query += ' OFFSET ?';
+            query += ` OFFSET $${i++}`;
             params.push(options.offset);
         }
 
-        const results = this.db.prepare(query).all(...params);
-        return results.map(r => this._hydrate(r));
+        const result = await this._query(query, params);
+        return result.rows.map(r => this._hydrate(r));
     }
 
-    /**
-     * Find payments by reference
-     */
-    findByReference(businessId, referenceType, referenceId) {
-        const results = this.db.prepare(`
-            SELECT * FROM payments
-            WHERE business_id = ? AND reference_type = ? AND reference_id = ?
-            ORDER BY payment_date DESC
-        `).all(businessId, referenceType, referenceId);
-
-        return results.map(r => this._hydrate(r));
+    async findByReference(businessId, referenceType, referenceId) {
+        const result = await this._query(
+            `SELECT * FROM payments
+             WHERE business_id = $1 AND reference_type = $2 AND reference_id = $3
+             ORDER BY payment_date DESC`,
+            [businessId, referenceType, referenceId]
+        );
+        return result.rows.map(r => this._hydrate(r));
     }
 
-    /**
-     * Find payments by date range
-     * Tries businessId first, falls back to userId if needed
-     */
-    findByDateRange(businessIdOrUserId, startDate, endDate, options = {}) {
-        // Try with businessId first
+    async findByDateRange(businessIdOrUserId, startDate, endDate, options = {}) {
         let results = [];
-
         try {
-            results = this.findByBusinessId(businessIdOrUserId, {
+            results = await this.findByBusinessId(businessIdOrUserId, {
                 ...options,
                 startDate,
                 endDate,
@@ -194,10 +161,9 @@ class PaymentRepository extends BaseRepository {
             results = [];
         }
 
-        // If no results, try with userId (fail-safe)
         if (results.length === 0) {
             try {
-                results = this.findByUserId(businessIdOrUserId, {
+                results = await this.findByUserId(businessIdOrUserId, {
                     ...options,
                     startDate,
                     endDate,
@@ -211,21 +177,12 @@ class PaymentRepository extends BaseRepository {
         return results;
     }
 
-    /**
-     * Efficient net cash calculation before a given date (exclusive).
-     * Used by CashCalculator for opening balance.
-     * Handles both standard (IN/OUT) and legacy (RECEIVED/MADE) types.
-     *
-     * @param {number|string} businessId
-     * @param {string} beforeDate - YYYY-MM-DD (exclusive)
-     * @returns {number} net cash before the date
-     */
-    getNetCashBefore(businessId, beforeDate) {
+    async getNetCashBefore(businessId, beforeDate) {
         if (!businessId || !beforeDate) return 0;
 
         try {
-            const result = this.db.prepare(`
-                SELECT COALESCE(SUM(
+            const result = await this._query(
+                `SELECT COALESCE(SUM(
                     CASE
                         WHEN UPPER(payment_type) IN ('IN', 'RECEIVED') THEN amount
                         WHEN UPPER(payment_type) IN ('OUT', 'MADE') THEN -amount
@@ -233,28 +190,23 @@ class PaymentRepository extends BaseRepository {
                     END
                 ), 0) AS net
                 FROM payments
-                WHERE business_id = ?
-                  AND DATE(payment_date) < DATE(?)
-            `).get(businessId, this._toISOString(beforeDate));
+                WHERE business_id = $1
+                  AND DATE(payment_date) < DATE($2)`,
+                [businessId, this._toISOString(beforeDate)]
+            );
 
-            return Number(result?.net) || 0;
+            return Number(result.rows[0]?.net) || 0;
         } catch (error) {
             console.warn('PaymentRepository.getNetCashBefore failed:', error.message);
             return 0;
         }
     }
 
-    /**
-     * Alias for compatibility
-     */
-    sumNetCashBefore(businessId, beforeDate) {
+    async sumNetCashBefore(businessId, beforeDate) {
         return this.getNetCashBefore(businessId, beforeDate);
     }
 
-    /**
-     * Find payments by filters (options object style)
-     */
-    findByFilters(filters) {
+    async findByFilters(filters) {
         return this.findByBusinessId(
             filters.businessId,
             {
@@ -269,143 +221,130 @@ class PaymentRepository extends BaseRepository {
         );
     }
 
-    /**
-     * Get payment summary
-     */
-    getSummary(businessId) {
-        const result = this.db.prepare(`
-            SELECT 
-                COUNT(*) as total_payments,
+    async getSummary(businessId) {
+        const result = await this._query(
+            `SELECT
+                COUNT(*)::int as total_payments,
                 COALESCE(SUM(CASE WHEN payment_type = 'IN' THEN amount ELSE 0 END), 0) as total_in,
                 COALESCE(SUM(CASE WHEN payment_type = 'OUT' THEN amount ELSE 0 END), 0) as total_out,
-                COUNT(CASE WHEN payment_type = 'IN' THEN 1 END) as count_in,
-                COUNT(CASE WHEN payment_type = 'OUT' THEN 1 END) as count_out
-            FROM payments 
-            WHERE business_id = ?
-        `).get(businessId);
+                COUNT(CASE WHEN payment_type = 'IN' THEN 1 END)::int as count_in,
+                COUNT(CASE WHEN payment_type = 'OUT' THEN 1 END)::int as count_out
+             FROM payments
+             WHERE business_id = $1`,
+            [businessId]
+        );
+
+        const r = result.rows[0] || {};
+        const total_in = Number(r.total_in) || 0;
+        const total_out = Number(r.total_out) || 0;
 
         return {
-            total_payments: result?.total_payments || 0,
-            total_in: result?.total_in || 0,
-            total_out: result?.total_out || 0,
-            count_in: result?.count_in || 0,
-            count_out: result?.count_out || 0,
-            net_flow: (result?.total_in || 0) - (result?.total_out || 0),
+            total_payments: r.total_payments || 0,
+            total_in,
+            total_out,
+            count_in: r.count_in || 0,
+            count_out: r.count_out || 0,
+            net_flow: total_in - total_out,
         };
     }
 
-    /**
-     * Update a payment
-     */
-    update(id, data) {
+    async update(id, data) {
         const fields = [];
         const values = [];
+        let i = 1;
 
         if (data.type !== undefined) {
-            fields.push('payment_type = ?');
+            fields.push(`payment_type = $${i++}`);
             values.push(data.type);
         }
         if (data.amount !== undefined) {
-            fields.push('amount = ?');
+            fields.push(`amount = $${i++}`);
             values.push(data.amount);
         }
         if (data.referenceType !== undefined) {
-            fields.push('reference_type = ?');
+            fields.push(`reference_type = $${i++}`);
             values.push(data.referenceType);
         }
         if (data.referenceId !== undefined) {
-            fields.push('reference_id = ?');
+            fields.push(`reference_id = $${i++}`);
             values.push(data.referenceId);
         }
         if (data.paymentDate !== undefined || data.date !== undefined) {
-            fields.push('payment_date = ?');
+            fields.push(`payment_date = $${i++}`);
             values.push(this._toISOString(data.paymentDate || data.date));
         }
         if (data.paymentMethod !== undefined) {
-            fields.push('payment_method = ?');
+            fields.push(`payment_method = $${i++}`);
             values.push(data.paymentMethod);
         }
         if (data.referenceNumber !== undefined) {
-            fields.push('reference_number = ?');
+            fields.push(`reference_number = $${i++}`);
             values.push(data.referenceNumber);
         }
         if (data.notes !== undefined) {
-            fields.push('notes = ?');
+            fields.push(`notes = $${i++}`);
             values.push(data.notes);
         }
         if (data.metadata !== undefined) {
-            fields.push('metadata = ?');
+            fields.push(`metadata = $${i++}`);
             values.push(JSON.stringify(data.metadata));
         }
 
-        fields.push('updated_at = CURRENT_TIMESTAMP');
+        fields.push('updated_at = NOW()');
 
-        if (fields.length === 0) {
+        if (fields.length === 1) {
             throw new Error('No fields to update');
         }
 
         values.push(id);
 
-        const stmt = this.db.prepare(
-            `UPDATE payments SET ${fields.join(', ')} WHERE id = ?`
+        const result = await this._query(
+            `UPDATE payments SET ${fields.join(', ')} WHERE id = $${i}`,
+            values
         );
-        const result = stmt.run(...values);
 
-        if (result.changes === 0) {
+        if (result.rowCount === 0) {
             throw new Error('Payment not found or no changes made');
         }
 
         return this.findById(id);
     }
 
-    /**
-     * Delete a payment
-     */
-    delete(id) {
-        const stmt = this.db.prepare('DELETE FROM payments WHERE id = ?');
-        const result = stmt.run(id);
-        return result.changes > 0;
+    async delete(id) {
+        const result = await this._query('DELETE FROM payments WHERE id = $1', [id]);
+        return result.rowCount > 0;
     }
 
-    /**
-     * Count payments by filters
-     */
-    countByFilters(filters) {
-        let query = 'SELECT COUNT(*) as count FROM payments WHERE business_id = ?';
+    async countByFilters(filters) {
+        let query = 'SELECT COUNT(*)::int as count FROM payments WHERE business_id = $1';
         const params = [filters.businessId];
+        let i = 2;
 
         if (filters.type) {
-            query += ' AND payment_type = ?';
+            query += ` AND payment_type = $${i++}`;
             params.push(filters.type);
         }
-
         if (filters.referenceType) {
-            query += ' AND reference_type = ?';
+            query += ` AND reference_type = $${i++}`;
             params.push(filters.referenceType);
         }
-
         if (filters.referenceId) {
-            query += ' AND reference_id = ?';
+            query += ` AND reference_id = $${i++}`;
             params.push(filters.referenceId);
         }
-
         if (filters.startDate) {
-            query += ' AND DATE(payment_date) >= DATE(?)';
+            query += ` AND DATE(payment_date) >= DATE($${i++})`;
             params.push(this._toISOString(filters.startDate));
         }
-
         if (filters.endDate) {
-            query += ' AND DATE(payment_date) <= DATE(?)';
+            query += ` AND DATE(payment_date) <= DATE($${i++})`;
             params.push(this._toISOString(filters.endDate));
         }
 
-        const result = this.db.prepare(query).get(...params);
-        return result?.count || 0;
+        const result = await this._query(query, params);
+        return result.rows[0]?.count || 0;
     }
 
-    /**
-     * Hydrate database row to Payment entity
-     */
     _hydrate(row) {
         return new Payment({
             id: row.id,
@@ -419,7 +358,7 @@ class PaymentRepository extends BaseRepository {
             paymentMethod: row.payment_method,
             referenceNumber: row.reference_number,
             notes: row.notes,
-            metadata: row.metadata ? JSON.parse(row.metadata) : {},
+            metadata: row.metadata ? (typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata) : {},
             createdAt: new Date(row.created_at),
             updatedAt: new Date(row.updated_at),
         });

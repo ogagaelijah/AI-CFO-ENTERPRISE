@@ -1,4 +1,5 @@
 // src/infrastructure/database/sqlite/repositories/ReportRepository.js
+// Postgres async. ⚠️ reports table not in current Supabase schema.
 
 const BaseRepository = require('./BaseRepository');
 
@@ -7,153 +8,150 @@ class ReportRepository extends BaseRepository {
         super('reports');
     }
 
-    create(reportData) {
-        const stmt = this.db.prepare(`
-            INSERT INTO reports (
+    async create(reportData) {
+        const result = await this._query(
+            `INSERT INTO reports (
                 business_id, type, title, data, generated_at, period_start, period_end
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        `);
-
-        const result = stmt.run(
-            reportData.businessId,
-            reportData.type,
-            reportData.title || '',
-            JSON.stringify(reportData.data || {}),
-            reportData.generatedAt ? reportData.generatedAt.toISOString() : new Date().toISOString(),
-            reportData.periodStart ? reportData.periodStart.toISOString() : null,
-            reportData.periodEnd ? reportData.periodEnd.toISOString() : null
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+            RETURNING id`,
+            [
+                reportData.businessId,
+                reportData.type,
+                reportData.title || '',
+                JSON.stringify(reportData.data || {}),
+                reportData.generatedAt ? reportData.generatedAt.toISOString() : new Date().toISOString(),
+                reportData.periodStart ? reportData.periodStart.toISOString() : null,
+                reportData.periodEnd ? reportData.periodEnd.toISOString() : null,
+            ]
         );
-
-        return this.findById(result.lastInsertRowid);
+        return this.findById(result.rows[0].id);
     }
 
-    findById(id) {
-        const result = this.db.prepare('SELECT * FROM reports WHERE id = ?').get(id);
-        if (!result) return null;
-        return this._hydrate(result);
+    async findById(id) {
+        const result = await this._query('SELECT * FROM reports WHERE id = $1', [id]);
+        if (!result.rows[0]) return null;
+        return this._hydrate(result.rows[0]);
     }
 
-    findByBusinessId(businessId, options = {}) {
-        let query = 'SELECT * FROM reports WHERE business_id = ?';
+    async findByBusinessId(businessId, options = {}) {
+        let query = 'SELECT * FROM reports WHERE business_id = $1';
         const params = [businessId];
+        let i = 2;
 
         if (options.type) {
-            query += ' AND type = ?';
+            query += ` AND type = $${i++}`;
             params.push(options.type);
         }
-
         if (options.startDate) {
-            query += ' AND generated_at >= ?';
+            query += ` AND generated_at >= $${i++}`;
             params.push(options.startDate.toISOString());
         }
-
         if (options.endDate) {
-            query += ' AND generated_at <= ?';
+            query += ` AND generated_at <= $${i++}`;
             params.push(options.endDate.toISOString());
         }
 
         query += ' ORDER BY generated_at DESC';
 
         if (options.limit) {
-            query += ' LIMIT ?';
+            query += ` LIMIT $${i++}`;
             params.push(options.limit);
         }
-
         if (options.offset) {
-            query += ' OFFSET ?';
+            query += ` OFFSET $${i++}`;
             params.push(options.offset);
         }
 
-        const results = this.db.prepare(query).all(...params);
-        return results.map(r => this._hydrate(r));
+        const result = await this._query(query, params);
+        return result.rows.map(r => this._hydrate(r));
     }
 
-    findByType(businessId, type, options = {}) {
+    async findByType(businessId, type, options = {}) {
         return this.findByBusinessId(businessId, { ...options, type });
     }
 
-    findLatestByType(businessId, type) {
-        const result = this.db.prepare(`
-            SELECT * FROM reports
-            WHERE business_id = ? AND type = ?
-            ORDER BY generated_at DESC
-            LIMIT 1
-        `).get(businessId, type);
-
-        if (!result) return null;
-        return this._hydrate(result);
+    async findLatestByType(businessId, type) {
+        const result = await this._query(
+            `SELECT * FROM reports
+             WHERE business_id = $1 AND type = $2
+             ORDER BY generated_at DESC
+             LIMIT 1`,
+            [businessId, type]
+        );
+        if (!result.rows[0]) return null;
+        return this._hydrate(result.rows[0]);
     }
 
-    update(id, data) {
+    async update(id, data) {
         const fields = [];
         const values = [];
+        let i = 1;
 
         if (data.title !== undefined) {
-            fields.push('title = ?');
+            fields.push(`title = $${i++}`);
             values.push(data.title);
         }
         if (data.data !== undefined) {
-            fields.push('data = ?');
+            fields.push(`data = $${i++}`);
             values.push(JSON.stringify(data.data));
         }
         if (data.generatedAt !== undefined) {
-            fields.push('generated_at = ?');
+            fields.push(`generated_at = $${i++}`);
             values.push(data.generatedAt.toISOString());
         }
         if (data.periodStart !== undefined) {
-            fields.push('period_start = ?');
+            fields.push(`period_start = $${i++}`);
             values.push(data.periodStart ? data.periodStart.toISOString() : null);
         }
         if (data.periodEnd !== undefined) {
-            fields.push('period_end = ?');
+            fields.push(`period_end = $${i++}`);
             values.push(data.periodEnd ? data.periodEnd.toISOString() : null);
         }
 
-        fields.push('updated_at = CURRENT_TIMESTAMP');
+        fields.push('updated_at = NOW()');
 
-        if (fields.length === 0) {
+        if (fields.length === 1) {
             throw new Error('No fields to update');
         }
 
         values.push(id);
 
-        const stmt = this.db.prepare(
-            `UPDATE reports SET ${fields.join(', ')} WHERE id = ?`
+        const result = await this._query(
+            `UPDATE reports SET ${fields.join(', ')} WHERE id = $${i}`,
+            values
         );
-        const result = stmt.run(...values);
 
-        if (result.changes === 0) {
+        if (result.rowCount === 0) {
             throw new Error('Report not found or no changes made');
         }
 
         return this.findById(id);
     }
 
-    delete(id) {
-        const stmt = this.db.prepare('DELETE FROM reports WHERE id = ?');
-        const result = stmt.run(id);
-        return result.changes > 0;
+    async delete(id) {
+        const result = await this._query('DELETE FROM reports WHERE id = $1', [id]);
+        return result.rowCount > 0;
     }
 
-    deleteOldReports(businessId, daysToKeep) {
+    async deleteOldReports(businessId, daysToKeep) {
         const cutoffDate = new Date();
         cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
 
-        const stmt = this.db.prepare(
-            'DELETE FROM reports WHERE business_id = ? AND generated_at < ?'
+        const result = await this._query(
+            'DELETE FROM reports WHERE business_id = $1 AND generated_at < $2',
+            [businessId, cutoffDate.toISOString()]
         );
-        const result = stmt.run(businessId, cutoffDate.toISOString());
-        return result.changes;
+        return result.rowCount;
     }
 
     _hydrate(row) {
-        const Report = require('../../../domain/entities/Report');
+        const Report = require('../../../../domain/entities/Report');
         return new Report({
             id: row.id,
             businessId: row.business_id,
             type: row.type,
             title: row.title,
-            data: row.data ? JSON.parse(row.data) : {},
+            data: row.data ? (typeof row.data === 'string' ? JSON.parse(row.data) : row.data) : {},
             generatedAt: new Date(row.generated_at),
             periodStart: row.period_start ? new Date(row.period_start) : null,
             periodEnd: row.period_end ? new Date(row.period_end) : null,

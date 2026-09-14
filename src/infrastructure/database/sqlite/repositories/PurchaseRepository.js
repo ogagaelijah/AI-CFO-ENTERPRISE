@@ -1,11 +1,11 @@
 // src/infrastructure/database/sqlite/repositories/PurchaseRepository.js
-// v3.0.1-prod — Strict multi-tenant
+// v3.1.0-prod — Postgres async. Same logic as SQLite v3.0.1.
 
 const BaseRepository = require('./BaseRepository');
 
 class PurchaseRepository extends BaseRepository {
-    constructor(db = null) {
-        super('purchases', db);
+    constructor() {
+        super('purchases');
     }
 
     _hydrate(row) {
@@ -18,130 +18,156 @@ class PurchaseRepository extends BaseRepository {
                 items = [];
             }
         }
-        return { ...row, items };
+        return {
+            ...row,
+            total_cost: Number(row.total_cost) || 0,
+            unit_cost: Number(row.unit_cost) || 0,
+            amount_paid: Number(row.amount_paid) || 0,
+            balance_remaining: Number(row.balance_remaining) || 0,
+            items,
+        };
     }
 
-    create(purchaseData) {
-        const stmt = this.db.prepare(`
-            INSERT INTO purchases (
-                user_id, business_id, supplier_id, supplier_name, item_name, 
-                quantity, unit_cost, total_cost, payment_status, 
+    async create(purchaseData) {
+        const result = await this._query(
+            `INSERT INTO purchases (
+                user_id, business_id, supplier_id, supplier_name, item_name,
+                quantity, unit_cost, total_cost, payment_status,
                 amount_paid, balance_remaining, due_date, purchase_date,
                 items, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `);
-
-        const result = stmt.run(
-            purchaseData.userId ?? purchaseData.user_id ?? null,
-            purchaseData.businessId ?? purchaseData.business_id ?? null,
-            purchaseData.supplier_id ?? purchaseData.supplierId ?? null,
-            purchaseData.supplier_name ?? purchaseData.supplierName ?? null,
-            purchaseData.item_name ?? purchaseData.itemName ?? null,
-            purchaseData.quantity || 0,
-            (purchaseData.unit_cost ?? purchaseData.unitCost) || 0,
-            (purchaseData.total_cost ?? purchaseData.totalCost) || 0,
-            (purchaseData.payment_status ?? purchaseData.paymentStatus) || 'UNPAID',
-            (purchaseData.amount_paid ?? purchaseData.amountPaid) || 0,
-            (purchaseData.balance_remaining ?? purchaseData.balanceRemaining) || 0,
-            purchaseData.due_date ?? purchaseData.dueDate ?? null,
-            purchaseData.purchase_date ?? purchaseData.purchaseDate ?? new Date().toISOString(),
-            purchaseData.items ? JSON.stringify(purchaseData.items) : null,
-            purchaseData.notes || null
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+            RETURNING id`,
+            [
+                purchaseData.userId ?? purchaseData.user_id ?? null,
+                purchaseData.businessId ?? purchaseData.business_id ?? null,
+                purchaseData.supplier_id ?? purchaseData.supplierId ?? null,
+                purchaseData.supplier_name ?? purchaseData.supplierName ?? null,
+                purchaseData.item_name ?? purchaseData.itemName ?? null,
+                purchaseData.quantity || 0,
+                (purchaseData.unit_cost ?? purchaseData.unitCost) || 0,
+                (purchaseData.total_cost ?? purchaseData.totalCost) || 0,
+                (purchaseData.payment_status ?? purchaseData.paymentStatus) || 'UNPAID',
+                (purchaseData.amount_paid ?? purchaseData.amountPaid) || 0,
+                (purchaseData.balance_remaining ?? purchaseData.balanceRemaining) || 0,
+                purchaseData.due_date ?? purchaseData.dueDate ?? null,
+                purchaseData.purchase_date ?? purchaseData.purchaseDate ?? new Date().toISOString(),
+                purchaseData.items ? JSON.stringify(purchaseData.items) : null,
+                purchaseData.notes || null,
+            ]
         );
-
-        return this.findById(result.lastInsertRowid);
+        return this.findById(result.rows[0].id);
     }
 
-    findById(id) {
-        const row = this.db.prepare('SELECT * FROM purchases WHERE id = ?').get(id);
-        return this._hydrate(row);
+    async findById(id) {
+        const result = await this._query('SELECT * FROM purchases WHERE id = $1', [id]);
+        return this._hydrate(result.rows[0] || null);
     }
 
-    findByBusinessId(businessId) {
-        const rows = this.db.prepare(
-            'SELECT * FROM purchases WHERE business_id = ? ORDER BY purchase_date DESC'
-        ).all(businessId);
-        return rows.map(row => this._hydrate(row));
+    async findByBusinessId(businessId) {
+        const result = await this._query(
+            'SELECT * FROM purchases WHERE business_id = $1 ORDER BY purchase_date DESC',
+            [businessId]
+        );
+        return result.rows.map(row => this._hydrate(row));
     }
 
-    findByUserId(userId) {
-        const rows = this.db.prepare(
-            'SELECT * FROM purchases WHERE user_id = ? ORDER BY purchase_date DESC'
-        ).all(userId);
-        return rows.map(row => this._hydrate(row));
+    async findByUserId(userId) {
+        const result = await this._query(
+            'SELECT * FROM purchases WHERE user_id = $1 ORDER BY purchase_date DESC',
+            [userId]
+        );
+        return result.rows.map(row => this._hydrate(row));
     }
 
-    findByDateRange(businessId, startDate, endDate) {
-        const rows = this.db.prepare(`
-            SELECT * FROM purchases 
-            WHERE business_id = ? AND DATE(purchase_date) BETWEEN ? AND ? 
-            ORDER BY purchase_date DESC
-        `).all(businessId, startDate, endDate);
-        return rows.map(row => this._hydrate(row));
+    async findByDateRange(businessId, startDate, endDate) {
+        const result = await this._query(
+            `SELECT * FROM purchases
+             WHERE business_id = $1 AND DATE(purchase_date) BETWEEN $2 AND $3
+             ORDER BY purchase_date DESC`,
+            [businessId, startDate, endDate]
+        );
+        return result.rows.map(row => this._hydrate(row));
     }
 
-    findBySupplier(businessId, supplierName) {
-        const rows = this.db.prepare(`
-            SELECT * FROM purchases 
-            WHERE business_id = ? AND supplier_name LIKE ? 
-            ORDER BY purchase_date DESC
-        `).all(businessId, `%${supplierName}%`);
-        return rows.map(row => this._hydrate(row));
+    async findBySupplier(businessId, supplierName) {
+        const result = await this._query(
+            `SELECT * FROM purchases
+             WHERE business_id = $1 AND supplier_name LIKE $2
+             ORDER BY purchase_date DESC`,
+            [businessId, `%${supplierName}%`]
+        );
+        return result.rows.map(row => this._hydrate(row));
     }
 
-    findBySupplierId(businessId, supplierId) {
-        const rows = this.db.prepare(`
-            SELECT * FROM purchases 
-            WHERE business_id = ? AND supplier_id = ? 
-            ORDER BY purchase_date DESC
-        `).all(businessId, supplierId);
-        return rows.map(row => this._hydrate(row));
+    async findBySupplierId(businessId, supplierId) {
+        const result = await this._query(
+            `SELECT * FROM purchases
+             WHERE business_id = $1 AND supplier_id = $2
+             ORDER BY purchase_date DESC`,
+            [businessId, supplierId]
+        );
+        return result.rows.map(row => this._hydrate(row));
     }
 
-    getTodayPurchases(businessId) {
+    async getTodayPurchases(businessId) {
         const today = new Date().toISOString().split('T')[0];
-        const rows = this.db.prepare(`
-            SELECT * FROM purchases 
-            WHERE business_id = ? AND DATE(purchase_date) = ? 
-            ORDER BY purchase_date DESC
-        `).all(businessId, today);
-        return rows.map(row => this._hydrate(row));
+        const result = await this._query(
+            `SELECT * FROM purchases
+             WHERE business_id = $1 AND DATE(purchase_date) = $2
+             ORDER BY purchase_date DESC`,
+            [businessId, today]
+        );
+        return result.rows.map(row => this._hydrate(row));
     }
 
-    getPurchaseSummary(businessId) {
-        return this.db.prepare(`
-            SELECT 
-                COUNT(*) as total_purchases,
+    async getPurchaseSummary(businessId) {
+        const result = await this._query(
+            `SELECT
+                COUNT(*)::int as total_purchases,
                 COALESCE(SUM(total_cost), 0) as total_amount,
                 COALESCE(SUM(quantity), 0) as total_items,
                 COALESCE(AVG(total_cost), 0) as average_purchase,
-                COUNT(DISTINCT supplier_name) as suppliers_used,
+                COUNT(DISTINCT supplier_name)::int as suppliers_used,
                 COALESCE(SUM(CASE WHEN payment_status = 'PAID' THEN total_cost ELSE 0 END), 0) as total_paid,
                 COALESCE(SUM(CASE WHEN payment_status IN ('UNPAID', 'PARTIAL') THEN balance_remaining ELSE 0 END), 0) as total_outstanding
-            FROM purchases 
-            WHERE business_id = ?
-        `).get(businessId);
+             FROM purchases
+             WHERE business_id = $1`,
+            [businessId]
+        );
+        const r = result.rows[0] || {};
+        return {
+            total_purchases: r.total_purchases || 0,
+            total_amount: Number(r.total_amount) || 0,
+            total_items: Number(r.total_items) || 0,
+            average_purchase: Number(r.average_purchase) || 0,
+            suppliers_used: r.suppliers_used || 0,
+            total_paid: Number(r.total_paid) || 0,
+            total_outstanding: Number(r.total_outstanding) || 0,
+        };
     }
 
-    getMonthlySummary(businessId, month, year) {
+    async getMonthlySummary(businessId, month, year) {
         const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
         const endDate = `${year}-${String(month).padStart(2, '0')}-31`;
 
-        return this.db.prepare(`
-            SELECT 
-                COUNT(*) as total_purchases,
+        const result = await this._query(
+            `SELECT
+                COUNT(*)::int as total_purchases,
                 COALESCE(SUM(total_cost), 0) as total_amount,
                 COALESCE(SUM(quantity), 0) as total_items,
                 COALESCE(AVG(total_cost), 0) as average_purchase
-            FROM purchases 
-            WHERE business_id = ? 
-              AND purchase_date BETWEEN ? AND ?
-        `).get(businessId, startDate, endDate);
+             FROM purchases
+             WHERE business_id = $1
+               AND purchase_date BETWEEN $2 AND $3`,
+            [businessId, startDate, endDate]
+        );
+        return result.rows[0];
     }
 
-    update(id, data) {
+    async update(id, data) {
         const fields = [];
         const values = [];
+        let i = 1;
 
         const map = {
             supplier_name: data.supplier_name ?? data.supplierName,
@@ -161,33 +187,34 @@ class PurchaseRepository extends BaseRepository {
 
         for (const [col, val] of Object.entries(map)) {
             if (val !== undefined) {
-                fields.push(`${col} = ?`);
+                fields.push(`${col} = $${i++}`);
                 values.push(val);
             }
         }
 
         if (data.items !== undefined) {
-            fields.push('items = ?');
+            fields.push(`items = $${i++}`);
             values.push(JSON.stringify(data.items));
         }
 
-        fields.push('updated_at = CURRENT_TIMESTAMP');
+        fields.push('updated_at = NOW()');
 
         if (fields.length === 1) throw new Error('No fields to update');
 
         values.push(id);
 
-        const result = this.db.prepare(
-            `UPDATE purchases SET ${fields.join(', ')} WHERE id = ?`
-        ).run(...values);
+        const result = await this._query(
+            `UPDATE purchases SET ${fields.join(', ')} WHERE id = $${i}`,
+            values
+        );
 
-        if (result.changes === 0) throw new Error('Purchase not found or no changes made');
+        if (result.rowCount === 0) throw new Error('Purchase not found or no changes made');
         return this.findById(id);
     }
 
-    delete(id) {
-        const result = this.db.prepare('DELETE FROM purchases WHERE id = ?').run(id);
-        return result.changes > 0;
+    async delete(id) {
+        const result = await this._query('DELETE FROM purchases WHERE id = $1', [id]);
+        return result.rowCount > 0;
     }
 }
 

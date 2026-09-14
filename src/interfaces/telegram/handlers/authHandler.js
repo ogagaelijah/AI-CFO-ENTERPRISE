@@ -1,23 +1,23 @@
 // src/interfaces/telegram/handlers/authHandler.js
+// Postgres-ready. Uses UserRepository instead of raw DB queries.
 
 const { getSessionManager } = require('../sessionManager');
-const { getDatabase } = require('../../../infrastructure/database/sqlite/connection');
+const UserRepository = require('../../../infrastructure/database/sqlite/repositories/UserRepository');
 const BusinessRepository = require('../../../infrastructure/database/sqlite/repositories/BusinessRepository');
 const { INDUSTRIES } = require('../../../config/industries');
 const logger = require('../../../shared/utils/logger');
+const bcrypt = require('bcryptjs');
 
 const sessionManager = getSessionManager();
-const db = getDatabase();
+const userRepo = new UserRepository();
 const businessRepo = new BusinessRepository();
 
 async function loginHandler(ctx) {
     try {
         const telegramId = ctx.from.id;
-        
-        // Get current session
+
         let session = sessionManager.getSession(telegramId);
-        
-        // If no session or not in login flow, start fresh login
+
         if (!session || (session.state !== 'LOGIN_WAITING_IDENTIFIER' && session.state !== 'LOGIN_WAITING_PASSWORD')) {
             sessionManager.createSession(telegramId, 'LOGIN_WAITING_IDENTIFIER', {});
             await ctx.reply(
@@ -30,10 +30,9 @@ async function loginHandler(ctx) {
         const state = session.state;
         const data = session.data || {};
 
-        // STEP 1: Waiting for email/phone
         if (state === 'LOGIN_WAITING_IDENTIFIER') {
             const identifier = ctx.message && ctx.message.text ? ctx.message.text.trim() : null;
-            
+
             if (!identifier || identifier.startsWith('/')) {
                 await ctx.reply('Please enter your email or phone number (not a command):');
                 return;
@@ -41,15 +40,14 @@ async function loginHandler(ctx) {
 
             sessionManager.setData(telegramId, { ...data, identifier });
             sessionManager.setState(telegramId, 'LOGIN_WAITING_PASSWORD');
-            
+
             await ctx.reply(`Enter your **password**:`);
             return;
         }
 
-        // STEP 2: Waiting for password
         if (state === 'LOGIN_WAITING_PASSWORD') {
             const password = ctx.message && ctx.message.text ? ctx.message.text.trim() : null;
-            
+
             if (!password || password.startsWith('/')) {
                 await ctx.reply('Please enter your password (not a command):');
                 return;
@@ -67,15 +65,10 @@ async function loginHandler(ctx) {
             }
 
             try {
-                // Find user by email or phone
-                let user = null;
-
-                const emailStmt = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)');
-                user = emailStmt.get(identifier);
-
+                // Find user by email (case-insensitive) or phone
+                let user = await userRepo.findByEmail(identifier);
                 if (!user) {
-                    const phoneStmt = db.prepare('SELECT * FROM users WHERE phone_number = ?');
-                    user = phoneStmt.get(identifier);
+                    user = await userRepo.findByPhoneNumber(identifier);
                 }
 
                 if (!user) {
@@ -88,22 +81,19 @@ async function loginHandler(ctx) {
                 }
 
                 // Verify password
-                const bcrypt = require('bcryptjs');
-                const isValid = await bcrypt.compare(password, user.password_hash);
+                const isValid = await bcrypt.compare(password, user.passwordHash);
 
                 if (!isValid) {
                     await ctx.reply(`❌ Invalid password. Please try again.`);
                     return;
                 }
 
-                // ✅ LOGIN SUCCESSFUL
                 const businesses = await businessRepo.findByUserId(user.id);
                 const business = businesses.length > 0 ? businesses[0] : null;
                 const industry = business ? INDUSTRIES[business.industry] : null;
                 const industryName = industry ? `${industry.icon} ${industry.name}` : 'N/A';
 
-                // Calculate trial days remaining
-                const createdAt = new Date(user.created_at);
+                const createdAt = new Date(user.createdAt);
                 const trialEndDate = new Date(createdAt);
                 trialEndDate.setDate(trialEndDate.getDate() + 30);
                 const today = new Date();
@@ -113,7 +103,7 @@ async function loginHandler(ctx) {
 
                 let message =
                     `✅ **Login Successful!**\n\n` +
-                    `👤 Welcome back, ${user.full_name}!\n` +
+                    `👤 Welcome back, ${user.fullName}!\n` +
                     `🏢 Business: ${business ? business.name : 'N/A'}\n` +
                     `🏭 Industry: ${industryName}\n\n` +
                     `📋 **Account Status**\n` +
@@ -132,7 +122,7 @@ async function loginHandler(ctx) {
                 message += `Type /dashboard to view your business overview.\n\n`;
 
                 message += `📋 **Quick Actions for ${industryName}:**\n`;
-                if (industry && industry.features.inventory) {
+                if (industry && industry.features && industry.features.inventory) {
                     message += `/sale - Record a sale\n`;
                     message += `/inventory - Manage inventory\n`;
                 }

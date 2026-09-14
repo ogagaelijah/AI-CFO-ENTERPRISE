@@ -1,10 +1,8 @@
 // src/application/useCases/purchases/RecordPurchaseUseCase.js
-// v3.3.1-prod — Fully transactional (manual BEGIN/COMMIT/ROLLBACK). No silent failures.
-//
-// Why manual instead of better-sqlite3's transaction() helper:
-// transaction() requires a synchronous function; our use case is async.
-// All repositories here are synchronous under the hood (no real awaits), so
-// running BEGIN … COMMIT around the async body gives atomicity without interleaving.
+// v3.4.0-prod — Postgres transactional (via withTransaction + AsyncLocalStorage).
+// No silent failures. All writes atomic.
+
+const { withTransaction } = require('../../../infrastructure/database/sqlite/connection');
 
 class RecordPurchaseUseCase {
     constructor({
@@ -58,25 +56,16 @@ class RecordPurchaseUseCase {
         const balanceRemaining = this._computeBalance(paymentStatus, finalTotalCost, amountPaid);
         const purchaseDateObj = purchaseDate instanceof Date ? purchaseDate : new Date(purchaseDate);
 
-        // ────── 2. Get raw DB handle ──────
-        const db = this.purchaseRepository.db;
-        if (!db || typeof db.prepare !== 'function') {
-            throw new Error('PurchaseRepository must expose a sqlite db handle');
-        }
-
-        // ────── 3. BEGIN — everything below is atomic ──────
-        db.prepare('BEGIN IMMEDIATE').run();
-
-        let result;
-        try {
-            // 3a. Supplier find-or-create
+        // ────── 2. Execute everything inside ONE Postgres transaction ──────
+        return withTransaction(async () => {
+            // 2a. Supplier find-or-create
             const supplier = await this._findOrCreateSupplier({
                 businessId, supplierName, supplierPhone, supplierEmail,
             });
             const finalSupplierId = supplier ? supplier.id : null;
             const finalSupplierName = supplier ? supplier.name : (supplierName || 'Unknown Supplier');
 
-            // 3b. Purchase record
+            // 2b. Purchase record
             const itemNames = processedItems.map(i => i.name).join(', ');
             const purchase = await this.purchaseRepository.create({
                 user_id: userId,
@@ -96,7 +85,7 @@ class RecordPurchaseUseCase {
                 notes: notes || '',
             });
 
-            // 3c. Supplier metadata
+            // 2c. Supplier metadata
             if (finalSupplierId) {
                 const existingSupplier = await this.supplierRepository.findById(finalSupplierId);
                 if (existingSupplier) {
@@ -112,7 +101,7 @@ class RecordPurchaseUseCase {
                 }
             }
 
-            // 3d. Payment record
+            // 2d. Payment record
             if (this.paymentRepository && (paymentStatus === 'PAID' || paymentStatus === 'PARTIAL')) {
                 const paidAmount = amountPaid || (paymentStatus === 'PAID' ? finalTotalCost : 0);
                 if (paidAmount > 0) {
@@ -130,7 +119,7 @@ class RecordPurchaseUseCase {
                 }
             }
 
-            // 3e. Inventory + ledger
+            // 2e. Inventory + ledger
             const inventoryUpdates = [];
             for (const item of processedItems) {
                 const update = await this._applyInventoryAndLedger({
@@ -139,7 +128,7 @@ class RecordPurchaseUseCase {
                 inventoryUpdates.push(update);
             }
 
-            // 3f. Creditor for UNPAID / PARTIAL
+            // 2f. Creditor for UNPAID / PARTIAL
             let creditor = null;
             if (paymentStatus !== 'PAID' && balanceRemaining > 0) {
                 creditor = await this.creditorRepository.create({
@@ -157,10 +146,7 @@ class RecordPurchaseUseCase {
                 });
             }
 
-            // ────── 4. COMMIT ──────
-            db.prepare('COMMIT').run();
-
-            result = {
+            return {
                 success: true,
                 purchase,
                 supplierId: finalSupplierId,
@@ -173,20 +159,10 @@ class RecordPurchaseUseCase {
                 inventoryUpdates,
                 message: 'Purchase recorded successfully',
             };
-        } catch (err) {
-            // ────── ROLLBACK on any failure ──────
-            try {
-                db.prepare('ROLLBACK').run();
-            } catch (rollbackErr) {
-                console.error('[RecordPurchaseUseCase] ROLLBACK failed:', rollbackErr.message);
-            }
-            throw err;
-        }
-
-        return result;
+        });
     }
 
-    // ────── Pure helpers ──────
+    // ────── Pure helpers (no DB) ──────
 
     _processItems({ items, itemName, quantity, unitCost }) {
         if (items && items.length > 0) {
@@ -272,7 +248,7 @@ class RecordPurchaseUseCase {
             newCostPrice = item.unitCost;
         } else {
             previousQuantity = inventoryItemData.quantity || 0;
-            previousCostPrice = inventoryItemData.cost_price || 0;
+            previousCostPrice = Number(inventoryItemData.cost_price) || 0;
 
             const totalCurrentValue = previousQuantity * previousCostPrice;
             const totalNewValue = item.quantity * item.unitCost;

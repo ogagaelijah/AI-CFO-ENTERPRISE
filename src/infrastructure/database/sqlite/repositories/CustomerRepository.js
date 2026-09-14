@@ -1,4 +1,5 @@
 // src/infrastructure/database/sqlite/repositories/CustomerRepository.js
+// Postgres async. Same logic as SQLite.
 
 const BaseRepository = require('./BaseRepository');
 
@@ -69,189 +70,167 @@ class Customer {
 }
 
 class CustomerRepository extends BaseRepository {
-    constructor(db = null) {
-        super('customers', db);
+    constructor() {
+        super('customers');
     }
 
-    create(customerData) {
-        const stmt = this.db.prepare(`
-            INSERT INTO customers (
+    async create(customerData) {
+        const result = await this._query(
+            `INSERT INTO customers (
                 business_id, name, phone, email, address, type, tax_id, notes, metadata
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `);
-
-        const result = stmt.run(
-            customerData.businessId,
-            customerData.name,
-            customerData.phone || null,
-            customerData.email || null,
-            customerData.address || null,
-            customerData.type || 'CUSTOMER',
-            customerData.taxId || null,
-            customerData.notes || '',
-            JSON.stringify(customerData.metadata || {})
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+            [
+                customerData.businessId,
+                customerData.name,
+                customerData.phone || null,
+                customerData.email || null,
+                customerData.address || null,
+                customerData.type || 'CUSTOMER',
+                customerData.taxId || null,
+                customerData.notes || '',
+                JSON.stringify(customerData.metadata || {}),
+            ]
         );
-
-        return this.findById(result.lastInsertRowid);
+        return this.findById(result.rows[0].id);
     }
 
-    findById(id) {
-        const result = this.db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
-        if (!result) return null;
-        return this._hydrate(result);
+    async findById(id) {
+        const result = await this._query('SELECT * FROM customers WHERE id = $1', [id]);
+        if (!result.rows[0]) return null;
+        return this._hydrate(result.rows[0]);
     }
 
-    findByUserId(userId) {
-        const business = this.db.prepare(
-            'SELECT id FROM businesses WHERE user_id = ? LIMIT 1'
-        ).get(userId);
-        
-        if (!business) return [];
-        
-        return this.findByBusinessId(business.id);
+    async findByUserId(userId) {
+        const businessResult = await this._query(
+            'SELECT id FROM businesses WHERE user_id = $1 LIMIT 1',
+            [userId]
+        );
+        if (!businessResult.rows[0]) return [];
+        return this.findByBusinessId(businessResult.rows[0].id);
     }
 
-    findByBusinessId(businessId, options = {}) {
-        let query = 'SELECT * FROM customers WHERE business_id = ?';
+    async findByBusinessId(businessId, options = {}) {
+        let query = 'SELECT * FROM customers WHERE business_id = $1';
         const params = [businessId];
+        let i = 2;
 
         if (options.type) {
-            query += ' AND type = ?';
+            query += ` AND type = $${i++}`;
             params.push(options.type);
         }
 
         if (options.search) {
-            query += ' AND (name LIKE ? OR phone LIKE ? OR email LIKE ?)';
-            const searchTerm = `%${options.search}%`;
-            params.push(searchTerm, searchTerm, searchTerm);
+            query += ` AND (name LIKE $${i} OR phone LIKE $${i} OR email LIKE $${i})`;
+            params.push(`%${options.search}%`);
+            i++;
         }
 
         query += ' ORDER BY name ASC';
 
         if (options.limit) {
-            query += ' LIMIT ?';
+            query += ` LIMIT $${i++}`;
             params.push(options.limit);
         }
 
         if (options.offset) {
-            query += ' OFFSET ?';
+            query += ` OFFSET $${i++}`;
             params.push(options.offset);
         }
 
-        const results = this.db.prepare(query).all(...params);
-        return results.map(r => this._hydrate(r));
+        const result = await this._query(query, params);
+        return result.rows.map(r => this._hydrate(r));
     }
 
-    findByName(businessId, name) {
-        const result = this.db.prepare(
-            'SELECT * FROM customers WHERE business_id = ? AND name = ?'
-        ).get(businessId, name);
-
-        if (!result) return null;
-        return this._hydrate(result);
+    async findByName(businessId, name) {
+        const result = await this._query(
+            'SELECT * FROM customers WHERE business_id = $1 AND name = $2',
+            [businessId, name]
+        );
+        if (!result.rows[0]) return null;
+        return this._hydrate(result.rows[0]);
     }
 
-    findByNameIgnoreCase(businessId, name) {
-        const result = this.db.prepare(
-            'SELECT * FROM customers WHERE business_id = ? AND LOWER(name) = LOWER(?)'
-        ).get(businessId, name);
-
-        if (!result) return null;
-        return this._hydrate(result);
+    async findByNameIgnoreCase(businessId, name) {
+        const result = await this._query(
+            'SELECT * FROM customers WHERE business_id = $1 AND LOWER(name) = LOWER($2)',
+            [businessId, name]
+        );
+        if (!result.rows[0]) return null;
+        return this._hydrate(result.rows[0]);
     }
 
-    findByType(businessId, type, options = {}) {
+    async findByType(businessId, type, options = {}) {
         return this.findByBusinessId(businessId, { ...options, type });
     }
 
-    search(businessId, searchTerm, options = {}) {
+    async search(businessId, searchTerm, options = {}) {
         return this.findByBusinessId(businessId, { ...options, search: searchTerm });
     }
 
-    update(id, data) {
+    async update(id, data) {
         const fields = [];
         const values = [];
+        let i = 1;
 
-        if (data.name !== undefined) {
-            fields.push('name = ?');
-            values.push(data.name);
-        }
-        if (data.phone !== undefined) {
-            fields.push('phone = ?');
-            values.push(data.phone);
-        }
-        if (data.email !== undefined) {
-            fields.push('email = ?');
-            values.push(data.email);
-        }
-        if (data.address !== undefined) {
-            fields.push('address = ?');
-            values.push(data.address);
-        }
-        if (data.type !== undefined) {
-            fields.push('type = ?');
-            values.push(data.type);
-        }
-        if (data.taxId !== undefined) {
-            fields.push('tax_id = ?');
-            values.push(data.taxId);
-        }
-        if (data.notes !== undefined) {
-            fields.push('notes = ?');
-            values.push(data.notes);
-        }
+        if (data.name !== undefined) { fields.push(`name = $${i++}`); values.push(data.name); }
+        if (data.phone !== undefined) { fields.push(`phone = $${i++}`); values.push(data.phone); }
+        if (data.email !== undefined) { fields.push(`email = $${i++}`); values.push(data.email); }
+        if (data.address !== undefined) { fields.push(`address = $${i++}`); values.push(data.address); }
+        if (data.type !== undefined) { fields.push(`type = $${i++}`); values.push(data.type); }
+        if (data.taxId !== undefined) { fields.push(`tax_id = $${i++}`); values.push(data.taxId); }
+        if (data.notes !== undefined) { fields.push(`notes = $${i++}`); values.push(data.notes); }
         if (data.metadata !== undefined) {
-            fields.push('metadata = ?');
+            fields.push(`metadata = $${i++}`);
             values.push(JSON.stringify(data.metadata));
         }
 
-        fields.push('updated_at = CURRENT_TIMESTAMP');
+        fields.push('updated_at = NOW()');
 
-        if (fields.length === 0) {
+        if (fields.length === 1) {
             throw new Error('No fields to update');
         }
 
         values.push(id);
 
-        const stmt = this.db.prepare(
-            `UPDATE customers SET ${fields.join(', ')} WHERE id = ?`
+        const result = await this._query(
+            `UPDATE customers SET ${fields.join(', ')} WHERE id = $${i}`,
+            values
         );
-        const result = stmt.run(...values);
 
-        if (result.changes === 0) {
+        if (result.rowCount === 0) {
             throw new Error('Customer not found or no changes made');
         }
 
         return this.findById(id);
     }
 
-    delete(id) {
-        const stmt = this.db.prepare('DELETE FROM customers WHERE id = ?');
-        const result = stmt.run(id);
-        return result.changes > 0;
+    async delete(id) {
+        const result = await this._query('DELETE FROM customers WHERE id = $1', [id]);
+        return result.rowCount > 0;
     }
 
-    countByBusinessId(businessId, filters = {}) {
-        let query = 'SELECT COUNT(*) as count FROM customers WHERE business_id = ?';
+    async countByBusinessId(businessId, filters = {}) {
+        let query = 'SELECT COUNT(*)::int as count FROM customers WHERE business_id = $1';
         const params = [businessId];
+        let i = 2;
 
         if (filters.type) {
-            query += ' AND type = ?';
+            query += ` AND type = $${i++}`;
             params.push(filters.type);
         }
 
         if (filters.search) {
-            query += ' AND (name LIKE ? OR phone LIKE ? OR email LIKE ?)';
-            const searchTerm = `%${filters.search}%`;
-            params.push(searchTerm, searchTerm, searchTerm);
+            query += ` AND (name LIKE $${i} OR phone LIKE $${i} OR email LIKE $${i})`;
+            params.push(`%${filters.search}%`);
+            i++;
         }
 
-        const result = this.db.prepare(query).get(...params);
-        return result?.count || 0;
+        const result = await this._query(query, params);
+        return result.rows[0]?.count || 0;
     }
 
-    getHistory(customerId, options = {}) {
-        const customer = this.findById(customerId);
+    async getHistory(customerId, options = {}) {
+        const customer = await this.findById(customerId);
         if (!customer) {
             throw new Error('Customer not found');
         }
@@ -278,7 +257,7 @@ class CustomerRepository extends BaseRepository {
             type: row.type,
             taxId: row.tax_id,
             notes: row.notes,
-            metadata: row.metadata ? JSON.parse(row.metadata) : {},
+            metadata: row.metadata ? (typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata) : {},
             createdAt: new Date(row.created_at),
             updatedAt: new Date(row.updated_at),
         });

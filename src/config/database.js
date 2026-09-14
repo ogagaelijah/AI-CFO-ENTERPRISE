@@ -1,106 +1,46 @@
 // src/config/database.js
+// Postgres-only config. DATABASE_URL is the single source of truth.
 
 const path = require('path');
 
-/**
- * Database Configuration
- * Supports SQLite (development) and PostgreSQL (production)
- */
 const config = {
-    // Default to SQLite for development
-    dialect: process.env.DB_DIALECT || 'sqlite',
+    // Connection string (postgres://user:pass@host:port/db)
+    url: process.env.DATABASE_URL || null,
 
-    // SQLite Configuration
-    sqlite: {
-        storage: process.env.DATABASE_PATH || path.join(__dirname, '../../ai-cfo.db'),
-        options: {
-            verbose: process.env.NODE_ENV === 'development' ? console.log : null,
-        },
-    },
+    // SSL — enabled automatically in production and when DB_SSL=true
+    ssl: (process.env.NODE_ENV || 'development') === 'production'
+        || process.env.DB_SSL === 'true',
 
-    // PostgreSQL Configuration (for production)
-    postgres: {
-        host: process.env.DB_HOST || 'localhost',
-        port: parseInt(process.env.DB_PORT || '5432'),
-        database: process.env.DB_NAME || 'ai_cfo_enterprise',
-        username: process.env.DB_USER || 'postgres',
-        password: process.env.DB_PASSWORD || 'postgres',
-        options: {
-            dialect: 'postgres',
-            logging: process.env.NODE_ENV === 'development' ? console.log : false,
-            pool: {
-                max: 10,
-                min: 0,
-                acquire: 30000,
-                idle: 10000,
-            },
-        },
-    },
-
-    // Connection pool settings (for both SQLite and PostgreSQL)
+    // Pool tuning
     pool: {
-        max: 10,
+        max: 20,
         min: 0,
-        acquire: 30000,
-        idle: 10000,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 10000,
     },
 
-    // Migration settings
+    // Migrations
     migrations: {
         tableName: 'migrations',
-        directory: path.join(__dirname, '../infrastructure/database/sqlite/migrations'),
+        directory: path.join(__dirname, '../infrastructure/database/migrations'),
     },
 
-    // Seeding settings
-    seeds: {
-        directory: path.join(__dirname, '../../scripts/seeds'),
-    },
-
-    // Database timezone
+    // Timezone
     timezone: 'Africa/Lagos',
 };
 
-/**
- * Get the appropriate database configuration based on environment
- * @returns {Object} Database configuration
- */
 function getDatabaseConfig() {
-    const env = process.env.NODE_ENV || 'development';
-
-    if (config.dialect === 'postgres' && env === 'production') {
-        return {
-            ...config.postgres,
-            dialect: 'postgres',
-            pool: config.pool,
-            timezone: config.timezone,
-        };
+    if (!config.url) {
+        throw new Error('DATABASE_URL is not set');
     }
-
     return {
-        ...config.sqlite,
-        dialect: 'sqlite',
-        pool: config.pool,
-        timezone: config.timezone,
+        connectionString: config.url,
+        ssl: config.ssl ? { rejectUnauthorized: false } : false,
+        ...config.pool,
     };
-}
-
-/**
- * Get database connection URI
- * @returns {string} Connection URI
- */
-function getDatabaseURI() {
-    if (config.dialect === 'postgres') {
-        const { username, password, host, port, database } = config.postgres;
-        return `postgresql://${username}:${password}@${host}:${port}/${database}`;
-    }
-
-    const { storage } = config.sqlite;
-    return `sqlite:${storage}`;
 }
 
 module.exports = {
     config,
     getDatabaseConfig,
-    getDatabaseURI,
-    dialect: config.dialect,
 };

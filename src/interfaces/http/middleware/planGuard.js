@@ -1,26 +1,10 @@
 // src/interfaces/http/middleware/planGuard.js
-// v1.0.0-prod — Route-level plan enforcement
-//
-// Behavior:
-//   • No subscription → 403 upgradeRequired: NO_SUBSCRIPTION
-//   • Read-only mode (expired trial/subscription):
-//       - GET requests allowed (view-only)
-//       - POST/PUT/PATCH/DELETE blocked with TRIAL_EXPIRED
-//   • Feature not in plan → 403 upgradeRequired: PLAN_UPGRADE_REQUIRED
-//
-// Requires authMiddleware to have run first (req.user must be populated).
+// v1.1.0-prod — Postgres async. Awaits findActiveByBusinessId.
 
 const SubscriptionRepository = require('../../../infrastructure/database/sqlite/repositories/SubscriptionRepository');
-const plans = require('../../../config/plans');
 
 const subscriptionRepo = new SubscriptionRepository();
 
-/**
- * @param {Object} options
- * @param {string} options.feature - Feature key to check (e.g., 'analytics')
- * @param {boolean} [options.allowReadOnly=true] - Allow GET requests in read-only mode
- * @returns {Function} Express middleware
- */
 const planGuard = ({ feature, allowReadOnly = true } = {}) => {
     if (!feature) {
         throw new Error('planGuard: `feature` option is required');
@@ -30,7 +14,6 @@ const planGuard = ({ feature, allowReadOnly = true } = {}) => {
         try {
             const businessId = req.user?.businessId;
 
-            // ── No auth context
             if (!businessId) {
                 return res.status(401).json({
                     success: false,
@@ -38,10 +21,8 @@ const planGuard = ({ feature, allowReadOnly = true } = {}) => {
                 });
             }
 
-            // ── Load subscription
-            const subscription = subscriptionRepo.findActiveByBusinessId(businessId);
+            const subscription = await subscriptionRepo.findActiveByBusinessId(businessId);
 
-            // ── No subscription
             if (!subscription) {
                 return res.status(403).json({
                     success: false,
@@ -51,9 +32,7 @@ const planGuard = ({ feature, allowReadOnly = true } = {}) => {
                 });
             }
 
-            // ── Read-only mode
             if (subscription.isReadOnly()) {
-                // Allow safe reads
                 if (allowReadOnly && req.method === 'GET') {
                     return next();
                 }
@@ -66,7 +45,6 @@ const planGuard = ({ feature, allowReadOnly = true } = {}) => {
                 });
             }
 
-            // ── Feature check (SSOT via plans.js)
             if (!subscription.allows(feature)) {
                 return res.status(403).json({
                     success: false,
@@ -78,7 +56,6 @@ const planGuard = ({ feature, allowReadOnly = true } = {}) => {
                 });
             }
 
-            // ── Access granted
             return next();
         } catch (error) {
             console.error('❌ [planGuard] Error:', error.message);

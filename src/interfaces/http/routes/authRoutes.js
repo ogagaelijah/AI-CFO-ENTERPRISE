@@ -1,5 +1,5 @@
 // src/interfaces/http/routes/authRoutes.js
-// v3.1.0-prod — Enumeration-safe, security-logged, email-verified, auto-trial
+// v3.2.0-prod — Postgres-ready. Await on async repository calls.
 
 const express = require('express');
 const router = express.Router();
@@ -9,8 +9,8 @@ const jwt = require('jsonwebtoken');
 
 const UserRepository = require('../../../infrastructure/database/sqlite/repositories/UserRepository');
 const BusinessRepository = require('../../../infrastructure/database/sqlite/repositories/BusinessRepository');
-const SecurityEventService = require('../../../infrastructure/services/security/SecurityEventService');
 const SubscriptionRepository = require('../../../infrastructure/database/sqlite/repositories/SubscriptionRepository');
+const SecurityEventService = require('../../../infrastructure/services/security/SecurityEventService');
 const plans = require('../../../config/plans');
 
 const userRepo = new UserRepository();
@@ -65,7 +65,7 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
 
-    const emailExists = userRepo.emailExists(email);
+    const emailExists = await userRepo.emailExists(email);
     if (emailExists) {
       securityEvents.log({
         eventType: 'REGISTER_DUPLICATE_EMAIL',
@@ -105,16 +105,14 @@ router.post('/register', async (req, res) => {
       industry,
     });
 
-    // ─────────────────────────────────────────────
     // Auto-create 14-day Pro trial
-    // ─────────────────────────────────────────────
-    const trialPlanId = plans.getTrialPlan(); // 'pro'
+    const trialPlanId = plans.getTrialPlan();
     const trialPlan = plans.getPlan(trialPlanId);
-    const trialDays = plans.getTrialDays(trialPlanId); // 14
+    const trialDays = plans.getTrialDays(trialPlanId);
     const trialEndDate = new Date();
     trialEndDate.setDate(trialEndDate.getDate() + trialDays);
 
-    subscriptionRepo.create({
+    await subscriptionRepo.create({
       businessId: business.id,
       planId: trialPlanId,
       status: 'trial',
@@ -174,7 +172,7 @@ router.post('/register', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
-// POST /login  (unchanged from previous)
+// POST /login
 // ─────────────────────────────────────────────
 router.post('/login', async (req, res) => {
   try {
@@ -242,7 +240,7 @@ router.post('/login', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
-// GET /me  (unchanged)
+// GET /me
 // ─────────────────────────────────────────────
 router.get('/me', async (req, res) => {
   try {

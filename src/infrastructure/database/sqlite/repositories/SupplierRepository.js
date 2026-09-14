@@ -1,4 +1,5 @@
 // src/infrastructure/database/sqlite/repositories/SupplierRepository.js
+// Postgres async. Same logic as SQLite.
 
 const BaseRepository = require('./BaseRepository');
 
@@ -47,147 +48,129 @@ class Supplier {
 }
 
 class SupplierRepository extends BaseRepository {
-    constructor(db = null) {
-        super('suppliers', db);
+    constructor() {
+        super('suppliers');
     }
 
-    create(supplierData) {
-        const stmt = this.db.prepare(`
-            INSERT INTO suppliers (
+    async create(supplierData) {
+        const result = await this._query(
+            `INSERT INTO suppliers (
                 business_id, name, phone, email, address, tax_id, notes, metadata
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `);
-
-        const result = stmt.run(
-            supplierData.businessId,
-            supplierData.name,
-            supplierData.phone || null,
-            supplierData.email || null,
-            supplierData.address || null,
-            supplierData.taxId || null,
-            supplierData.notes || '',
-            JSON.stringify(supplierData.metadata || {})
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING id`,
+            [
+                supplierData.businessId,
+                supplierData.name,
+                supplierData.phone || null,
+                supplierData.email || null,
+                supplierData.address || null,
+                supplierData.taxId || null,
+                supplierData.notes || '',
+                JSON.stringify(supplierData.metadata || {}),
+            ]
         );
-
-        return this.findById(result.lastInsertRowid);
+        return this.findById(result.rows[0].id);
     }
 
-    findById(id) {
-        const result = this.db.prepare('SELECT * FROM suppliers WHERE id = ?').get(id);
-        if (!result) return null;
-        return this._hydrate(result);
+    async findById(id) {
+        const result = await this._query('SELECT * FROM suppliers WHERE id = $1', [id]);
+        if (!result.rows[0]) return null;
+        return this._hydrate(result.rows[0]);
     }
 
-    findByBusinessId(businessId, options = {}) {
-        let query = 'SELECT * FROM suppliers WHERE business_id = ?';
+    async findByBusinessId(businessId, options = {}) {
+        let query = 'SELECT * FROM suppliers WHERE business_id = $1';
         const params = [businessId];
+        let i = 2;
 
         if (options.search) {
-            query += ' AND (name LIKE ? OR phone LIKE ? OR email LIKE ?)';
-            const searchTerm = `%${options.search}%`;
-            params.push(searchTerm, searchTerm, searchTerm);
+            query += ` AND (name LIKE $${i} OR phone LIKE $${i} OR email LIKE $${i})`;
+            params.push(`%${options.search}%`);
+            i++;
         }
 
         query += ' ORDER BY name ASC';
 
         if (options.limit) {
-            query += ' LIMIT ?';
+            query += ` LIMIT $${i++}`;
             params.push(options.limit);
         }
-
         if (options.offset) {
-            query += ' OFFSET ?';
+            query += ` OFFSET $${i++}`;
             params.push(options.offset);
         }
 
-        const results = this.db.prepare(query).all(...params);
-        return results.map(r => this._hydrate(r));
+        const result = await this._query(query, params);
+        return result.rows.map(r => this._hydrate(r));
     }
 
-    findByName(businessId, name) {
-        const result = this.db.prepare(
-            'SELECT * FROM suppliers WHERE business_id = ? AND name = ?'
-        ).get(businessId, name);
-
-        if (!result) return null;
-        return this._hydrate(result);
+    async findByName(businessId, name) {
+        const result = await this._query(
+            'SELECT * FROM suppliers WHERE business_id = $1 AND name = $2',
+            [businessId, name]
+        );
+        if (!result.rows[0]) return null;
+        return this._hydrate(result.rows[0]);
     }
 
-    search(businessId, searchTerm, options = {}) {
+    async search(businessId, searchTerm, options = {}) {
         return this.findByBusinessId(businessId, { ...options, search: searchTerm });
     }
 
-    update(id, data) {
+    async update(id, data) {
         const fields = [];
         const values = [];
+        let i = 1;
 
-        if (data.name !== undefined) {
-            fields.push('name = ?');
-            values.push(data.name);
-        }
-        if (data.phone !== undefined) {
-            fields.push('phone = ?');
-            values.push(data.phone);
-        }
-        if (data.email !== undefined) {
-            fields.push('email = ?');
-            values.push(data.email);
-        }
-        if (data.address !== undefined) {
-            fields.push('address = ?');
-            values.push(data.address);
-        }
-        if (data.taxId !== undefined) {
-            fields.push('tax_id = ?');
-            values.push(data.taxId);
-        }
-        if (data.notes !== undefined) {
-            fields.push('notes = ?');
-            values.push(data.notes);
-        }
+        if (data.name !== undefined) { fields.push(`name = $${i++}`); values.push(data.name); }
+        if (data.phone !== undefined) { fields.push(`phone = $${i++}`); values.push(data.phone); }
+        if (data.email !== undefined) { fields.push(`email = $${i++}`); values.push(data.email); }
+        if (data.address !== undefined) { fields.push(`address = $${i++}`); values.push(data.address); }
+        if (data.taxId !== undefined) { fields.push(`tax_id = $${i++}`); values.push(data.taxId); }
+        if (data.notes !== undefined) { fields.push(`notes = $${i++}`); values.push(data.notes); }
         if (data.metadata !== undefined) {
-            fields.push('metadata = ?');
+            fields.push(`metadata = $${i++}`);
             values.push(JSON.stringify(data.metadata));
         }
 
-        fields.push('updated_at = CURRENT_TIMESTAMP');
+        fields.push('updated_at = NOW()');
 
-        if (fields.length === 0) {
+        if (fields.length === 1) {
             throw new Error('No fields to update');
         }
 
         values.push(id);
 
-        const stmt = this.db.prepare(
-            `UPDATE suppliers SET ${fields.join(', ')} WHERE id = ?`
+        const result = await this._query(
+            `UPDATE suppliers SET ${fields.join(', ')} WHERE id = $${i}`,
+            values
         );
-        const result = stmt.run(...values);
 
-        if (result.changes === 0) {
+        if (result.rowCount === 0) {
             throw new Error('Supplier not found or no changes made');
         }
 
         return this.findById(id);
     }
 
-    delete(id) {
-        const stmt = this.db.prepare('DELETE FROM suppliers WHERE id = ?');
-        const result = stmt.run(id);
-        return result.changes > 0;
+    async delete(id) {
+        const result = await this._query('DELETE FROM suppliers WHERE id = $1', [id]);
+        return result.rowCount > 0;
     }
 
-    countByBusinessId(businessId, filters = {}) {
-        let query = 'SELECT COUNT(*) as count FROM suppliers WHERE business_id = ?';
+    async countByBusinessId(businessId, filters = {}) {
+        let query = 'SELECT COUNT(*)::int as count FROM suppliers WHERE business_id = $1';
         const params = [businessId];
+        let i = 2;
 
         if (filters.search) {
-            query += ' AND (name LIKE ? OR phone LIKE ? OR email LIKE ?)';
-            const searchTerm = `%${filters.search}%`;
-            params.push(searchTerm, searchTerm, searchTerm);
+            query += ` AND (name LIKE $${i} OR phone LIKE $${i} OR email LIKE $${i})`;
+            params.push(`%${filters.search}%`);
+            i++;
         }
 
-        const result = this.db.prepare(query).get(...params);
-        return result?.count || 0;
+        const result = await this._query(query, params);
+        return result.rows[0]?.count || 0;
     }
 
     _hydrate(row) {
@@ -200,7 +183,7 @@ class SupplierRepository extends BaseRepository {
             address: row.address,
             taxId: row.tax_id,
             notes: row.notes,
-            metadata: row.metadata ? JSON.parse(row.metadata) : {},
+            metadata: row.metadata ? (typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata) : {},
             createdAt: new Date(row.created_at),
             updatedAt: new Date(row.updated_at),
         });

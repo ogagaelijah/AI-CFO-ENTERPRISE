@@ -1,179 +1,188 @@
 // src/infrastructure/database/sqlite/repositories/CreditorRepository.js
-// v3.0.0-prod — Strict multi-tenant (business_id preferred, user_id kept for compatibility)
+// v3.1.0-prod — Postgres async. Same logic as SQLite v3.0.0.
 
 const BaseRepository = require('./BaseRepository');
 
 class CreditorRepository extends BaseRepository {
-    constructor(db = null) {
-        super('creditors', db);
+    constructor() {
+        super('creditors');
     }
 
     _hydrate(row) {
         if (!row) return null;
         return {
             ...row,
-            total_owed: row.total_owed || 0,
-            amount_paid: row.amount_paid || 0,
-            balance_remaining: row.balance_remaining || 0,
+            total_owed: Number(row.total_owed) || 0,
+            amount_paid: Number(row.amount_paid) || 0,
+            balance_remaining: Number(row.balance_remaining) || 0,
         };
     }
 
-    create(creditorData) {
-        const stmt = this.db.prepare(`
-            INSERT INTO creditors (
+    async create(creditorData) {
+        const result = await this._query(
+            `INSERT INTO creditors (
                 user_id, business_id, supplier_id, supplier_name,
                 total_owed, amount_paid, balance_remaining,
                 status, due_date, reference_type, reference_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `);
-
-        const result = stmt.run(
-            creditorData.userId ?? creditorData.user_id ?? null,
-            creditorData.businessId ?? creditorData.business_id ?? null,
-            creditorData.supplier_id ?? creditorData.supplierId ?? null,
-            creditorData.supplier_name ?? creditorData.supplierName,
-            creditorData.total_owed ?? creditorData.totalOwed,
-            creditorData.amount_paid ?? creditorData.amountPaid ?? 0,
-            creditorData.balance_remaining ?? creditorData.balanceRemaining ?? creditorData.total_owed ?? creditorData.totalOwed,
-            creditorData.status || 'ACTIVE',
-            creditorData.due_date ?? creditorData.dueDate ?? null,
-            creditorData.reference_type ?? creditorData.referenceType ?? null,
-            creditorData.reference_id ?? creditorData.referenceId ?? null
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            RETURNING id`,
+            [
+                creditorData.userId ?? creditorData.user_id ?? null,
+                creditorData.businessId ?? creditorData.business_id ?? null,
+                creditorData.supplier_id ?? creditorData.supplierId ?? null,
+                creditorData.supplier_name ?? creditorData.supplierName,
+                creditorData.total_owed ?? creditorData.totalOwed,
+                creditorData.amount_paid ?? creditorData.amountPaid ?? 0,
+                creditorData.balance_remaining ?? creditorData.balanceRemaining ?? creditorData.total_owed ?? creditorData.totalOwed,
+                creditorData.status || 'ACTIVE',
+                creditorData.due_date ?? creditorData.dueDate ?? null,
+                creditorData.reference_type ?? creditorData.referenceType ?? null,
+                creditorData.reference_id ?? creditorData.referenceId ?? null,
+            ]
         );
-
-        return this.findById(result.lastInsertRowid);
+        return this.findById(result.rows[0].id);
     }
 
-    findById(id) {
-        const row = this.db.prepare('SELECT * FROM creditors WHERE id = ?').get(id);
-        return this._hydrate(row);
+    async findById(id) {
+        const result = await this._query('SELECT * FROM creditors WHERE id = $1', [id]);
+        return this._hydrate(result.rows[0] || null);
     }
 
-    findByBusinessId(businessId) {
-        const rows = this.db.prepare(
-            'SELECT * FROM creditors WHERE business_id = ? ORDER BY balance_remaining DESC'
-        ).all(businessId);
-        return rows.map(row => this._hydrate(row));
+    async findByBusinessId(businessId) {
+        const result = await this._query(
+            'SELECT * FROM creditors WHERE business_id = $1 ORDER BY balance_remaining DESC',
+            [businessId]
+        );
+        return result.rows.map(row => this._hydrate(row));
     }
 
-    findByUserId(userId) {
-        const rows = this.db.prepare(
-            'SELECT * FROM creditors WHERE user_id = ? ORDER BY balance_remaining DESC'
-        ).all(userId);
-        return rows.map(row => this._hydrate(row));
+    async findByUserId(userId) {
+        const result = await this._query(
+            'SELECT * FROM creditors WHERE user_id = $1 ORDER BY balance_remaining DESC',
+            [userId]
+        );
+        return result.rows.map(row => this._hydrate(row));
     }
 
-    findByFilters({ businessId = null, userId = null, status, limit = 50, offset = 0 }) {
+    async findByFilters({ businessId = null, userId = null, status, limit = 50, offset = 0 }) {
         let sql = 'SELECT * FROM creditors WHERE 1=1';
         const params = [];
+        let i = 1;
 
         if (businessId) {
-            sql += ' AND business_id = ?';
+            sql += ` AND business_id = $${i++}`;
             params.push(businessId);
         } else if (userId) {
-            sql += ' AND user_id = ?';
+            sql += ` AND user_id = $${i++}`;
             params.push(userId);
         }
 
         if (status) {
-            sql += ' AND status = ?';
+            sql += ` AND status = $${i++}`;
             params.push(status);
         }
 
-        sql += ' ORDER BY balance_remaining DESC LIMIT ? OFFSET ?';
+        sql += ` ORDER BY balance_remaining DESC LIMIT $${i++} OFFSET $${i++}`;
         params.push(limit, offset);
 
-        const rows = this.db.prepare(sql).all(...params);
-        return rows.map(row => this._hydrate(row));
+        const result = await this._query(sql, params);
+        return result.rows.map(row => this._hydrate(row));
     }
 
-    countByFilters({ businessId = null, userId = null, status }) {
-        let sql = 'SELECT COUNT(*) as total FROM creditors WHERE 1=1';
+    async countByFilters({ businessId = null, userId = null, status }) {
+        let sql = 'SELECT COUNT(*)::int as total FROM creditors WHERE 1=1';
         const params = [];
+        let i = 1;
 
         if (businessId) {
-            sql += ' AND business_id = ?';
+            sql += ` AND business_id = $${i++}`;
             params.push(businessId);
         } else if (userId) {
-            sql += ' AND user_id = ?';
+            sql += ` AND user_id = $${i++}`;
             params.push(userId);
         }
 
         if (status) {
-            sql += ' AND status = ?';
+            sql += ` AND status = $${i++}`;
             params.push(status);
         }
 
-        const result = this.db.prepare(sql).get(...params);
-        return result?.total || 0;
+        const result = await this._query(sql, params);
+        return result.rows[0]?.total || 0;
     }
 
-    findActive(businessId) {
-        const rows = this.db.prepare(`
-            SELECT * FROM creditors
-            WHERE business_id = ?
-              AND balance_remaining > 0
-              AND status != 'PAID'
-            ORDER BY balance_remaining DESC
-        `).all(businessId);
-        return rows.map(row => this._hydrate(row));
+    async findActive(businessId) {
+        const result = await this._query(
+            `SELECT * FROM creditors
+             WHERE business_id = $1
+               AND balance_remaining > 0
+               AND status != 'PAID'
+             ORDER BY balance_remaining DESC`,
+            [businessId]
+        );
+        return result.rows.map(row => this._hydrate(row));
     }
 
-    getTotalOutstanding(businessId) {
-        const result = this.db.prepare(`
-            SELECT COALESCE(SUM(balance_remaining), 0) as total_outstanding
-            FROM creditors
-            WHERE business_id = ?
-              AND balance_remaining > 0
-              AND status != 'PAID'
-        `).get(businessId);
-        return result?.total_outstanding || 0;
+    async getTotalOutstanding(businessId) {
+        const result = await this._query(
+            `SELECT COALESCE(SUM(balance_remaining), 0) as total_outstanding
+             FROM creditors
+             WHERE business_id = $1
+               AND balance_remaining > 0
+               AND status != 'PAID'`,
+            [businessId]
+        );
+        return Number(result.rows[0]?.total_outstanding) || 0;
     }
 
-    findOverdue(businessId) {
+    async findOverdue(businessId) {
         const today = new Date().toISOString().split('T')[0];
-        const rows = this.db.prepare(`
-            SELECT * FROM creditors
-            WHERE business_id = ?
-              AND balance_remaining > 0
-              AND status != 'PAID'
-              AND due_date IS NOT NULL
-              AND DATE(due_date) < DATE(?)
-            ORDER BY due_date ASC
-        `).all(businessId, today);
-        return rows.map(row => this._hydrate(row));
+        const result = await this._query(
+            `SELECT * FROM creditors
+             WHERE business_id = $1
+               AND balance_remaining > 0
+               AND status != 'PAID'
+               AND due_date IS NOT NULL
+               AND DATE(due_date) < DATE($2)
+             ORDER BY due_date ASC`,
+            [businessId, today]
+        );
+        return result.rows.map(row => this._hydrate(row));
     }
 
-    findBySupplierName(businessId, supplierName) {
-        const rows = this.db.prepare(`
-            SELECT * FROM creditors
-            WHERE business_id = ? AND supplier_name LIKE ?
-            ORDER BY balance_remaining DESC
-        `).all(businessId, `%${supplierName}%`);
-        return rows.map(row => this._hydrate(row));
+    async findBySupplierName(businessId, supplierName) {
+        const result = await this._query(
+            `SELECT * FROM creditors
+             WHERE business_id = $1 AND supplier_name LIKE $2
+             ORDER BY balance_remaining DESC`,
+            [businessId, `%${supplierName}%`]
+        );
+        return result.rows.map(row => this._hydrate(row));
     }
 
-    findBySupplierId(businessId, supplierId) {
-        const rows = this.db.prepare(`
-            SELECT * FROM creditors
-            WHERE business_id = ? AND supplier_id = ?
-            ORDER BY balance_remaining DESC
-        `).all(businessId, supplierId);
-        return rows.map(row => this._hydrate(row));
+    async findBySupplierId(businessId, supplierId) {
+        const result = await this._query(
+            `SELECT * FROM creditors
+             WHERE business_id = $1 AND supplier_id = $2
+             ORDER BY balance_remaining DESC`,
+            [businessId, supplierId]
+        );
+        return result.rows.map(row => this._hydrate(row));
     }
 
-    findByReference(businessId, referenceType, referenceId) {
-        const row = this.db.prepare(`
-            SELECT * FROM creditors
-            WHERE business_id = ?
-              AND reference_type = ?
-              AND reference_id = ?
-        `).get(businessId, referenceType, referenceId);
-        return this._hydrate(row);
+    async findByReference(businessId, referenceType, referenceId) {
+        const result = await this._query(
+            `SELECT * FROM creditors
+             WHERE business_id = $1
+               AND reference_type = $2
+               AND reference_id = $3`,
+            [businessId, referenceType, referenceId]
+        );
+        return this._hydrate(result.rows[0] || null);
     }
 
-    recordPayment(creditorId, amount) {
-        const creditor = this.findById(creditorId);
+    async recordPayment(creditorId, amount) {
+        const creditor = await this.findById(creditorId);
         if (!creditor) throw new Error('Creditor not found');
 
         const newPaid = (creditor.amount_paid || 0) + amount;
@@ -184,25 +193,27 @@ class CreditorRepository extends BaseRepository {
             status = 'PAID';
         } else if (creditor.due_date) {
             const today = new Date().toISOString().split('T')[0];
-            if (creditor.due_date.split('T')[0] < today) {
+            const dueDateStr = String(creditor.due_date).split('T')[0];
+            if (dueDateStr < today) {
                 status = 'OVERDUE';
             }
         }
 
-        this.db.prepare(`
-            UPDATE creditors
-            SET amount_paid = ?,
-                balance_remaining = ?,
-                status = ?,
-                last_payment_date = ?,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-        `).run(newPaid, newBalance, status, new Date().toISOString(), creditorId);
+        await this._query(
+            `UPDATE creditors
+             SET amount_paid = $1,
+                 balance_remaining = $2,
+                 status = $3,
+                 last_payment_date = $4,
+                 updated_at = NOW()
+             WHERE id = $5`,
+            [newPaid, newBalance, status, new Date().toISOString(), creditorId]
+        );
 
         return this.findById(creditorId);
     }
 
-    createFromPurchase(purchaseData) {
+    async createFromPurchase(purchaseData) {
         return this.create({
             user_id: purchaseData.user_id ?? purchaseData.userId,
             business_id: purchaseData.business_id ?? purchaseData.businessId,
@@ -218,34 +229,36 @@ class CreditorRepository extends BaseRepository {
         });
     }
 
-    getSummary(businessId) {
-        const result = this.db.prepare(`
-            SELECT
-                COUNT(*) as total_creditors,
+    async getSummary(businessId) {
+        const result = await this._query(
+            `SELECT
+                COUNT(*)::int as total_creditors,
                 COALESCE(SUM(total_owed), 0) as total_owed,
                 COALESCE(SUM(amount_paid), 0) as total_paid,
                 COALESCE(SUM(balance_remaining), 0) as total_outstanding,
-                COUNT(CASE WHEN balance_remaining > 0 AND status != 'PAID' THEN 1 END) as active_count,
-                COUNT(CASE WHEN balance_remaining <= 0 OR status = 'PAID' THEN 1 END) as paid_count,
-                COUNT(CASE WHEN status = 'OVERDUE' AND balance_remaining > 0 THEN 1 END) as overdue_count
-            FROM creditors
-            WHERE business_id = ?
-        `).get(businessId);
+                COUNT(CASE WHEN balance_remaining > 0 AND status != 'PAID' THEN 1 END)::int as active_count,
+                COUNT(CASE WHEN balance_remaining <= 0 OR status = 'PAID' THEN 1 END)::int as paid_count,
+                COUNT(CASE WHEN status = 'OVERDUE' AND balance_remaining > 0 THEN 1 END)::int as overdue_count
+             FROM creditors
+             WHERE business_id = $1`,
+            [businessId]
+        );
 
+        const r = result.rows[0] || {};
         return {
-            total_creditors: result?.total_creditors || 0,
-            total_owed: result?.total_owed || 0,
-            total_paid: result?.total_paid || 0,
-            total_outstanding: result?.total_outstanding || 0,
-            active_count: result?.active_count || 0,
-            paid_count: result?.paid_count || 0,
-            overdue_count: result?.overdue_count || 0,
+            total_creditors: r.total_creditors || 0,
+            total_owed: Number(r.total_owed) || 0,
+            total_paid: Number(r.total_paid) || 0,
+            total_outstanding: Number(r.total_outstanding) || 0,
+            active_count: r.active_count || 0,
+            paid_count: r.paid_count || 0,
+            overdue_count: r.overdue_count || 0,
         };
     }
 
-    delete(id) {
-        const result = this.db.prepare('DELETE FROM creditors WHERE id = ?').run(id);
-        return result.changes > 0;
+    async delete(id) {
+        const result = await this._query('DELETE FROM creditors WHERE id = $1', [id]);
+        return result.rowCount > 0;
     }
 }
 

@@ -1,69 +1,97 @@
 // src/interfaces/telegram/sessionManager.js
+// Hybrid session manager: in-memory primary (sync API) + Postgres write-behind.
+// Callers do NOT need to await. Persistence happens in the background.
 
-const { getDatabase } = require('../../infrastructure/database/sqlite/connection');
+const { query } = require('../../infrastructure/database/sqlite/connection');
 
 class SessionManager {
     constructor() {
-        this.db = getDatabase();
         this.sessions = new Map();
-        this.initTable();
+        this._loaded = new Set();
     }
 
-    initTable() {
-        this.db.exec(`
-            CREATE TABLE IF NOT EXISTS sessions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                telegram_id INTEGER UNIQUE NOT NULL,
-                state TEXT NOT NULL,
-                data JSON,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        `);
+    /**
+     * Internal: load from DB into cache if not already loaded.
+     * Fire-and-forget — callers can't await, but the next call will hit the cache.
+     */
+    _ensureLoaded(telegramId) {
+        if (this._loaded.has(telegramId)) return;
+        this._loaded.add(telegramId);
+
+        query('SELECT state, data FROM sessions WHERE telegram_id = $1', [telegramId])
+            .then((result) => {
+                const row = result.rows[0];
+                if (row) {
+                    this.sessions.set(telegramId, {
+                        state: row.state,
+                        data: row.data
+                            ? (typeof row.data === 'string' ? JSON.parse(row.data) : row.data)
+                            : {},
+                    });
+                }
+            })
+            .catch((err) => {
+                console.warn('[sessionManager] load failed:', err.message);
+            });
+    }
+
+    /**
+     * Internal: write to DB in the background. Never blocks callers.
+     */
+    _persist(telegramId) {
+        const session = this.sessions.get(telegramId);
+        if (!session) return;
+
+        (async () => {
+            try {
+                const existing = await query(
+                    'SELECT id FROM sessions WHERE telegram_id = $1',
+                    [telegramId]
+                );
+
+                if (existing.rows[0]) {
+                    await query(
+                        `UPDATE sessions
+                         SET state = $1, data = $2, updated_at = NOW()
+                         WHERE telegram_id = $3`,
+                        [session.state, JSON.stringify(session.data || {}), telegramId]
+                    );
+                } else {
+                    await query(
+                        `INSERT INTO sessions (telegram_id, state, data)
+                         VALUES ($1, $2, $3)`,
+                        [telegramId, session.state, JSON.stringify(session.data || {})]
+                    );
+                }
+            } catch (err) {
+                console.warn('[sessionManager] persist failed:', err.message);
+            }
+        })();
+    }
+
+    _deleteFromDb(telegramId) {
+        query('DELETE FROM sessions WHERE telegram_id = $1', [telegramId])
+            .catch((err) => console.warn('[sessionManager] delete failed:', err.message));
     }
 
     getSession(telegramId) {
+        this._ensureLoaded(telegramId);
         if (this.sessions.has(telegramId)) {
             return { ...this.sessions.get(telegramId) };
         }
-
-        const stmt = this.db.prepare('SELECT * FROM sessions WHERE telegram_id = ?');
-        const row = stmt.get(telegramId);
-
-        if (row) {
-            const session = {
-                state: row.state,
-                data: row.data ? JSON.parse(row.data) : {},
-            };
-            this.sessions.set(telegramId, session);
-            return { ...session };
-        }
-
         return null;
     }
 
     setSession(telegramId, session) {
-        const existing = this.db.prepare('SELECT id FROM sessions WHERE telegram_id = ?').get(telegramId);
-
-        if (existing) {
-            this.db.prepare(`
-                UPDATE sessions 
-                SET state = ?, data = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE telegram_id = ?
-            `).run(session.state, JSON.stringify(session.data || {}), telegramId);
-        } else {
-            this.db.prepare(`
-                INSERT INTO sessions (telegram_id, state, data)
-                VALUES (?, ?, ?)
-            `).run(telegramId, session.state, JSON.stringify(session.data || {}));
-        }
-
         this.sessions.set(telegramId, { ...session });
+        this._loaded.add(telegramId);
+        this._persist(telegramId);
     }
 
     clearSession(telegramId) {
-        this.db.prepare('DELETE FROM sessions WHERE telegram_id = ?').run(telegramId);
         this.sessions.delete(telegramId);
+        this._loaded.delete(telegramId);
+        this._deleteFromDb(telegramId);
     }
 
     setState(telegramId, state) {

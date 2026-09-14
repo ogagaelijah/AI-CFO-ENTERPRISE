@@ -1,11 +1,5 @@
 // src/infrastructure/database/sqlite/repositories/SubscriptionRepository.js
-// v2.0.0-prod — SSOT-driven, read-only aware, backward-compatible export
-//
-// Features:
-//   • No hardcoded feature maps (pulled from src/config/plans.js)
-//   • isExpired / isReadOnly computed dynamically (no job dependency)
-//   • billing_cycle support
-//   • Backward-compatible export (default = class, named = class)
+// v3.0.0-prod — Postgres async. Same logic as SQLite v2.0.0.
 
 const BaseRepository = require('./BaseRepository');
 const plans = require('../../../../config/plans');
@@ -18,8 +12,8 @@ class Subscription {
         this.id = data.id ?? null;
         this.businessId = data.businessId ?? null;
         this.planId = data.planId ?? 'free';
-        this.status = data.status ?? 'trial'; // 'trial' | 'active' | 'cancelled' | 'expired'
-        this.billingCycle = data.billingCycle ?? 'monthly'; // 'trial' | 'monthly' | 'yearly'
+        this.status = data.status ?? 'trial';
+        this.billingCycle = data.billingCycle ?? 'monthly';
         this.startDate = data.startDate ? new Date(data.startDate) : new Date();
         this.endDate = data.endDate ? new Date(data.endDate) : null;
         this.trialEndDate = data.trialEndDate ? new Date(data.trialEndDate) : null;
@@ -28,33 +22,17 @@ class Subscription {
         this.updatedAt = data.updatedAt ? new Date(data.updatedAt) : null;
     }
 
-    /**
-     * Is the trial active right now?
-     * (status=trial AND now < trialEndDate)
-     */
     isTrialActive() {
         if (this.status !== 'trial' || !this.trialEndDate) return false;
         return Date.now() < this.trialEndDate.getTime();
     }
 
-    /**
-     * Is the paid subscription still in its paid window?
-     * (status=active AND endDate in the future)
-     */
     isActivePaid() {
         if (this.status !== 'active') return false;
-        if (!this.endDate) return true; // no expiry = perpetual
+        if (!this.endDate) return true;
         return Date.now() < this.endDate.getTime();
     }
 
-    /**
-     * Is this subscription effectively expired?
-     * Covers:
-     *   • status='expired' explicitly set
-     *   • status='trial' AND trial_end_date in the past
-     *   • status='active' AND end_date in the past
-     *   • status='cancelled'
-     */
     isExpired() {
         if (this.status === 'expired' || this.status === 'cancelled') return true;
 
@@ -71,43 +49,29 @@ class Subscription {
         return false;
     }
 
-    /**
-     * Is the business in read-only mode?
-     * (subscription is expired → no new writes allowed)
-     */
     isReadOnly() {
         return this.isExpired();
     }
 
-    /**
-     * Days remaining in trial or paid cycle. 0 if expired.
-     */
     daysRemaining() {
         if (this.isExpired()) return 0;
         const end =
             this.status === 'trial' && this.trialEndDate
                 ? this.trialEndDate
                 : this.endDate;
-        if (!end) return null; // perpetual
+        if (!end) return null;
         const ms = end.getTime() - Date.now();
         return Math.max(0, Math.ceil(ms / (1000 * 60 * 60 * 24)));
     }
 
-    /**
-     * Does this subscription allow the given feature right now?
-     * Uses plans.js SSOT.
-     */
     allows(feature) {
         if (this.isReadOnly()) return false;
         const effectivePlanId = this.isTrialActive()
-            ? plans.getTrialPlan() // trial always grants pro-level access
+            ? plans.getTrialPlan()
             : this.planId;
         return plans.hasFeature(effectivePlanId, feature);
     }
 
-    /**
-     * Get limits for the effective plan.
-     */
     getEffectiveLimits() {
         const effectivePlanId = this.isTrialActive()
             ? plans.getTrialPlan()
@@ -115,9 +79,6 @@ class Subscription {
         return plans.getLimits(effectivePlanId);
     }
 
-    /**
-     * Get features for the effective plan.
-     */
     getEffectiveFeatures() {
         const effectivePlanId = this.isTrialActive()
             ? plans.getTrialPlan()
@@ -177,182 +138,183 @@ class SubscriptionRepository extends BaseRepository {
         });
     }
 
-    /**
-     * Create — uses SSOT for default features.
-     */
-    create(data = {}) {
+    async create(data = {}) {
         const planId = data.planId || 'free';
         const billingCycle = data.billingCycle || (planId === 'pro' && data.status === 'trial' ? 'trial' : 'monthly');
         const features = data.features || plans.getFeatures(planId);
 
-        const stmt = this.db.prepare(`
-            INSERT INTO subscriptions (
+        const result = await this._query(
+            `INSERT INTO subscriptions (
                 business_id, plan_id, status, start_date, end_date,
                 trial_end_date, features, billing_cycle
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `);
-
-        const result = stmt.run(
-            data.businessId,
-            planId,
-            data.status || 'trial',
-            data.startDate ? toISO(data.startDate) : new Date().toISOString(),
-            data.endDate ? toISO(data.endDate) : null,
-            data.trialEndDate ? toISO(data.trialEndDate) : null,
-            JSON.stringify(features),
-            billingCycle
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING id`,
+            [
+                data.businessId,
+                planId,
+                data.status || 'trial',
+                data.startDate ? toISO(data.startDate) : new Date().toISOString(),
+                data.endDate ? toISO(data.endDate) : null,
+                data.trialEndDate ? toISO(data.trialEndDate) : null,
+                JSON.stringify(features),
+                billingCycle,
+            ]
         );
-
-        return this.findById(result.lastInsertRowid);
+        return this.findById(result.rows[0].id);
     }
 
-    findById(id) {
-        const row = this.db.prepare('SELECT * FROM subscriptions WHERE id = ?').get(id);
-        return this._hydrate(row);
+    async findById(id) {
+        const result = await this._query('SELECT * FROM subscriptions WHERE id = $1', [id]);
+        return this._hydrate(result.rows[0] || null);
     }
 
-    findActiveByBusinessId(businessId) {
-        const row = this.db.prepare(`
-            SELECT * FROM subscriptions
-            WHERE business_id = ?
-            AND status IN ('active', 'trial')
-            ORDER BY created_at DESC
-            LIMIT 1
-        `).get(businessId);
-
-        return this._hydrate(row);
+    async findActiveByBusinessId(businessId) {
+        const result = await this._query(
+            `SELECT * FROM subscriptions
+             WHERE business_id = $1
+             AND status IN ('active', 'trial')
+             ORDER BY created_at DESC
+             LIMIT 1`,
+            [businessId]
+        );
+        return this._hydrate(result.rows[0] || null);
     }
 
-    findByBusinessId(businessId, options = {}) {
-        let query = 'SELECT * FROM subscriptions WHERE business_id = ?';
+    async findByBusinessId(businessId, options = {}) {
+        let query = 'SELECT * FROM subscriptions WHERE business_id = $1';
         const params = [businessId];
+        let i = 2;
 
         if (options.status) {
-            query += ' AND status = ?';
+            query += ` AND status = $${i++}`;
             params.push(options.status);
         }
         if (options.planId) {
-            query += ' AND plan_id = ?';
+            query += ` AND plan_id = $${i++}`;
             params.push(options.planId);
         }
 
         query += ' ORDER BY created_at DESC';
+
         if (options.limit) {
-            query += ' LIMIT ?';
+            query += ` LIMIT $${i++}`;
             params.push(options.limit);
         }
         if (options.offset) {
-            query += ' OFFSET ?';
+            query += ` OFFSET $${i++}`;
             params.push(options.offset);
         }
 
-        return this.db.prepare(query).all(...params).map((r) => this._hydrate(r));
+        const result = await this._query(query, params);
+        return result.rows.map(r => this._hydrate(r));
     }
 
-    findByPlanId(planId, options = {}) {
-        let query = 'SELECT * FROM subscriptions WHERE plan_id = ?';
+    async findByPlanId(planId, options = {}) {
+        let query = 'SELECT * FROM subscriptions WHERE plan_id = $1';
         const params = [planId];
+        let i = 2;
 
         if (options.status) {
-            query += ' AND status = ?';
+            query += ` AND status = $${i++}`;
             params.push(options.status);
         }
 
         query += ' ORDER BY created_at DESC';
+
         if (options.limit) {
-            query += ' LIMIT ?';
+            query += ` LIMIT $${i++}`;
             params.push(options.limit);
         }
 
-        return this.db.prepare(query).all(...params).map((r) => this._hydrate(r));
+        const result = await this._query(query, params);
+        return result.rows.map(r => this._hydrate(r));
     }
 
-    /**
-     * Find subscriptions whose trial or paid period has expired.
-     * Useful for a future daily cleanup job.
-     */
-    findExpired(beforeDate = new Date()) {
+    async findExpired(beforeDate = new Date()) {
         const iso = toISO(beforeDate);
-        const rows = this.db.prepare(`
-            SELECT * FROM subscriptions
-            WHERE status IN ('trial', 'active')
-            AND (
-                (status = 'trial' AND trial_end_date IS NOT NULL AND trial_end_date <= ?)
-                OR
-                (status = 'active' AND end_date IS NOT NULL AND end_date <= ?)
-            )
-            ORDER BY created_at ASC
-        `).all(iso, iso);
-        return rows.map((r) => this._hydrate(r));
+        const result = await this._query(
+            `SELECT * FROM subscriptions
+             WHERE status IN ('trial', 'active')
+             AND (
+                 (status = 'trial' AND trial_end_date IS NOT NULL AND trial_end_date <= $1)
+                 OR
+                 (status = 'active' AND end_date IS NOT NULL AND end_date <= $1)
+             )
+             ORDER BY created_at ASC`,
+            [iso]
+        );
+        return result.rows.map(r => this._hydrate(r));
     }
 
-    update(id, data = {}) {
+    async update(id, data = {}) {
         const fields = [];
         const values = [];
+        let i = 1;
 
         if (data.planId !== undefined) {
-            fields.push('plan_id = ?');
+            fields.push(`plan_id = $${i++}`);
             values.push(data.planId);
         }
         if (data.status !== undefined) {
-            fields.push('status = ?');
+            fields.push(`status = $${i++}`);
             values.push(data.status);
         }
         if (data.billingCycle !== undefined) {
-            fields.push('billing_cycle = ?');
+            fields.push(`billing_cycle = $${i++}`);
             values.push(data.billingCycle);
         }
         if (data.startDate !== undefined) {
-            fields.push('start_date = ?');
+            fields.push(`start_date = $${i++}`);
             values.push(data.startDate ? toISO(data.startDate) : null);
         }
         if (data.endDate !== undefined) {
-            fields.push('end_date = ?');
+            fields.push(`end_date = $${i++}`);
             values.push(data.endDate ? toISO(data.endDate) : null);
         }
         if (data.trialEndDate !== undefined) {
-            fields.push('trial_end_date = ?');
+            fields.push(`trial_end_date = $${i++}`);
             values.push(data.trialEndDate ? toISO(data.trialEndDate) : null);
         }
         if (data.features !== undefined) {
-            fields.push('features = ?');
+            fields.push(`features = $${i++}`);
             values.push(JSON.stringify(data.features));
         }
 
-        fields.push('updated_at = CURRENT_TIMESTAMP');
+        fields.push('updated_at = NOW()');
         values.push(id);
 
-        const stmt = this.db.prepare(
-            `UPDATE subscriptions SET ${fields.join(', ')} WHERE id = ?`
+        const result = await this._query(
+            `UPDATE subscriptions SET ${fields.join(', ')} WHERE id = $${i}`,
+            values
         );
-        const result = stmt.run(...values);
 
-        if (result.changes === 0) {
+        if (result.rowCount === 0) {
             throw new Error('Subscription not found or no changes made');
         }
         return this.findById(id);
     }
 
-    delete(id) {
-        const result = this.db.prepare('DELETE FROM subscriptions WHERE id = ?').run(id);
-        return result.changes > 0;
+    async delete(id) {
+        const result = await this._query('DELETE FROM subscriptions WHERE id = $1', [id]);
+        return result.rowCount > 0;
     }
 
-    countByBusinessId(businessId, filters = {}) {
-        let query = 'SELECT COUNT(*) as count FROM subscriptions WHERE business_id = ?';
+    async countByBusinessId(businessId, filters = {}) {
+        let query = 'SELECT COUNT(*)::int as count FROM subscriptions WHERE business_id = $1';
         const params = [businessId];
+        let i = 2;
 
         if (filters.status) {
-            query += ' AND status = ?';
+            query += ` AND status = $${i++}`;
             params.push(filters.status);
         }
         if (filters.planId) {
-            query += ' AND plan_id = ?';
+            query += ` AND plan_id = $${i++}`;
             params.push(filters.planId);
         }
 
-        const result = this.db.prepare(query).get(...params);
-        return result?.count || 0;
+        const result = await this._query(query, params);
+        return result.rows[0]?.count || 0;
     }
 }
 
@@ -361,7 +323,7 @@ class SubscriptionRepository extends BaseRepository {
 // ─────────────────────────────────────────────
 function safeJSON(str) {
     try {
-        return JSON.parse(str);
+        return typeof str === 'string' ? JSON.parse(str) : str;
     } catch {
         return {};
     }
@@ -371,9 +333,6 @@ function toISO(date) {
     return date instanceof Date ? date.toISOString() : String(date);
 }
 
-// ─────────────────────────────────────────────
-// Backward-compatible export
-// ─────────────────────────────────────────────
 module.exports = SubscriptionRepository;
 module.exports.SubscriptionRepository = SubscriptionRepository;
 module.exports.Subscription = Subscription;

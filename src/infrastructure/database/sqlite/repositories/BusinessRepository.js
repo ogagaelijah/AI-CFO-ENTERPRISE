@@ -1,7 +1,8 @@
 // src/infrastructure/database/sqlite/repositories/BusinessRepository.js
+// Postgres async. Same logic as SQLite.
+
 const BaseRepository = require('./BaseRepository');
 
-// Business Entity
 class Business {
     constructor(data) {
         this.id = data.id || null;
@@ -41,86 +42,85 @@ class BusinessRepository extends BaseRepository {
         });
     }
 
-    // Create a new business
-    create(businessData) {
-        const stmt = this.db.prepare(`
-            INSERT INTO businesses (user_id, name, industry)
-            VALUES (?, ?, ?)
-        `);
-
-        const result = stmt.run(
-            businessData.userId,
-            businessData.name,
-            businessData.industry
+    async create(businessData) {
+        const result = await this._query(
+            `INSERT INTO businesses (user_id, name, industry)
+             VALUES ($1, $2, $3) RETURNING id`,
+            [businessData.userId, businessData.name, businessData.industry]
         );
-
-        return this.findById(result.lastInsertRowid);
+        return this.findById(result.rows[0].id);
     }
 
-    findById(id) {
-        const row = super.findById(id);
-        return this.toEntity(row);
+    async findById(id) {
+        const result = await this._query('SELECT * FROM businesses WHERE id = $1', [id]);
+        return this.toEntity(result.rows[0] || null);
     }
 
-    findByUserId(userId) {
-        const stmt = this.db.prepare('SELECT * FROM businesses WHERE user_id = ? ORDER BY created_at ASC');
-        const rows = stmt.all(userId);
-        return rows.map(row => this.toEntity(row));
+    async findByUserId(userId) {
+        const result = await this._query(
+            'SELECT * FROM businesses WHERE user_id = $1 ORDER BY created_at ASC',
+            [userId]
+        );
+        return result.rows.map(row => this.toEntity(row));
     }
 
-    // FIXED: Use direct database query instead of BaseRepository.findOneByWhere
-    findByUserIdFirst(userId) {
-        const stmt = this.db.prepare('SELECT * FROM businesses WHERE user_id = ? ORDER BY created_at ASC LIMIT 1');
-        const row = stmt.get(userId);
-        return this.toEntity(row);
+    async findByUserIdFirst(userId) {
+        const result = await this._query(
+            'SELECT * FROM businesses WHERE user_id = $1 ORDER BY created_at ASC LIMIT 1',
+            [userId]
+        );
+        return this.toEntity(result.rows[0] || null);
     }
 
-    update(id, data) {
+    async update(id, data) {
         const fields = [];
         const values = [];
+        let i = 1;
 
         if (data.name !== undefined) {
-            fields.push('name = ?');
+            fields.push(`name = $${i++}`);
             values.push(data.name);
         }
         if (data.industry !== undefined) {
-            fields.push('industry = ?');
+            fields.push(`industry = $${i++}`);
             values.push(data.industry);
         }
         if (data.userId !== undefined) {
-            fields.push('user_id = ?');
+            fields.push(`user_id = $${i++}`);
             values.push(data.userId);
         }
 
-        fields.push('updated_at = CURRENT_TIMESTAMP');
+        fields.push('updated_at = NOW()');
 
-        if (fields.length === 0) {
+        if (fields.length === 1) {
             throw new Error('No fields to update');
         }
 
         values.push(id);
 
-        const stmt = this.db.prepare(
-            `UPDATE businesses SET ${fields.join(', ')} WHERE id = ?`
+        const result = await this._query(
+            `UPDATE businesses SET ${fields.join(', ')} WHERE id = $${i}`,
+            values
         );
-        const result = stmt.run(...values);
 
-        if (result.changes === 0) {
+        if (result.rowCount === 0) {
             throw new Error('Business not found or no changes made');
         }
 
         return this.findById(id);
     }
 
-    delete(id) {
-        const stmt = this.db.prepare('DELETE FROM businesses WHERE id = ?');
-        const result = stmt.run(id);
-        return result.changes > 0;
+    async delete(id) {
+        const result = await this._query('DELETE FROM businesses WHERE id = $1', [id]);
+        return result.rowCount > 0;
     }
 
-    countByUser(userId) {
-        const result = this.db.prepare('SELECT COUNT(*) as count FROM businesses WHERE user_id = ?').get(userId);
-        return result.count;
+    async countByUser(userId) {
+        const result = await this._query(
+            'SELECT COUNT(*)::int as count FROM businesses WHERE user_id = $1',
+            [userId]
+        );
+        return result.rows[0].count;
     }
 }
 
