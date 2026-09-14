@@ -1,5 +1,5 @@
 // src/interfaces/http/routes/authRoutes.js
-// v3.2.0-prod — Postgres-ready. Await on async repository calls.
+// v3.3.0-prod — Postgres-ready + cross-site cookies for staging/production
 
 const express = require('express');
 const router = express.Router();
@@ -20,10 +20,15 @@ const securityEvents = new SecurityEventService();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 const JWT_EXPIRES_IN = '7d';
+
+// Cross-site cookie handling:
+// - Local dev (NODE_ENV=development): same-origin → sameSite='lax', secure=false
+// - Staging / Production: cross-domain (frontend ≠ backend) → sameSite='none', secure=true
+const isDev = process.env.NODE_ENV === 'development';
 const COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: 'lax',
+  secure: !isDev,             // must be true for sameSite='none'
+  sameSite: isDev ? 'lax' : 'none',
   maxAge: 7 * 24 * 60 * 60 * 1000,
 };
 
@@ -160,7 +165,7 @@ router.post('/register', async (req, res) => {
         days: trialDays,
         endDate: trialEndDate,
       },
-      ...(process.env.NODE_ENV !== 'production' && { verifyUrl }),
+      ...(!isDev && { verifyUrl }),
     });
   } catch (error) {
     console.error('Register error:', error);
@@ -279,7 +284,11 @@ router.get('/me', async (req, res) => {
 // POST /logout
 // ─────────────────────────────────────────────
 router.post('/logout', (req, res) => {
-  res.clearCookie('token');
+  res.clearCookie('token', {
+    httpOnly: true,
+    secure: !isDev,
+    sameSite: isDev ? 'lax' : 'none',
+  });
   return res.json({ success: true, message: 'Logged out successfully' });
 });
 
