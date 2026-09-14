@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { Plus, X, CheckCircle, AlertCircle } from 'lucide-react';
+import PageHeader from '../components/common/PageHeader';
 import SummaryCards from '../components/Suppliers/SummaryCards';
 import SupplierTable from '../components/Suppliers/SupplierTable';
 import RecordSupplierModal from '../components/Suppliers/RecordSupplierModal';
@@ -22,7 +23,6 @@ const Suppliers = () => {
   });
   const [isLoading, setIsLoading] = useState(true);
   
-  // Modals
   const [showModal, setShowModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -32,7 +32,6 @@ const Suppliers = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  // Fetch suppliers
   useEffect(() => {
     fetchSuppliers();
   }, []);
@@ -52,7 +51,6 @@ const Suppliers = () => {
         const suppliersData = response.data.suppliers || [];
         setSuppliers(suppliersData);
         
-        // Calculate summary
         const total = suppliersData.length;
         const active = suppliersData.filter(s => s.metadata?.status !== 'INACTIVE').length;
         const withPurchases = suppliersData.filter(s => s.metadata?.purchaseCount > 0).length;
@@ -71,7 +69,6 @@ const Suppliers = () => {
     }
   };
 
-  // Fetch single supplier detail
   const fetchSupplierDetail = async (id) => {
     try {
       setIsLoadingDetail(true);
@@ -91,7 +88,6 @@ const Suppliers = () => {
     }
   };
 
-  // Create supplier
   const handleCreate = async (data) => {
     setError('');
     setSuccess('');
@@ -115,7 +111,6 @@ const Suppliers = () => {
     }
   };
 
-  // Update supplier
   const handleUpdate = async (data) => {
     setError('');
     setSuccess('');
@@ -140,7 +135,6 @@ const Suppliers = () => {
     }
   };
 
-  // Delete supplier
   const handleDelete = async () => {
     if (!selectedSupplier) return;
 
@@ -179,23 +173,24 @@ const Suppliers = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Suppliers</h1>
-        <button
-          onClick={() => {
-            setShowModal(true);
-            setError('');
-            setSuccess('');
-          }}
-          className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
-        >
-          <Plus className="w-5 h-5" />
-          <span>Add Supplier</span>
-        </button>
-      </div>
+      <PageHeader
+        title="Suppliers"
+        subtitle="Your supplier records"
+        actions={
+          <button
+            onClick={() => {
+              setShowModal(true);
+              setError('');
+              setSuccess('');
+            }}
+            className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
+          >
+            <Plus className="w-5 h-5" />
+            <span>Add Supplier</span>
+          </button>
+        }
+      />
 
-      {/* Error/Success */}
       {error && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg flex items-center space-x-2">
           <AlertCircle className="w-5 h-5 flex-shrink-0" />
@@ -215,10 +210,8 @@ const Suppliers = () => {
         </div>
       )}
 
-      {/* Summary Cards */}
       <SummaryCards summary={summary} />
 
-      {/* Supplier Table */}
       <SupplierTable
         suppliers={suppliers}
         onView={fetchSupplierDetail}
@@ -232,7 +225,6 @@ const Suppliers = () => {
         }}
       />
 
-      {/* Record Supplier Modal */}
       <RecordSupplierModal
         isOpen={showModal}
         onSubmit={handleCreate}
@@ -241,7 +233,6 @@ const Suppliers = () => {
         setError={setError}
       />
 
-      {/* Edit Supplier Modal */}
       <EditSupplierModal
         isOpen={showEditModal}
         supplier={selectedSupplier}
@@ -254,7 +245,6 @@ const Suppliers = () => {
         setError={setError}
       />
 
-      {/* Supplier Detail Modal */}
       <SupplierDetailModal
         isOpen={showDetailModal}
         supplier={selectedSupplier}
@@ -265,7 +255,6 @@ const Suppliers = () => {
         }}
       />
 
-      {/* Confirm Delete Modal */}
       <ConfirmModal
         isOpen={showConfirmModal}
         supplier={selectedSupplier}

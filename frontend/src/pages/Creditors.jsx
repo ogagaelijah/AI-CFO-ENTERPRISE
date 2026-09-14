@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { Plus, X, CheckCircle, AlertCircle } from 'lucide-react';
+import PageHeader from '../components/common/PageHeader';
 import SummaryCards from '../components/Creditors/SummaryCards';
 import CreditorTable from '../components/Creditors/CreditorTable';
 import AddCreditorModal from '../components/Creditors/AddCreditorModal';
@@ -24,7 +25,6 @@ const Creditors = () => {
   });
   const [isLoading, setIsLoading] = useState(true);
 
-  // Modals
   const [showAddModal, setShowAddModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -36,7 +36,6 @@ const Creditors = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  // Forms
   const [addForm, setAddForm] = useState({
     supplierName: '',
     totalOwed: 0,
@@ -48,7 +47,6 @@ const Creditors = () => {
     notes: '',
   });
 
-  // Fetch creditors
   useEffect(() => {
     fetchCreditors();
   }, []);
@@ -78,7 +76,6 @@ const Creditors = () => {
     }
   };
 
-  // Add creditor - Step 1: Validate
   const handleAddSubmit = (e) => {
     e.preventDefault();
     setError('');
@@ -100,7 +97,6 @@ const Creditors = () => {
     setShowConfirmModal(true);
   };
 
-  // Add creditor - Step 2: Confirm
   const handleConfirmAdd = async () => {
     setError('');
     setSuccess('');
@@ -126,7 +122,6 @@ const Creditors = () => {
     }
   };
 
-  // Record payment - Step 1: Show payment modal
   const handlePaymentSubmit = (e) => {
     e.preventDefault();
     setError('');
@@ -152,7 +147,6 @@ const Creditors = () => {
     setShowConfirmModal(true);
   };
 
-  // Record payment - Step 2: Confirm
   const handleConfirmPayment = async () => {
     setError('');
     setSuccess('');
@@ -178,7 +172,6 @@ const Creditors = () => {
     }
   };
 
-  // View creditor details
   const fetchCreditorDetail = async (id) => {
     try {
       setIsLoadingDetail(true);
@@ -196,7 +189,6 @@ const Creditors = () => {
     }
   };
 
-  // Delete creditor
   const handleDelete = async (id) => {
     if (!confirm('Are you sure you want to delete this creditor?')) return;
 
@@ -234,23 +226,24 @@ const Creditors = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Creditors</h1>
-        <button
-          onClick={() => {
-            setShowAddModal(true);
-            setError('');
-            setSuccess('');
-          }}
-          className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
-        >
-          <Plus className="w-5 h-5" />
-          <span>Add Creditor</span>
-        </button>
-      </div>
+      <PageHeader
+        title="Creditors"
+        subtitle="Suppliers you owe money to"
+        actions={
+          <button
+            onClick={() => {
+              setShowAddModal(true);
+              setError('');
+              setSuccess('');
+            }}
+            className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
+          >
+            <Plus className="w-5 h-5" />
+            <span>Add Creditor</span>
+          </button>
+        }
+      />
 
-      {/* Error/Success */}
       {error && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg flex items-center space-x-2">
           <AlertCircle className="w-5 h-5 flex-shrink-0" />
@@ -270,10 +263,8 @@ const Creditors = () => {
         </div>
       )}
 
-      {/* Summary Cards */}
       <SummaryCards summary={summary} />
 
-      {/* Creditor Table */}
       <CreditorTable
         creditors={creditors}
         onView={fetchCreditorDetail}
@@ -286,7 +277,6 @@ const Creditors = () => {
         onDelete={handleDelete}
       />
 
-      {/* Add Creditor Modal */}
       <AddCreditorModal
         isOpen={showAddModal}
         form={addForm}
@@ -296,7 +286,6 @@ const Creditors = () => {
         error={error}
       />
 
-      {/* Record Payment Modal */}
       <RecordPaymentModal
         isOpen={showPaymentModal}
         creditor={selectedCreditor}
@@ -310,7 +299,6 @@ const Creditors = () => {
         error={error}
       />
 
-      {/* Confirm Modal */}
       <ConfirmModal
         isOpen={showConfirmModal}
         data={confirmData}
@@ -319,7 +307,6 @@ const Creditors = () => {
         type={confirmType}
       />
 
-      {/* Creditor Detail Modal */}
       <CreditorDetailModal
         isOpen={showDetailModal}
         creditor={selectedCreditor}

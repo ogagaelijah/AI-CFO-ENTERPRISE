@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { Plus, X, CheckCircle, AlertCircle } from 'lucide-react';
+import PageHeader from '../components/common/PageHeader';
 import SummaryCards from '../components/Payments/SummaryCards';
 import PaymentTable from '../components/Payments/PaymentTable';
 import RecordPaymentModal from '../components/Payments/RecordPaymentModal';
@@ -23,7 +24,6 @@ const Payments = () => {
   });
   const [isLoading, setIsLoading] = useState(true);
   
-  // Modals
   const [showModal, setShowModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -32,7 +32,6 @@ const Payments = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  // Fetch payments
   useEffect(() => {
     fetchPayments();
   }, []);
@@ -67,7 +66,6 @@ const Payments = () => {
     }
   };
 
-  // Fetch single payment detail
   const fetchPaymentDetail = async (id) => {
     try {
       setIsLoadingDetail(true);
@@ -87,7 +85,6 @@ const Payments = () => {
     }
   };
 
-  // Create payment
   const handleCreate = async (data) => {
     setError('');
     setSuccess('');
@@ -112,7 +109,6 @@ const Payments = () => {
     }
   };
 
-  // Delete payment
   const handleDelete = async () => {
     if (!selectedPayment) return;
 
@@ -151,23 +147,24 @@ const Payments = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Payments</h1>
-        <button
-          onClick={() => {
-            setShowModal(true);
-            setError('');
-            setSuccess('');
-          }}
-          className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
-        >
-          <Plus className="w-5 h-5" />
-          <span>Record Payment</span>
-        </button>
-      </div>
+      <PageHeader
+        title="Payments"
+        subtitle="All money movements in and out"
+        actions={
+          <button
+            onClick={() => {
+              setShowModal(true);
+              setError('');
+              setSuccess('');
+            }}
+            className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
+          >
+            <Plus className="w-5 h-5" />
+            <span>Record Payment</span>
+          </button>
+        }
+      />
 
-      {/* Error/Success */}
       {error && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg flex items-center space-x-2">
           <AlertCircle className="w-5 h-5 flex-shrink-0" />
@@ -187,10 +184,8 @@ const Payments = () => {
         </div>
       )}
 
-      {/* Summary Cards */}
       <SummaryCards summary={summary} />
 
-      {/* Payment Table */}
       <PaymentTable
         payments={payments}
         onView={fetchPaymentDetail}
@@ -200,7 +195,6 @@ const Payments = () => {
         }}
       />
 
-      {/* Record Payment Modal */}
       <RecordPaymentModal
         isOpen={showModal}
         onSubmit={handleCreate}
@@ -209,7 +203,6 @@ const Payments = () => {
         setError={setError}
       />
 
-      {/* Payment Detail Modal */}
       <PaymentDetailModal
         isOpen={showDetailModal}
         payment={selectedPayment}
@@ -220,7 +213,6 @@ const Payments = () => {
         }}
       />
 
-      {/* Confirm Delete Modal */}
       <ConfirmModal
         isOpen={showConfirmModal}
         payment={selectedPayment}

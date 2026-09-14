@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { Plus, X, CheckCircle, AlertCircle } from 'lucide-react';
+import PageHeader from '../components/common/PageHeader';
 import SummaryCards from '../components/Customers/SummaryCards';
 import CustomerTable from '../components/Customers/CustomerTable';
 import RecordCustomerModal from '../components/Customers/RecordCustomerModal';
@@ -20,7 +21,6 @@ const Customers = () => {
   });
   const [isLoading, setIsLoading] = useState(true);
   
-  // Modals
   const [showModal, setShowModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -30,7 +30,6 @@ const Customers = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  // Fetch customers
   useEffect(() => {
     fetchCustomers();
   }, []);
@@ -50,7 +49,6 @@ const Customers = () => {
         const customersData = response.data.customers || [];
         setCustomers(customersData);
         
-        // Calculate summary
         const total = customersData.length;
         const active = customersData.filter(c => c.metadata?.status !== 'INACTIVE').length;
         
@@ -64,16 +62,13 @@ const Customers = () => {
     }
   };
 
-  // Fetch single customer detail
   const fetchCustomerDetail = async (id) => {
     try {
       setIsLoadingDetail(true);
       setError('');
-      console.log('🔍 Fetching customer detail for ID:', id);
       const response = await api.get(`/customers/${id}`, {
         params: { businessId: user?.businessId || user?.id },
       });
-      console.log('🔍 Customer detail response:', response.data);
       if (response.data?.success) {
         setSelectedCustomer(response.data.customer);
         setShowDetailModal(true);
@@ -82,14 +77,12 @@ const Customers = () => {
       }
     } catch (error) {
       console.error('❌ Error fetching customer detail:', error);
-      console.error('❌ Error response:', error.response?.data);
       setError(error.response?.data?.message || 'Failed to load customer details');
     } finally {
       setIsLoadingDetail(false);
     }
   };
 
-  // Create customer
   const handleCreate = async (data) => {
     setError('');
     setSuccess('');
@@ -113,7 +106,6 @@ const Customers = () => {
     }
   };
 
-  // Update customer
   const handleUpdate = async (data) => {
     setError('');
     setSuccess('');
@@ -138,7 +130,6 @@ const Customers = () => {
     }
   };
 
-  // Delete customer
   const handleDelete = async () => {
     if (!selectedCustomer) return;
 
@@ -177,23 +168,24 @@ const Customers = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Customers</h1>
-        <button
-          onClick={() => {
-            setShowModal(true);
-            setError('');
-            setSuccess('');
-          }}
-          className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
-        >
-          <Plus className="w-5 h-5" />
-          <span>Add Customer</span>
-        </button>
-      </div>
+      <PageHeader
+        title="Customers"
+        subtitle="Your customer records"
+        actions={
+          <button
+            onClick={() => {
+              setShowModal(true);
+              setError('');
+              setSuccess('');
+            }}
+            className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
+          >
+            <Plus className="w-5 h-5" />
+            <span>Add Customer</span>
+          </button>
+        }
+      />
 
-      {/* Error/Success */}
       {error && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg flex items-center space-x-2">
           <AlertCircle className="w-5 h-5 flex-shrink-0" />
@@ -213,10 +205,8 @@ const Customers = () => {
         </div>
       )}
 
-      {/* Summary Cards */}
       <SummaryCards summary={summary} />
 
-      {/* Customer Table */}
       <CustomerTable
         customers={customers}
         onView={fetchCustomerDetail}
@@ -230,7 +220,6 @@ const Customers = () => {
         }}
       />
 
-      {/* Record Customer Modal */}
       <RecordCustomerModal
         isOpen={showModal}
         onSubmit={handleCreate}
@@ -239,7 +228,6 @@ const Customers = () => {
         setError={setError}
       />
 
-      {/* Edit Customer Modal */}
       <EditCustomerModal
         isOpen={showEditModal}
         customer={selectedCustomer}
@@ -252,7 +240,6 @@ const Customers = () => {
         setError={setError}
       />
 
-      {/* Customer Detail Modal */}
       <CustomerDetailModal
         isOpen={showDetailModal}
         customer={selectedCustomer}
@@ -263,7 +250,6 @@ const Customers = () => {
         }}
       />
 
-      {/* Confirm Delete Modal */}
       <ConfirmModal
         isOpen={showConfirmModal}
         customer={selectedCustomer}

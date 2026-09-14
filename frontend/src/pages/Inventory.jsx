@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { Plus, RefreshCw } from 'lucide-react';
+import PageHeader from '../components/common/PageHeader';
 import InventorySummary from '../components/Inventory/InventorySummary';
 import InventoryTable from '../components/Inventory/InventoryTable';
 import AddStockModal from '../components/Inventory/AddStockModal';
@@ -26,7 +27,6 @@ const Inventory = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  // Modal states
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAdjustModal, setShowAdjustModal] = useState(false);
@@ -176,28 +176,29 @@ const Inventory = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Inventory</h1>
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={fetchInventory}
-            className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
-            title="Refresh"
-          >
-            <RefreshCw className="w-5 h-5" />
-          </button>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
-          >
-            <Plus className="w-5 h-5" />
-            <span>Add Stock</span>
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="Inventory"
+        subtitle="Stock on hand and valuation"
+        actions={
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={fetchInventory}
+              className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
+              title="Refresh"
+            >
+              <RefreshCw className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
+            >
+              <Plus className="w-5 h-5" />
+              <span>Add Stock</span>
+            </button>
+          </div>
+        }
+      />
 
-      {/* Error/Success */}
       {error && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg flex items-center justify-between">
           <span>{error}</span>
@@ -211,15 +212,12 @@ const Inventory = () => {
         </div>
       )}
 
-      {/* Low Stock Alert */}
       {summary.low_stock_count > 0 && (
         <LowStockAlert count={summary.low_stock_count} />
       )}
 
-      {/* Summary Cards */}
       <InventorySummary summary={summary} />
 
-      {/* Inventory Table */}
       <InventoryTable
         items={inventory}
         onEdit={(item) => {
@@ -233,7 +231,6 @@ const Inventory = () => {
         onDelete={openDeleteModal}
       />
 
-      {/* Modals */}
       <AddStockModal
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}

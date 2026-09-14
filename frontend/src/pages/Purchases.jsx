@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { Plus, X, CheckCircle, AlertCircle } from 'lucide-react';
+import PageHeader from '../components/common/PageHeader';
 import SummaryCards from '../components/Purchases/SummaryCards';
 import PurchaseTable from '../components/Purchases/PurchaseTable';
 import RecordPurchaseModal from '../components/Purchases/RecordPurchaseModal';
@@ -23,7 +24,6 @@ const Purchases = () => {
   });
   const [isLoading, setIsLoading] = useState(true);
   
-  // Modals
   const [showModal, setShowModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showPartialModal, setShowPartialModal] = useState(false);
@@ -31,7 +31,7 @@ const Purchases = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedPurchase, setSelectedPurchase] = useState(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false); // 🔒 guards double-submit
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmData, setConfirmData] = useState(null);
   const [partialAmount, setPartialAmount] = useState('');
   const [error, setError] = useState('');
@@ -149,7 +149,6 @@ const Purchases = () => {
   };
 
   const handleConfirm = async () => {
-    // 🔒 Hard guard: ignore re-entry while a submit is in flight.
     if (isSubmitting) return;
 
     setError('');
@@ -293,22 +292,25 @@ const Purchases = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Purchases</h1>
-        <button
-          onClick={() => {
-            setShowModal(true);
-            setError('');
-            setSuccess('');
-            setConfirmData(null);
-            setPartialAmount('');
-          }}
-          className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
-        >
-          <Plus className="w-5 h-5" />
-          <span>Record Purchase</span>
-        </button>
-      </div>
+      <PageHeader
+        title="Purchases"
+        subtitle="Stock intake and supplier purchases"
+        actions={
+          <button
+            onClick={() => {
+              setShowModal(true);
+              setError('');
+              setSuccess('');
+              setConfirmData(null);
+              setPartialAmount('');
+            }}
+            className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
+          >
+            <Plus className="w-5 h-5" />
+            <span>Record Purchase</span>
+          </button>
+        }
+      />
 
       {error && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg flex items-center space-x-2">

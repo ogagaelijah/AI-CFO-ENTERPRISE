@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 import analyticsService from '../services/analytics/analyticsService';
 import AnalyticsHeader from '../components/analytics/AnalyticsHeader';
 import PeriodSelector from '../components/analytics/PeriodSelector';
@@ -13,6 +15,7 @@ import SignalsList from '../components/analytics/SignalsList';
 import EmptyState from '../components/analytics/EmptyState';
 
 export default function Analytics() {
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -46,10 +49,32 @@ export default function Analytics() {
     fetchAnalytics(period);
   };
 
+  const handleBack = () => {
+    if (window.history.length > 2) {
+      navigate(-1);
+    } else {
+      navigate('/dashboard');
+    }
+  };
+
+  const BackButton = () => (
+    <button
+      type="button"
+      onClick={handleBack}
+      className="flex-shrink-0 p-2 rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 transition"
+      aria-label="Go back"
+    >
+      <ArrowLeft className="w-5 h-5 text-slate-300" />
+    </button>
+  );
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 p-6">
-        <AnalyticsHeader />
+        <div className="flex items-center gap-3 mb-8">
+          <BackButton />
+          <h1 className="text-2xl font-bold text-slate-100">Analytics</h1>
+        </div>
         <div className="flex items-center justify-center h-96">
           <div className="text-center">
             <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
@@ -64,7 +89,10 @@ export default function Analytics() {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 p-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
-          <AnalyticsHeader />
+          <div className="flex items-center gap-3">
+            <BackButton />
+            <h1 className="text-2xl font-bold text-slate-100">Analytics</h1>
+          </div>
           <PeriodSelector value={period} onChange={handlePeriodChange} />
         </div>
         <EmptyState
@@ -78,44 +106,46 @@ export default function Analytics() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-6">
-      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
-        <AnalyticsHeader generatedAt={data.meta?.generatedAt} />
+        <div className="flex items-center gap-3">
+          <BackButton />
+          <div>
+            <h1 className="text-2xl font-bold text-slate-100">Analytics</h1>
+            {data.meta?.generatedAt && (
+              <p className="text-xs text-slate-500 mt-1">
+                Last updated: {new Date(data.meta.generatedAt).toLocaleString()}
+              </p>
+            )}
+          </div>
+        </div>
         <PeriodSelector value={period} onChange={handlePeriodChange} />
       </div>
 
-      {/* Executive Summary */}
       <div className="mb-8">
         <ExecutiveSummaryCard executive={data.executive} />
       </div>
 
-      {/* KPIs */}
       <div className="mb-8">
         <KpiGrid kpis={data.kpis} />
       </div>
 
-      {/* Performance + Health */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
         <PerformanceScore performance={data.performance} />
         <HealthScore health={data.health} />
       </div>
 
-      {/* Signals */}
       <div className="mb-8">
         <SignalsList signals={data.signals} />
       </div>
 
-      {/* Trends */}
       <div className="mb-8">
         <TrendCharts trends={data.trends} />
       </div>
 
-      {/* Ratios */}
       <div className="mb-8">
         <RatioSection ratios={data.ratios} />
       </div>
 
-      {/* Concentration */}
       <div className="mb-8">
         <ConcentrationRisk concentration={data.concentration} />
       </div>

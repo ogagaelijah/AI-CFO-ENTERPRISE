@@ -6,8 +6,8 @@ import {
   Plus, RefreshCw, Users, DollarSign, TrendingDown, AlertTriangle,
   Eye, CreditCard, Trash2, X, CheckCircle, AlertCircle
 } from 'lucide-react';
+import PageHeader from '../components/common/PageHeader';
 
-// Import components
 import AddDebtorModal from '../components/debtors/AddDebtorModal';
 import RecordPaymentModal from '../components/debtors/RecordPaymentModal';
 import DebtorDetailModal from '../components/debtors/DebtorDetailModal';
@@ -30,14 +30,12 @@ const Debtors = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  // Modal states
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [selectedDebtor, setSelectedDebtor] = useState(null);
 
-  // Fetch debtors
   useEffect(() => {
     fetchDebtors();
   }, []);
@@ -46,13 +44,9 @@ const Debtors = () => {
     try {
       setIsLoading(true);
       setError('');
-      
-      console.log('🔍 Fetching debtors...');
-      
+
       const response = await api.get('/debtors');
-      
-      console.log('✅ Debtors response:', response.data);
-      
+
       if (response.data?.success) {
         setDebtors(response.data.data.debtors || []);
         setSummary(response.data.data.summary || {
@@ -67,7 +61,6 @@ const Debtors = () => {
       } else {
         setDebtors([]);
       }
-      
     } catch (error) {
       console.error('❌ Error fetching debtors:', error);
       setError('Failed to load debtors');
@@ -77,7 +70,6 @@ const Debtors = () => {
     }
   };
 
-  // Delete debtor
   const handleDeleteDebtor = async () => {
     if (!selectedDebtor) return;
 
@@ -94,7 +86,6 @@ const Debtors = () => {
     }
   };
 
-  // Get status badge
   const getStatusBadge = (debtor) => {
     if (debtor.balance_remaining <= 0 || debtor.status === 'PAID') {
       return { label: 'Paid', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400', icon: '✅' };
@@ -105,7 +96,6 @@ const Debtors = () => {
     return { label: 'Active', color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400', icon: '🟡' };
   };
 
-  // Format date
   const formatDate = (date) => {
     if (!date) return 'N/A';
     return new Date(date).toLocaleDateString('en-NG', {
@@ -115,7 +105,6 @@ const Debtors = () => {
     });
   };
 
-  // Filter debtors by search term
   const filteredDebtors = debtors.filter(debtor =>
     debtor.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     debtor.customer_type?.toLowerCase().includes(searchTerm.toLowerCase())
@@ -134,19 +123,20 @@ const Debtors = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Debtors</h1>
-        <button
-          onClick={() => setAddModalOpen(true)}
-          className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
-        >
-          <Plus className="w-5 h-5" />
-          <span>Add Debtor</span>
-        </button>
-      </div>
+      <PageHeader
+        title="Debtors"
+        subtitle="Customers who owe you money"
+        actions={
+          <button
+            onClick={() => setAddModalOpen(true)}
+            className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
+          >
+            <Plus className="w-5 h-5" />
+            <span>Add Debtor</span>
+          </button>
+        }
+      />
 
-      {/* Error/Success */}
       {error && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg flex items-center space-x-2">
           <AlertCircle className="w-5 h-5 flex-shrink-0" />
@@ -166,7 +156,6 @@ const Debtors = () => {
         </div>
       )}
 
-      {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
         <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-4">
           <div className="flex items-center space-x-2 text-gray-500 dark:text-gray-400">
@@ -200,7 +189,6 @@ const Debtors = () => {
         </div>
       </div>
 
-      {/* Search */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="flex-1 flex space-x-2">
           <input
@@ -222,7 +210,6 @@ const Debtors = () => {
         </div>
       </div>
 
-      {/* Debtors Table */}
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -328,7 +315,6 @@ const Debtors = () => {
         </div>
       </div>
 
-      {/* Modals */}
       <AddDebtorModal
         isOpen={addModalOpen}
         onClose={() => setAddModalOpen(false)}

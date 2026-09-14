@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { Plus, X, CheckCircle, AlertCircle } from 'lucide-react';
+import PageHeader from '../components/common/PageHeader';
 import SummaryCards from '../components/Income/SummaryCards';
 import IncomeTable from '../components/Income/IncomeTable';
 import RecordIncomeModal from '../components/Income/RecordIncomeModal';
@@ -22,7 +23,6 @@ const Income = () => {
   });
   const [isLoading, setIsLoading] = useState(true);
   
-  // Modals
   const [showModal, setShowModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -40,7 +40,6 @@ const Income = () => {
     date: new Date().toISOString().split('T')[0],
   });
 
-  // Fetch income
   useEffect(() => {
     fetchIncome();
   }, []);
@@ -67,7 +66,6 @@ const Income = () => {
     }
   };
 
-  // Fetch single income detail
   const fetchIncomeDetail = async (id) => {
     try {
       setIsLoadingDetail(true);
@@ -85,7 +83,6 @@ const Income = () => {
     }
   };
 
-  // Step 1: Validate and show confirmation
   const handleSubmit = (e) => {
     e.preventDefault();
     setError('');
@@ -106,7 +103,6 @@ const Income = () => {
     setShowConfirmModal(true);
   };
 
-  // Step 2: Confirm and save
   const handleConfirm = async () => {
     setError('');
     setSuccess('');
@@ -147,7 +143,6 @@ const Income = () => {
     }
   };
 
-  // Edit income
   const handleEditSubmit = async (updatedData) => {
     setError('');
     setSuccess('');
@@ -174,7 +169,6 @@ const Income = () => {
     }
   };
 
-  // Delete income
   const handleDelete = async (id) => {
     if (!confirm('Are you sure you want to delete this income record?')) return;
 
@@ -211,24 +205,25 @@ const Income = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Income</h1>
-        <button
-          onClick={() => {
-            setShowModal(true);
-            setError('');
-            setSuccess('');
-            setConfirmData(null);
-          }}
-          className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
-        >
-          <Plus className="w-5 h-5" />
-          <span>Record Income</span>
-        </button>
-      </div>
+      <PageHeader
+        title="Income"
+        subtitle="All non-sale revenue sources"
+        actions={
+          <button
+            onClick={() => {
+              setShowModal(true);
+              setError('');
+              setSuccess('');
+              setConfirmData(null);
+            }}
+            className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
+          >
+            <Plus className="w-5 h-5" />
+            <span>Record Income</span>
+          </button>
+        }
+      />
 
-      {/* Error/Success */}
       {error && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg flex items-center space-x-2">
           <AlertCircle className="w-5 h-5 flex-shrink-0" />
@@ -248,10 +243,8 @@ const Income = () => {
         </div>
       )}
 
-      {/* Summary Cards */}
       <SummaryCards summary={summary} />
 
-      {/* Income Table */}
       <IncomeTable
         incomes={incomes}
         onView={fetchIncomeDetail}
@@ -262,7 +255,6 @@ const Income = () => {
         onDelete={handleDelete}
       />
 
-      {/* Record Income Modal */}
       <RecordIncomeModal
         isOpen={showModal}
         form={formData}
@@ -272,7 +264,6 @@ const Income = () => {
         error={error}
       />
 
-      {/* Confirm Modal */}
       <ConfirmModal
         isOpen={showConfirmModal}
         data={confirmData}
@@ -280,7 +271,6 @@ const Income = () => {
         onCancel={handleCancelConfirm}
       />
 
-      {/* Income Detail Modal */}
       <IncomeDetailModal
         isOpen={showDetailModal}
         income={selectedIncome}
@@ -291,7 +281,6 @@ const Income = () => {
         }}
       />
 
-      {/* Edit Income Modal */}
       <EditIncomeModal
         isOpen={showEditModal}
         income={selectedIncome}

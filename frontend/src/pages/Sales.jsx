@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { Plus } from 'lucide-react';
+import PageHeader from '../components/common/PageHeader';
 import RecordSaleModal from '../components/Sales/RecordSaleModal';
 import SaleDetailModal from '../components/Sales/SaleDetailModal';
 import ConfirmModal from '../components/Sales/ConfirmModal';
@@ -61,7 +62,6 @@ const Sales = () => {
       const response = await api.get(`/sales/${saleId}`);
       const saleData = response.data?.data || response.data;
       
-      // Parse items if string
       if (saleData.items && typeof saleData.items === 'string') {
         try { saleData.items = JSON.parse(saleData.items); } catch (e) { saleData.items = []; }
       }
@@ -127,21 +127,23 @@ const Sales = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Sales</h1>
-        <button
-          onClick={() => { setShowModal(true); setError(''); setSuccess(''); }}
-          className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
-        >
-          <Plus className="w-5 h-5" />
-          <span>Record Sale</span>
-        </button>
-      </div>
+      <PageHeader
+        title="Sales"
+        subtitle="Track sales, revenue and profit"
+        actions={
+          <button
+            onClick={() => { setShowModal(true); setError(''); setSuccess(''); }}
+            className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
+          >
+            <Plus className="w-5 h-5" />
+            <span>Record Sale</span>
+          </button>
+        }
+      />
 
       {error && <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg">{error}</div>}
       {success && <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-400 px-4 py-3 rounded-lg">{success}</div>}
 
-      {/* Sales Table - Simplified */}
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -204,7 +206,6 @@ const Sales = () => {
         </div>
       </div>
 
-      {/* Modals */}
       <RecordSaleModal
         isOpen={showModal}
         onClose={() => setShowModal(false)}

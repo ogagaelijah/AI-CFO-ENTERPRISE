@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Calendar, RefreshCw } from 'lucide-react';
+import PageHeader from '../components/common/PageHeader';
 import { reportApi } from '../services/reportService';
 import {
   mapDailyReport,
@@ -14,7 +15,6 @@ import {
   mapBalanceSheetReport,
 } from '../services/reportMappers';
 
-// Import report components
 import ExecutiveReport from '../components/Reports/ExecutiveReport';
 import ProfitLossReport from '../components/Reports/ProfitLossReport';
 import DailyReport from '../components/Reports/DailyReport';
@@ -24,7 +24,6 @@ import YearlyReport from '../components/Reports/YearlyReport';
 import CashFlowReport from '../components/Reports/CashFlowReport';
 import BalanceSheetReport from '../components/Reports/BalanceSheetReport';
 
-// Report configuration with ID → Mapper mapping
 const REPORT_TYPES = [
   { id: 'executive', label: 'Executive Report', component: ExecutiveReport, mapper: mapExecutiveReport },
   { id: 'pl', label: 'Profit & Loss', component: ProfitLossReport, mapper: mapProfitLossReport },
@@ -69,7 +68,6 @@ const Reports = () => {
       let response;
       let rawData;
 
-      // ✅ Use reportApi instead of direct api.get()
       switch (report.id) {
         case 'executive':
           response = await reportApi.getExecutive(period.startDate, period.endDate);
@@ -109,7 +107,6 @@ const Reports = () => {
       }
 
       if (response.data?.success && rawData) {
-        // ✅ Apply the mapper to transform backend → frontend format
         const mappedData = report.mapper(rawData);
         setReportData(mappedData);
       } else {
@@ -158,16 +155,19 @@ const Reports = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Reports</h1>
-        <button
-          onClick={fetchReport}
-          className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
-          title="Refresh"
-        >
-          <RefreshCw className="w-5 h-5" />
-        </button>
-      </div>
+      <PageHeader
+        title="Reports"
+        subtitle="Financial statements and business reports"
+        actions={
+          <button
+            onClick={fetchReport}
+            className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
+            title="Refresh"
+          >
+            <RefreshCw className="w-5 h-5" />
+          </button>
+        }
+      />
 
       {error && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg">
@@ -175,7 +175,6 @@ const Reports = () => {
         </div>
       )}
 
-      {/* Report Type Buttons */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
         <div className="flex flex-wrap gap-2">
           {REPORT_TYPES.map((type) => (
@@ -194,7 +193,6 @@ const Reports = () => {
         </div>
       </div>
 
-      {/* Date Filters */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center space-x-2">
@@ -258,7 +256,6 @@ const Reports = () => {
         </div>
       </div>
 
-      {/* Report Output */}
       {reportData && (
         <ReportComponent data={reportData} formatCurrency={formatCurrency} formatPercentage={formatPercentage} />
       )}

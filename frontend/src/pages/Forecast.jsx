@@ -5,6 +5,8 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import forecastService from '../services/forecast/forecastService';
 import ExecutiveSummaryCard from '../components/forecast/ExecutiveSummaryCard';
@@ -24,6 +26,7 @@ const RETRY_DELAY_MS = 1000;
 
 const Forecast = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -103,6 +106,14 @@ const Forecast = () => {
     fetchForecast(false, { whatIfChanges: changes });
   }, [fetchForecast]);
 
+  const handleBack = useCallback(() => {
+    if (window.history.length > 2) {
+      navigate(-1);
+    } else {
+      navigate('/dashboard');
+    }
+  }, [navigate]);
+
   useEffect(() => {
     fetchForecast();
 
@@ -118,9 +129,24 @@ const Forecast = () => {
 
   const executiveData = data?.executive || null;
 
+  const BackButton = () => (
+    <button
+      type="button"
+      onClick={handleBack}
+      className="flex-shrink-0 p-2 rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 transition"
+      aria-label="Go back"
+    >
+      <ArrowLeft className="w-5 h-5 text-slate-300" />
+    </button>
+  );
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 p-6">
+        <div className="flex items-center gap-3 mb-8">
+          <BackButton />
+          <h1 className="text-2xl font-bold text-slate-100">Forecast</h1>
+        </div>
         <ForecastLoading />
       </div>
     );
@@ -129,6 +155,10 @@ const Forecast = () => {
   if (error) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 p-6">
+        <div className="flex items-center gap-3 mb-8">
+          <BackButton />
+          <h1 className="text-2xl font-bold text-slate-100">Forecast</h1>
+        </div>
         <ForecastError 
           message={error} 
           onRetry={handleRetry}
@@ -144,11 +174,14 @@ const Forecast = () => {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 p-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-100">Forecast</h1>
-            <p className="text-slate-400 mt-1">
-              Forward-looking projections powered by Analytics SSOT
-            </p>
+          <div className="flex items-center gap-3">
+            <BackButton />
+            <div>
+              <h1 className="text-2xl font-bold text-slate-100">Forecast</h1>
+              <p className="text-slate-400 mt-1">
+                Forward-looking projections powered by Analytics SSOT
+              </p>
+            </div>
           </div>
           <HorizonSelector 
             horizon={horizon} 
@@ -168,18 +201,20 @@ const Forecast = () => {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-6">
-      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-100">Forecast</h1>
-          <p className="text-slate-400 mt-1">
-            Forward-looking projections powered by Analytics SSOT
-          </p>
-          {data?.metadata?.generatedAt && (
-            <p className="text-xs text-slate-500 mt-1">
-              Last updated: {new Date(data.metadata.generatedAt).toLocaleString()}
+        <div className="flex items-center gap-3">
+          <BackButton />
+          <div>
+            <h1 className="text-2xl font-bold text-slate-100">Forecast</h1>
+            <p className="text-slate-400 mt-1">
+              Forward-looking projections powered by Analytics SSOT
             </p>
-          )}
+            {data?.metadata?.generatedAt && (
+              <p className="text-xs text-slate-500 mt-1">
+                Last updated: {new Date(data.metadata.generatedAt).toLocaleString()}
+              </p>
+            )}
+          </div>
         </div>
         <div className="flex items-center space-x-3">
           <button
@@ -201,24 +236,20 @@ const Forecast = () => {
         </div>
       </div>
 
-      {/* Executive Summary */}
       <div className="mb-8">
         <ExecutiveSummaryCard data={executiveData} loading={loading} />
       </div>
 
-      {/* Forecast Grid */}
       <div className="mb-8">
         <h2 className="text-lg font-semibold text-slate-100 mb-4">Forecast Metrics</h2>
         <ForecastGrid forecasts={data?.baseForecast} loading={loading} />
       </div>
 
-      {/* Scenarios + Confidence */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
         <ScenarioComparison scenarios={data?.scenarios} loading={loading} />
         <ConfidenceIndicator confidence={data?.confidence} loading={loading} />
       </div>
 
-      {/* What-If + Risks */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <WhatIfAnalyzer 
           whatIf={data?.whatIf} 
