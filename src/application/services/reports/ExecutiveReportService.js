@@ -9,17 +9,7 @@ const ComparisonCalculator = require('./calculators/ComparisonCalculator');
 
 /**
  * Executive Report Service
- *
- * Composite corporate report combining P&L indicators, cash track, and balance sheet metrics.
- * Follows proper real-world accounting standards: IFRS / GAAP
- * - Product Sales = Pure core operating top-line revenue
- * - Gross Profit = Product Sales - COGS
- * - Total Revenue (Combined Top-Line) = Product Sales + Other Income
- * - Net Profit = Gross Profit - Operating Expenses + Other Income
- * - Gross Margin = Gross Profit / Product Sales
- * - Net Margin = Net Profit / Total Revenue <-- Business Standard
- *
- * Fully multi-business aware – every data source is filtered by businessId.
+ * Postgres async. Awaits repository calls; uses businessId-scoped findByDateRange.
  */
 class ExecutiveReportService {
     constructor({
@@ -89,9 +79,6 @@ class ExecutiveReportService {
         return `${year}-${month}-${day}`;
     }
 
-    /**
-     * Simple, deterministic health label
-     */
     _calculateBusinessHealth(netProfit, cash, netMargin) {
         if (netProfit > 0 && cash > 0 && netMargin > 10) return 'Good';
         if (netProfit < 0 || cash < 0) return 'Critical';
@@ -99,9 +86,6 @@ class ExecutiveReportService {
         return 'Neutral';
     }
 
-    /**
-     * Simple score out of 100
-     */
     _calculateBusinessScore(netProfit, cash, netMargin, grossMargin) {
         let score = 50;
         if (netProfit > 0) score += 15;
@@ -136,13 +120,12 @@ class ExecutiveReportService {
             }),
         ]);
 
-        // 2. Synchronous repository calls — fully multi-business aware
-        const expenses = this._safeArray(
-            this.expenseRepository.findByDateRange(userId, startStr, endStr, businessId)
-        );
-        const income = this._safeArray(
-            this.incomeRepository.findByDateRange(userId, startStr, endStr, businessId)
-        );
+        // 2. Async repository calls — businessId-scoped, awaited
+        const expensesRaw = await this.expenseRepository.findByDateRange(businessId, startStr, endStr);
+        const incomeRaw = await this.incomeRepository.findByDateRange(businessId, startStr, endStr);
+
+        const expenses = this._safeArray(expensesRaw);
+        const income = this._safeArray(incomeRaw);
 
         const totalOperatingExpenses = expenses.reduce(
             (sum, e) => sum + this._safeNumber(e.amount),
@@ -259,13 +242,8 @@ class ExecutiveReportService {
         const netMarginValue = this._round2(netMargin);
         const cashPosition = this._safeNumber(cashData.closingCash);
 
-        // 8. Final structured response (stable production contract)
         return {
-            // ===== Existing fields (backward compatible) =====
-            period: {
-                start: startStr,
-                end: endStr,
-            },
+            period: { start: startStr, end: endStr },
             executiveSummary: {
                 revenue: combinedRevenue,
                 grossProfit: grossProfitValue,
@@ -285,10 +263,7 @@ class ExecutiveReportService {
                 totalSales: sales.length,
                 uniqueCustomers: uniqueCustomerSet.size,
             },
-            revenuePerformance: {
-                topProducts,
-                topCustomers,
-            },
+            revenuePerformance: { topProducts, topCustomers },
             expenseAnalysis: {
                 total: this._round2(totalOperatingExpenses),
                 topExpenses,
@@ -297,12 +272,8 @@ class ExecutiveReportService {
                 opening: this._safeNumber(cashData.openingCash),
                 closing: cashPosition,
             },
-            receivables: {
-                totalOutstanding: this._safeNumber(arData.totalOutstanding),
-            },
-            payables: {
-                totalOutstanding: this._safeNumber(apData.totalOutstanding),
-            },
+            receivables: { totalOutstanding: this._safeNumber(arData.totalOutstanding) },
+            payables: { totalOutstanding: this._safeNumber(apData.totalOutstanding) },
             inventory: {
                 totalItems: this._safeNumber(inventoryData.totalItems),
                 totalValue: this._safeNumber(inventoryData.totalCostValue),
@@ -316,8 +287,6 @@ class ExecutiveReportService {
             insights: [],
             recommendations: [],
             managementActionPlan: [],
-
-            // ===== New stable contract expected by frontend =====
             generatedAt: new Date().toISOString(),
             businessOverview: {
                 revenue: combinedRevenue,
@@ -330,17 +299,8 @@ class ExecutiveReportService {
                 netMargin: netMarginValue,
                 cashPosition,
             },
-            businessTrends: {
-                today: 0,
-                thisWeek: 0,
-                thisMonth: 0,
-            },
-            forecast: {
-                next7Days: 0,
-                next30Days: 0,
-                tomorrow: 0,
-                confidence: 0,
-            },
+            businessTrends: { today: 0, thisWeek: 0, thisMonth: 0 },
+            forecast: { next7Days: 0, next30Days: 0, next60Days: 0, confidence: 0 },
             profitability: {
                 grossProfit: grossProfitValue,
                 netProfit: netProfitValue,

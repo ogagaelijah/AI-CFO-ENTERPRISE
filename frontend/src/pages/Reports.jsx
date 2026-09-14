@@ -135,11 +135,18 @@ const Reports = () => {
   const ReportComponent = getCurrentReport().component;
 
   const formatCurrency = (amount) => {
-    return `${CURRENCY_SYMBOL}${(amount || 0).toLocaleString()}`;
+    const num = Number(amount);
+    const safe = Number.isFinite(num) ? num : 0;
+    return `${CURRENCY_SYMBOL}${safe.toLocaleString('en-NG', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    })}`;
   };
 
   const formatPercentage = (value) => {
-    return `${(value || 0).toFixed(1)}%`;
+    const num = Number(value);
+    const safe = Number.isFinite(num) ? num : 0;
+    return `${safe.toFixed(1)}%`;
   };
 
   if (loading) {
