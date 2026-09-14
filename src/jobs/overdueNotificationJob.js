@@ -1,5 +1,5 @@
 // src/jobs/overdueNotificationJob.js
-const NotificationService = require('../application/services/NotificationService');
+const NotificationService = require('../application/services/notificationService');
 const DebtorRepository = require('../infrastructure/database/sqlite/repositories/DebtorRepository');
 const NotificationRepository = require('../infrastructure/database/sqlite/repositories/NotificationRepository');
 const logger = require('../shared/utils/logger');
