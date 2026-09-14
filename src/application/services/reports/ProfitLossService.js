@@ -30,6 +30,11 @@ class ProfitLossService {
         });
     }
 
+    _safeNumber(value) {
+        const num = Number(value);
+        return isNaN(num) ? 0 : num;
+    }
+
     async generate({
         userId,
         businessId,
@@ -59,7 +64,10 @@ class ProfitLossService {
             startDate,
             endDate
         );
-        const totalOtherRevenue = incomes.reduce((sum, i) => sum + (i.amount || 0), 0);
+        const totalOtherRevenue = (incomes || []).reduce(
+            (sum, i) => sum + this._safeNumber(i.amount),
+            0
+        );
 
         // 4. Get operating expenses
         const expenses = await this.expenseRepository.findByDateRange(
@@ -68,19 +76,22 @@ class ProfitLossService {
             endDate
         );
         const expenseTotals = this._aggregateExpenses(expenses);
-        const totalOperatingExpenses = Object.values(expenseTotals).reduce((sum, v) => sum + v, 0);
+        const totalOperatingExpenses = Object.values(expenseTotals).reduce(
+            (sum, v) => sum + this._safeNumber(v),
+            0
+        );
 
-        const pureOperatingRevenue = revenueData.totalRevenue || 0;
-        const totalCogs = cogsData.totalCogs || 0;
+        const pureOperatingRevenue = this._safeNumber(revenueData.totalRevenue);
+        const totalCogs = this._safeNumber(cogsData.totalCogs);
 
-        // 5. ✅ PURE ACCOUNTING FORMULAS
+        // 5. Pure accounting formulas (all operands are guaranteed numbers)
         const grossProfit = pureOperatingRevenue - totalCogs;
         const operatingProfit = grossProfit - totalOperatingExpenses;
         const netProfit = operatingProfit + totalOtherRevenue;
 
         const combinedTotalRevenue = pureOperatingRevenue + totalOtherRevenue;
 
-        // Margins based on the correct revenue baseline denominators
+        // Margins
         const grossMargin = pureOperatingRevenue > 0 ? (grossProfit / pureOperatingRevenue) * 100 : 0;
         const operatingMargin = pureOperatingRevenue > 0 ? (operatingProfit / pureOperatingRevenue) * 100 : 0;
         const netMargin = combinedTotalRevenue > 0 ? (netProfit / combinedTotalRevenue) * 100 : 0;
@@ -104,12 +115,12 @@ class ProfitLossService {
                 margin: grossMargin,
             },
             operatingExpenses: {
-                salaries: expenseTotals['Salaries'] || 0,
-                rent: expenseTotals['Rent'] || 0,
-                advertising: expenseTotals['Advertising'] || 0,
-                transportation: expenseTotals['Transportation'] || 0,
-                utilities: expenseTotals['Utilities'] || 0,
-                other: expenseTotals['Other'] || 0,
+                salaries: this._safeNumber(expenseTotals['Salaries']),
+                rent: this._safeNumber(expenseTotals['Rent']),
+                advertising: this._safeNumber(expenseTotals['Advertising']),
+                transportation: this._safeNumber(expenseTotals['Transportation']),
+                utilities: this._safeNumber(expenseTotals['Utilities']),
+                other: this._safeNumber(expenseTotals['Other']),
                 total: totalOperatingExpenses,
             },
             operatingProfit: {
@@ -141,7 +152,6 @@ class ProfitLossService {
             endDate: prevEnd.toISOString().split('T')[0],
         });
 
-        // ✅ Fixed comparison baseline check
         const revenueChange = previous.revenue.totalRevenue > 0
             ? ((current.revenue.totalRevenue - previous.revenue.totalRevenue) / previous.revenue.totalRevenue) * 100
             : 0;
@@ -215,7 +225,7 @@ class ProfitLossService {
             'Other': 0,
         };
 
-        for (const e of expenses) {
+        for (const e of (expenses || [])) {
             const category = e.category ? e.category.toLowerCase() : '';
             let standardCategory = 'Other';
 
@@ -226,7 +236,8 @@ class ProfitLossService {
                 }
             }
 
-            totals[standardCategory] = (totals[standardCategory] || 0) + (e.amount || 0);
+            const amount = this._safeNumber(e.amount);
+            totals[standardCategory] = this._safeNumber(totals[standardCategory]) + amount;
         }
 
         return totals;

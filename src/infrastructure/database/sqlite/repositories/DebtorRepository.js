@@ -1,5 +1,5 @@
 // src/infrastructure/database/sqlite/repositories/DebtorRepository.js
-// v3.1.0-prod — Postgres async. Same logic as SQLite v3.0.0.
+// v3.2.0-prod — Postgres async. Added findAllOverdue for the notification job.
 
 const BaseRepository = require('./BaseRepository');
 
@@ -101,6 +101,24 @@ class DebtorRepository extends BaseRepository {
                AND DATE(due_date) < DATE($2)
              ORDER BY due_date ASC`,
             [businessId, today]
+        );
+        return result.rows.map(row => this._hydrate(row));
+    }
+
+    /**
+     * Global overdue scan across all businesses.
+     * Used by the scheduled notification job.
+     */
+    async findAllOverdue() {
+        const today = new Date().toISOString().split('T')[0];
+        const result = await this._query(
+            `SELECT * FROM debtors
+             WHERE balance_remaining > 0
+               AND status != 'PAID'
+               AND due_date IS NOT NULL
+               AND DATE(due_date) < DATE($1)
+             ORDER BY due_date ASC`,
+            [today]
         );
         return result.rows.map(row => this._hydrate(row));
     }

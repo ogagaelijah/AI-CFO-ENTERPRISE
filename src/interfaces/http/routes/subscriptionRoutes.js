@@ -1,5 +1,5 @@
 // src/interfaces/http/routes/subscriptionRoutes.js
-// v2.0.1-prod — Public /plans route + auth-gated subscription routes
+// v2.0.2-prod — Public /plans route + auth-gated subscription routes (Postgres async)
 
 const express = require('express');
 const router = express.Router();
@@ -20,7 +20,6 @@ const cancelSubscriptionUseCase = new CancelSubscriptionUseCase({
 
 // ─────────────────────────────────────────────
 // PUBLIC ROUTE — must be BEFORE authMiddleware
-// Returns the pricing table for the marketing site + subscription page.
 // ─────────────────────────────────────────────
 router.get('/plans', (req, res) => {
     try {
@@ -52,7 +51,6 @@ router.use(authMiddleware);
 
 // ─────────────────────────────────────────────
 // GET /api/subscription/current
-// Returns the current plan, trial state, and read-only state.
 // ─────────────────────────────────────────────
 router.get('/current', async (req, res) => {
     try {
@@ -71,7 +69,7 @@ router.get('/current', async (req, res) => {
             });
         }
 
-        const subscription = subscriptionRepo.findActiveByBusinessId(business.id);
+        const subscription = await subscriptionRepo.findActiveByBusinessId(business.id);
 
         // ── No subscription → fallback plan, read-only
         if (!subscription) {
@@ -143,7 +141,6 @@ router.get('/current', async (req, res) => {
 
 // ─────────────────────────────────────────────
 // POST /api/subscription/cancel
-// Cancel → immediate read-only.
 // ─────────────────────────────────────────────
 router.post('/cancel', async (req, res) => {
     try {
