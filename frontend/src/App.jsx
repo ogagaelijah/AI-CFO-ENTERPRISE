@@ -26,7 +26,9 @@ import Forecast from './pages/Forecast';
 import Risk from './pages/Risk';
 import Decisions from './pages/Decisions';
 import Advisor from './pages/Advisor';
-import Projects from './pages/Projects';                   // ← ADDED
+import Projects from './pages/Projects';
+import TimeEntries from './pages/TimeEntries';
+import Invoices from './pages/Invoices';
 
 function App() {
   return (
@@ -58,10 +60,26 @@ function App() {
               }
             />
             <Route
-              path="/projects"                                   // ← ADDED
+              path="/projects"
               element={
                 <ProtectedRoute>
                   <Projects />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/hours"
+              element={
+                <ProtectedRoute>
+                  <TimeEntries />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/invoices"
+              element={
+                <ProtectedRoute>
+                  <Invoices />
                 </ProtectedRoute>
               }
             />
@@ -147,6 +165,14 @@ function App() {
             />
             <Route
               path="/customers"
+              element={
+                <ProtectedRoute>
+                  <Customers />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/clients"                                      // ← ADDED
               element={
                 <ProtectedRoute>
                   <Customers />

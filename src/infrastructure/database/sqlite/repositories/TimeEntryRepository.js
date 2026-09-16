@@ -1,5 +1,6 @@
 // src/infrastructure/database/sqlite/repositories/TimeEntryRepository.js
 // Postgres async. Multi-tenant. Explicit columns only.
+// v2.0.0-prod — getSummary returns hours-only metrics (no amounts).
 
 'use strict';
 
@@ -256,8 +257,9 @@ class TimeEntryRepository extends BaseRepository {
             `SELECT
                 COALESCE(SUM(hours), 0)::numeric                                          AS total_hours,
                 COALESCE(SUM(hours) FILTER (WHERE billable = TRUE), 0)::numeric           AS billable_hours,
-                COALESCE(SUM(hours * rate) FILTER (WHERE billable = TRUE), 0)::numeric    AS billable_amount,
-                COALESCE(SUM(hours * rate) FILTER (WHERE billable = TRUE AND invoiced = FALSE), 0)::numeric AS uninvoiced_amount,
+                COALESCE(SUM(hours) FILTER (WHERE billable = FALSE), 0)::numeric          AS non_billable_hours,
+                COALESCE(SUM(hours) FILTER (WHERE billable = TRUE AND invoiced = TRUE), 0)::numeric  AS invoiced_hours,
+                COALESCE(SUM(hours) FILTER (WHERE billable = TRUE AND invoiced = FALSE), 0)::numeric AS uninvoiced_hours,
                 COUNT(*)::int                                                             AS total_entries
              FROM time_entries
              ${where}`,
@@ -267,8 +269,9 @@ class TimeEntryRepository extends BaseRepository {
         return {
             totalHours: Number(row.total_hours) || 0,
             billableHours: Number(row.billable_hours) || 0,
-            billableAmount: Number(row.billable_amount) || 0,
-            uninvoicedAmount: Number(row.uninvoiced_amount) || 0,
+            nonBillableHours: Number(row.non_billable_hours) || 0,
+            invoicedHours: Number(row.invoiced_hours) || 0,
+            uninvoicedHours: Number(row.uninvoiced_hours) || 0,
             totalEntries: Number(row.total_entries) || 0,
         };
     }

@@ -1,4 +1,5 @@
 // src/interfaces/http/routes/timeEntryRoutes.js
+// v2.0.0-prod — Rate removed from POST/PUT (monthly retainer model).
 
 'use strict';
 
@@ -95,7 +96,7 @@ router.post('/', invalidateAfterWrite, async (req, res) => {
         }
 
         const {
-            projectId, customerId, entryDate, hours, rate,
+            projectId, customerId, entryDate, hours,
             description, billable, metadata,
         } = req.body;
 
@@ -105,7 +106,6 @@ router.post('/', invalidateAfterWrite, async (req, res) => {
             customerId: customerId || null,
             entryDate: entryDate ? new Date(entryDate) : new Date(),
             hours,
-            rate,
             description,
             billable,
             metadata,
@@ -125,7 +125,7 @@ router.put('/:id', invalidateAfterWrite, async (req, res) => {
         const { id } = req.params;
 
         const {
-            projectId, customerId, entryDate, hours, rate,
+            projectId, customerId, entryDate, hours,
             description, billable, metadata,
         } = req.body;
 
@@ -136,7 +136,6 @@ router.put('/:id', invalidateAfterWrite, async (req, res) => {
             customerId,
             entryDate: entryDate !== undefined ? (entryDate ? new Date(entryDate) : null) : undefined,
             hours,
-            rate,
             description,
             billable,
             metadata,

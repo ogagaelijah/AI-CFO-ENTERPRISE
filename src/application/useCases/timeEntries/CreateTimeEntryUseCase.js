@@ -1,4 +1,5 @@
 // src/application/useCases/timeEntries/CreateTimeEntryUseCase.js
+// v2.0.0-prod — Rate removed (monthly retainer model). Hours-only time tracking.
 
 class CreateTimeEntryUseCase {
     constructor({ timeEntryRepository, projectRepository = null }) {
@@ -12,7 +13,6 @@ class CreateTimeEntryUseCase {
         customerId = null,
         entryDate = new Date(),
         hours,
-        rate = 0,
         description = '',
         billable = true,
         metadata = {},
@@ -32,7 +32,7 @@ class CreateTimeEntryUseCase {
             }
         }
 
-        // Entity constructor enforces hours > 0, <= 24, rate >= 0
+        // Entity constructor enforces hours > 0, <= 24
         const TimeEntry = require('../../../domain/entities/TimeEntry');
         const entry = new TimeEntry({
             businessId,
@@ -40,7 +40,7 @@ class CreateTimeEntryUseCase {
             customerId,
             entryDate,
             hours,
-            rate,
+            rate: 0,           // rate column stays in DB, always 0 (monthly retainer model)
             description,
             billable,
             invoiced: false,

@@ -1,4 +1,5 @@
 // src/application/useCases/timeEntries/UpdateTimeEntryUseCase.js
+// v2.0.0-prod — Rate removed. Hours-only time tracking.
 
 class UpdateTimeEntryUseCase {
     constructor({ timeEntryRepository, projectRepository = null }) {
@@ -13,7 +14,6 @@ class UpdateTimeEntryUseCase {
         customerId,
         entryDate,
         hours,
-        rate,
         description,
         billable,
         metadata,
@@ -30,8 +30,7 @@ class UpdateTimeEntryUseCase {
             throw new Error('Time entry not found');
         }
 
-        // Once invoiced, the entry is locked — it is part of a billed document.
-        // Only metadata and description may be edited.
+        // Once invoiced, the entry is locked — only description/metadata editable.
         if (existing.invoiced) {
             const allowed = {};
             if (description !== undefined) allowed.description = description;
@@ -59,7 +58,7 @@ class UpdateTimeEntryUseCase {
             }
         }
 
-        // Validate numbers if provided
+        // Validate hours if provided
         if (hours !== undefined) {
             const h = Number(hours);
             if (!Number.isFinite(h) || h <= 0) {
@@ -69,19 +68,12 @@ class UpdateTimeEntryUseCase {
                 throw new Error('Hours cannot exceed 24 in a single entry');
             }
         }
-        if (rate !== undefined) {
-            const r = Number(rate);
-            if (!Number.isFinite(r) || r < 0) {
-                throw new Error('Rate cannot be negative');
-            }
-        }
 
         const updateData = {};
         if (projectId !== undefined) updateData.projectId = projectId;
         if (customerId !== undefined) updateData.customerId = customerId;
         if (entryDate !== undefined) updateData.entryDate = entryDate ? new Date(entryDate) : null;
         if (hours !== undefined) updateData.hours = Number(hours);
-        if (rate !== undefined) updateData.rate = Number(rate);
         if (description !== undefined) updateData.description = description;
         if (billable !== undefined) updateData.billable = Boolean(billable);
         if (metadata !== undefined) updateData.metadata = metadata;
