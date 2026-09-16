@@ -212,7 +212,7 @@ export const INDUSTRY_CONFIGS = {
     borderColor: 'border-purple-200 dark:border-purple-800',
     stats: [
       { key: 'revenue',     label: 'Revenue Today',     icon: DollarSign,   color: 'primary' },
-      { key: 'sales',       label: 'Invoices Today',    icon: FileText,     color: 'blue' },
+      { key: 'invoices',    label: 'Invoices Today',    icon: FileText,     color: 'blue' },
       { key: 'profit',      label: 'Profit Today',      icon: TrendingUp,   color: 'emerald' },
       { key: 'expenses',    label: 'Expenses Today',    icon: TrendingDown, color: 'red' },
       { key: 'projects',    label: 'Active Projects',   icon: ProjectIcon,  color: 'amber' },

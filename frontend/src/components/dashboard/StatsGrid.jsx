@@ -1,5 +1,5 @@
 // frontend/src/components/dashboard/StatsGrid.jsx
-// v1.3.0-prod — bold today + persistent month sub-label for daily metrics
+// v1.4.0-prod — config label wins over API label; projects + invoices links
 
 import { Link } from 'react-router-dom';
 import { STAT_COLORS } from '../../config/industryConfig';
@@ -28,6 +28,8 @@ const KPI_LINKS = {
   purchases: '/purchases',
   customers: '/customers',
   suppliers: '/suppliers',
+  projects: '/projects',
+  invoices: '/invoices',
 };
 
 const formatCurrency = (n) => `₦${Math.round(Number(n) || 0).toLocaleString()}`;
@@ -53,13 +55,12 @@ const StatsGrid = ({ industryConfig, kpis }) => {
         let subLabel = null;
 
         if (isDaily) {
-          // Primary = today's value (bold)
           primaryValue = Number(
             kpi.today ?? kpi.month ?? kpi.total ?? kpi.current ?? 0
           );
-          displayLabel = kpi.label || `${stat.label} Today`;
+          // Config label wins over API label — industry config is the SSOT.
+          displayLabel = stat.label || kpi.label || `${stat.label} Today`;
 
-          // Month sub-label always shown when month > 0
           const monthNum = Number(kpi.month ?? 0);
           if (monthNum > 0) {
             monthValue = monthNum;
@@ -71,11 +72,14 @@ const StatsGrid = ({ industryConfig, kpis }) => {
           primaryValue = Number(
             kpi.total ?? kpi.current ?? kpi.month ?? kpi.today ?? 0
           );
-          displayLabel = kpi.label || stat.label;
+          // Config label wins over API label.
+          displayLabel = stat.label || kpi.label || stat.label;
         } else {
           primaryValue = Number(
             kpi.month ?? kpi.total ?? kpi.current ?? kpi.today ?? 0
           );
+          // Config label wins over API label.
+          displayLabel = stat.label || kpi.label || stat.label;
         }
 
         const displayValue = isCurrency
@@ -110,19 +114,16 @@ const StatsGrid = ({ industryConfig, kpis }) => {
               )}
             </div>
 
-            {/* BIG BOLD: today's value */}
             <h3 className="text-base sm:text-2xl font-bold text-gray-900 dark:text-white mt-2 sm:mt-3 truncate">
               {displayValue}
             </h3>
 
-            {/* SMALL SUB-LABEL: this month */}
             {subLabel && (
               <p className="text-[11px] sm:text-xs text-gray-400 dark:text-gray-500 mt-0.5 truncate">
                 {subLabel}
               </p>
             )}
 
-            {/* Card label */}
             <p className="text-[11px] sm:text-sm text-gray-500 dark:text-gray-400 mt-1 truncate">
               {displayLabel}
             </p>

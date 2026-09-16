@@ -1,6 +1,7 @@
 // src/interfaces/http/routes/dashboardRoutes.js
 // Aggregated dashboard endpoint — SSOT consumer
-// v2.1.1-prod — Cash Position now taken from CashFlowService (report engine)
+// v2.3.0-prod — Adds `invoices` KPI (today's invoice count) alongside `projects`.
+//               Cache version bumped v8 → v9.
 
 'use strict';
 
@@ -37,6 +38,8 @@ const CreditorRepository = require('../../../infrastructure/database/sqlite/repo
 const InventoryRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryRepository');
 const ReportRepository = require('../../../infrastructure/database/sqlite/repositories/ReportRepository');
 const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository');
+const ProjectRepository = require('../../../infrastructure/database/sqlite/repositories/ProjectRepository');
+const InvoiceRepository = require('../../../infrastructure/database/sqlite/repositories/InvoiceRepository');
 
 // ===== Initialize Repositories =====
 const saleRepo = new SaleRepository();
@@ -48,6 +51,8 @@ const creditorRepo = new CreditorRepository();
 const inventoryRepo = new InventoryRepository();
 const reportRepo = new ReportRepository();
 const paymentRepo = new PaymentRepository();
+const projectRepo = new ProjectRepository();
+const invoiceRepo = new InvoiceRepository();
 
 // ===== Initialize Report Services =====
 const profitLossService = new ProfitLossService({
@@ -58,7 +63,7 @@ const profitLossService = new ProfitLossService({
 });
 
 const cashFlowService = new CashFlowService({
-  paymentRepository: paymentRepo,          // ← required by CashCalculator
+  paymentRepository: paymentRepo,
   saleRepository: saleRepo,
   expenseRepository: expenseRepo,
   incomeRepository: incomeRepo,
@@ -196,8 +201,8 @@ router.get('/summary', async (req, res) => {
       });
     }
 
-    // bumped cache version so the old wrong cash value is discarded
-    const cacheKey = `aicfo:dashboard:${businessId}:daily:v7`;
+    // v9: added `invoices` KPI — discard v8 cache so every user sees the new stat
+    const cacheKey = `aicfo:dashboard:${businessId}:daily:v9`;
 
     const data = await cacheService.getOrSet(
       cacheKey,
@@ -252,7 +257,9 @@ async function fetchDashboardData({ userId, businessId }) {
     debtorsTotalRaw,
     creditorsTotalRaw,
     inventorySummary,
-    cashFlowResult,                    // ← NEW: authoritative cash from report engine
+    cashFlowResult,
+    activeProjectsRaw,
+    todayInvoicesRaw,
   ] = await Promise.allSettled([
     dailyReportService.generate({ userId, businessId, date: todayStr }),
     analyticsProvider.generateAnalytics({
@@ -266,13 +273,14 @@ async function fetchDashboardData({ userId, businessId }) {
     debtorRepo.getTotalOutstanding(businessId),
     creditorRepo.getTotalOutstanding(businessId),
     inventoryRepo.getSummary(businessId),
-    // Full history → current cash position (matches the correct Cashflow report)
     cashFlowService.generate({
       userId,
       businessId,
       startDate: '2000-01-01',
       endDate: todayStr,
     }),
+    projectRepo.countByBusinessId(businessId, { status: 'ACTIVE' }),
+    invoiceRepo.countByBusinessId(businessId, { fromDate: todayStr, toDate: todayStr }),
   ]);
 
   const daily = dailyResult.status === 'fulfilled' ? dailyResult.value : null;
@@ -289,6 +297,12 @@ async function fetchDashboardData({ userId, businessId }) {
   const inventorySummaryData = inventorySummary.status === 'fulfilled'
     ? inventorySummary.value || {}
     : {};
+  const activeProjects = activeProjectsRaw.status === 'fulfilled'
+    ? Number(activeProjectsRaw.value) || 0
+    : 0;
+  const todayInvoices = todayInvoicesRaw.status === 'fulfilled'
+    ? Number(todayInvoicesRaw.value) || 0
+    : 0;
 
   // ─────────────────────────────────────────────
   // Navigate analytics (SSOT)
@@ -340,8 +354,6 @@ async function fetchDashboardData({ userId, businessId }) {
 
   // ─────────────────────────────────────────────
   // FIXED: Health Score extraction
-  // Prefer top-level health from the new Transformer,
-  // then fall back to any nested legacy shape
   // ─────────────────────────────────────────────
   const healthObj = analytics?.health || snapshot?.health || {};
 
@@ -439,6 +451,18 @@ async function fetchDashboardData({ userId, businessId }) {
       growth: 0,
       label: 'Sales Today',
     },
+    projects: {
+      active: activeProjects,
+      formatted: String(activeProjects),
+      label: 'Active Projects',
+    },
+    invoices: {
+      today: todayInvoices,
+      month: null,
+      growth: 0,
+      formatted: String(todayInvoices),
+      label: 'Invoices Today',
+    },
   };
 
   return {
@@ -460,8 +484,8 @@ async function fetchDashboardData({ userId, businessId }) {
       userId,
       businessId,
       generatedAt: new Date().toISOString(),
-      source: 'cashflow+daily+analytics+risk+repos',
-      version: '2.1.1',
+      source: 'cashflow+daily+analytics+risk+repos+projects+invoices',
+      version: '2.3.0',
     },
   };
 }

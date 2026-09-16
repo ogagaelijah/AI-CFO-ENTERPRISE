@@ -25,7 +25,8 @@ import Analytics from './pages/Analytics';
 import Forecast from './pages/Forecast';
 import Risk from './pages/Risk';
 import Decisions from './pages/Decisions';
-import Advisor from './pages/Advisor';                    // ← ADDED
+import Advisor from './pages/Advisor';
+import Projects from './pages/Projects';                   // ← ADDED
 
 function App() {
   return (
@@ -53,6 +54,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <Reports />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/projects"                                   // ← ADDED
+              element={
+                <ProtectedRoute>
+                  <Projects />
                 </ProtectedRoute>
               }
             />
@@ -177,7 +186,7 @@ function App() {
               }
             />
             <Route
-              path="/ai"                                         // ← ADDED (matches sidebar)
+              path="/ai"
               element={
                 <ProtectedRoute>
                   <Advisor />
@@ -185,7 +194,7 @@ function App() {
               }
             />
             <Route
-              path="/advisor"                                    // ← optional alias
+              path="/advisor"
               element={
                 <ProtectedRoute>
                   <Advisor />

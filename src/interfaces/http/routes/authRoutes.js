@@ -1,5 +1,9 @@
 // src/interfaces/http/routes/authRoutes.js
-// v3.3.0-prod — Postgres-ready + cross-site cookies for staging/production
+// v3.4.0-prod — Postgres-ready + cross-site cookies + transactional register
+//
+// v3.4.0 change: register flow wrapped in withTransaction so all three inserts
+// (user, business, subscription) go over a single pooled connection. Prevents
+// Supabase transaction-pooler recycling from silently discarding partial writes.
 
 const express = require('express');
 const router = express.Router();
@@ -11,6 +15,7 @@ const UserRepository = require('../../../infrastructure/database/sqlite/reposito
 const BusinessRepository = require('../../../infrastructure/database/sqlite/repositories/BusinessRepository');
 const SubscriptionRepository = require('../../../infrastructure/database/sqlite/repositories/SubscriptionRepository');
 const SecurityEventService = require('../../../infrastructure/services/security/SecurityEventService');
+const { withTransaction } = require('../../../infrastructure/database/sqlite/connection');
 const plans = require('../../../config/plans');
 
 const userRepo = new UserRepository();
@@ -91,43 +96,60 @@ router.post('/register', async (req, res) => {
     const hashedVerifyToken = hashToken(rawVerifyToken);
     const verifyExpiry = new Date(Date.now() + EMAIL_VERIFICATION_TTL_MS).toISOString();
 
-    const user = await userRepo.create({
-      telegramId: uniqueTelegramId,
-      email,
-      phoneNumber: phone || null,
-      fullName,
-      passwordHash,
-      emailVerified: false,
-      phoneVerified: false,
-      emailVerificationToken: hashedVerifyToken,
-      emailVerificationExpiry: verifyExpiry,
-      passwordChangedAt: new Date().toISOString(),
-    });
+    // All three writes on a single pooled connection:
+    // Supabase's transaction pooler assigns one server connection per
+    // transaction. Without this wrapper, each insert runs on its own
+    // connection and pooler recycling can discard writes mid-sequence.
+    const { user, business, trialPlanId, trialPlan, trialDays, trialEndDate } =
+      await withTransaction(async () => {
+        const u = await userRepo.create({
+          telegramId: uniqueTelegramId,
+          email,
+          phoneNumber: phone || null,
+          fullName,
+          passwordHash,
+          emailVerified: false,
+          phoneVerified: false,
+          emailVerificationToken: hashedVerifyToken,
+          emailVerificationExpiry: verifyExpiry,
+          passwordChangedAt: new Date().toISOString(),
+        });
 
-    const business = await businessRepo.create({
-      userId: user.id,
-      name: businessName,
-      industry,
-    });
+        const b = await businessRepo.create({
+          userId: u.id,
+          name: businessName,
+          industry,
+        });
 
-    // Auto-create 14-day Pro trial
-    const trialPlanId = plans.getTrialPlan();
-    const trialPlan = plans.getPlan(trialPlanId);
-    const trialDays = plans.getTrialDays(trialPlanId);
-    const trialEndDate = new Date();
-    trialEndDate.setDate(trialEndDate.getDate() + trialDays);
+        const tpId = plans.getTrialPlan();
+        const tp = plans.getPlan(tpId);
+        const tDays = plans.getTrialDays(tpId);
+        const tEnd = new Date();
+        tEnd.setDate(tEnd.getDate() + tDays);
 
-    await subscriptionRepo.create({
-      businessId: business.id,
-      planId: trialPlanId,
-      status: 'trial',
-      billingCycle: 'trial',
-      startDate: new Date(),
-      endDate: null,
-      trialEndDate,
-      features: trialPlan.features,
-    });
+        await subscriptionRepo.create({
+          businessId: b.id,
+          planId: tpId,
+          status: 'trial',
+          billingCycle: 'trial',
+          startDate: new Date(),
+          endDate: null,
+          trialEndDate: tEnd,
+          features: tp.features,
+        });
 
+        return {
+          user: u,
+          business: b,
+          trialPlanId: tpId,
+          trialPlan: tp,
+          trialDays: tDays,
+          trialEndDate: tEnd,
+        };
+      });
+
+    // Security event logged outside the transaction — it's an audit write
+    // that must not roll back the user's registration if it fails.
     securityEvents.log({
       eventType: 'REGISTER_SUCCESS',
       userId: user.id,

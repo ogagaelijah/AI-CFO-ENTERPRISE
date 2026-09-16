@@ -1,5 +1,5 @@
 // src/infrastructure/database/sqlite/repositories/SaleRepository.js
-// v3.1.0-prod — Postgres async. Same logic as SQLite v3.0.1.
+// v3.2.0-prod — Postgres async. Added nextSaleNumber(businessId) for per-business numbering.
 
 const BaseRepository = require('./BaseRepository');
 
@@ -138,6 +138,27 @@ class SaleRepository extends BaseRepository {
 
         const result = await this._query(sql, params);
         return result.rows.map(row => this._hydrate(row));
+    }
+
+    /**
+     * Per-business sequential invoice number for sales.
+     * Format: SALE-0001, SALE-0002, ...
+     * Atomic within a transaction (query max → +1 → format).
+     */
+    async nextSaleNumber(businessId) {
+        const result = await this._query(
+            `SELECT invoice_no
+             FROM sales
+             WHERE business_id = $1
+               AND invoice_no ~ '^SALE-[0-9]+$'
+             ORDER BY CAST(SUBSTRING(invoice_no FROM 6) AS INTEGER) DESC
+             LIMIT 1`,
+            [businessId]
+        );
+        const last = result.rows[0]?.invoice_no;
+        const lastNum = last ? parseInt(last.slice(5), 10) : 0;
+        const next = lastNum + 1;
+        return `SALE-${String(next).padStart(4, '0')}`;
     }
 
     async getStats(businessId) {

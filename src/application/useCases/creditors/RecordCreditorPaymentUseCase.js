@@ -1,4 +1,8 @@
 // src/application/useCases/creditors/RecordCreditorPaymentUseCase.js
+// v2.1.0-prod — Writes wrapped in withTransaction.
+//               Ownership check reads raw business_id (repos return plain rows).
+
+const { withTransaction } = require('../../../infrastructure/database/sqlite/connection');
 
 class RecordCreditorPaymentUseCase {
     constructor({
@@ -38,12 +42,17 @@ class RecordCreditorPaymentUseCase {
             throw new Error('Creditor not found');
         }
 
-        const creditorBusinessId = creditor.businessId ?? creditor.user_id ?? creditor.business_id;
-        if (creditorBusinessId !== businessId) {
+        // Repos return raw rows (snake_case). Compare business_id to the
+        // caller's businessId, coerced to the same type so JWT string
+        // claims don't trip strict equality.
+        const creditorBusinessId = Number(creditor.business_id ?? creditor.businessId);
+        if (!Number.isInteger(creditorBusinessId) || creditorBusinessId !== Number(businessId)) {
             throw new Error('Access denied: Creditor does not belong to this business');
         }
 
-        const balanceRemaining = creditor.balanceRemaining ?? creditor.balance_remaining ?? 0;
+        const balanceRemaining = Number(
+            creditor.balance_remaining ?? creditor.balanceRemaining ?? 0
+        );
         if (balanceRemaining <= 0) {
             throw new Error('Creditor is already fully paid');
         }
@@ -51,59 +60,59 @@ class RecordCreditorPaymentUseCase {
             throw new Error(`Payment amount (${amount}) exceeds remaining balance (${balanceRemaining})`);
         }
 
-        const newBalance = balanceRemaining - amount;
-        const newAmountPaid = (creditor.amount_paid || creditor.amountPaid || 0) + amount;
-
-        // Full ISO timestamp (same as debtor)
+        const alreadyPaid = Number(creditor.amount_paid ?? creditor.amountPaid ?? 0);
+        const supplierLabel = creditor.supplier_name || creditor.supplierName || 'supplier';
         const lastPaymentDate = paymentDate instanceof Date
             ? paymentDate.toISOString()
             : paymentDate;
 
-        // 1. Update creditor
-        const updated = await this.creditorRepository.update(creditorId, {
-            balance_remaining: newBalance,
-            amount_paid: newAmountPaid,
-            status: newBalance <= 0 ? 'PAID' : 'ACTIVE',
-            last_payment_date: lastPaymentDate,
+        // All three writes on one pooled connection, atomically.
+        const { updated, savedPayment, newBalance } = await withTransaction(async () => {
+            // 1. Update creditor
+            const u = await this.creditorRepository.update(creditorId, {
+                balance_remaining: balanceRemaining - amount,
+                amount_paid: alreadyPaid + amount,
+                status: balanceRemaining - amount <= 0 ? 'PAID' : 'ACTIVE',
+                last_payment_date: lastPaymentDate,
+            });
+
+            // 2. Payment record
+            const Payment = require('../../../domain/entities/Payment');
+            const payment = new Payment({
+                userId,
+                businessId,
+                type: 'MADE',
+                amount,
+                referenceType: 'CREDITOR',
+                referenceId: creditorId,
+                paymentDate,
+                paymentMethod,
+                notes: notes || `Payment made to ${supplierLabel}`,
+            });
+            const sp = await this.paymentRepository.create(payment);
+
+            // 3. Transaction record — required inside the transaction.
+            const Transaction = require('../../../domain/entities/Transaction');
+            const transaction = new Transaction({
+                businessId,
+                userId,
+                type: 'PAYMENT_OUT',
+                category: 'Creditor Payment',
+                amount,
+                description: `Payment made to creditor #${creditorId}`,
+                paymentStatus: 'PAID',
+                referenceId: creditorId,
+                referenceType: 'CREDITOR',
+                date: paymentDate,
+            });
+            await this.transactionRepository.create(transaction);
+
+            return {
+                updated: u,
+                savedPayment: sp,
+                newBalance: balanceRemaining - amount,
+            };
         });
-
-        // 2. Create payment record
-        const Payment = require('../../../domain/entities/Payment');
-        const payment = new Payment({
-            userId,
-            businessId,
-            type: 'MADE',
-            amount,
-            referenceType: 'CREDITOR',
-            referenceId: creditorId,
-            paymentDate,
-            paymentMethod,
-            notes: notes || `Payment made to ${creditor.supplier_name || creditor.supplierName || 'supplier'}`,
-        });
-
-        const savedPayment = await this.paymentRepository.create(payment);
-
-        // 3. Try to create transaction (non-blocking)
-        try {
-            if (this.transactionRepository) {
-                const Transaction = require('../../../domain/entities/Transaction');
-                const transaction = new Transaction({
-                    businessId,
-                    userId,
-                    type: 'PAYMENT_OUT',
-                    category: 'Creditor Payment',
-                    amount,
-                    description: `Payment made to creditor #${creditorId}`,
-                    paymentStatus: 'PAID',
-                    referenceId: creditorId,
-                    referenceType: 'CREDITOR',
-                    date: paymentDate,
-                });
-                await this.transactionRepository.create(transaction);
-            }
-        } catch (txError) {
-            console.warn('⚠️ Could not create transaction record (table may be missing):', txError.message);
-        }
 
         return {
             success: true,

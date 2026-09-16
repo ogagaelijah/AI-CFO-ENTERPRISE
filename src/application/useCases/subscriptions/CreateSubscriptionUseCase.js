@@ -1,7 +1,10 @@
 // src/application/useCases/subscriptions/CreateSubscriptionUseCase.js
-// v2.0.1-prod — 14-day Pro trial by default, SSOT-driven, no entity import
+// v3.0.0-prod — All writes wrapped in withTransaction.
+//               Fixed three missing awaits that made this file return a Promise<Promise>.
+//               SSOT-driven plan lookup.
 
 const plans = require('../../../config/plans');
+const { withTransaction } = require('../../../infrastructure/database/sqlite/connection');
 
 class CreateSubscriptionUseCase {
     constructor({
@@ -12,17 +15,6 @@ class CreateSubscriptionUseCase {
         this.businessRepository = businessRepository;
     }
 
-    /**
-     * Create a subscription.
-     *
-     * @param {Object} params
-     * @param {number} params.businessId
-     * @param {string} [params.planId] - Defaults to plans.getTrialPlan() ('pro')
-     * @param {string} [params.billingCycle] - 'monthly' | 'yearly' | 'trial'
-     * @param {number} [params.trialDays] - Defaults to plan's trialDays
-     * @param {string} [params.paymentReference]
-     * @param {string} [params.status] - 'trial' | 'active'
-     */
     async execute({
         businessId,
         planId = null,
@@ -36,31 +28,14 @@ class CreateSubscriptionUseCase {
         const business = await this.businessRepository.findById(businessId);
         if (!business) throw new Error('Business not found');
 
-        // ── Determine plan
         const effectivePlanId = planId || plans.getTrialPlan();
         const plan = plans.getPlan(effectivePlanId);
         if (!plan) throw new Error(`Plan not found: ${effectivePlanId}`);
 
-        // ── Determine trial duration
-        const effectiveTrialDays = trialDays != null
-            ? trialDays
-            : plan.trialDays;
-
+        const effectiveTrialDays = trialDays != null ? trialDays : plan.trialDays;
         const isTrial = effectiveTrialDays > 0 && status !== 'active';
-
-        // ── Determine billing cycle
         const effectiveCycle = billingCycle || (isTrial ? 'trial' : 'monthly');
 
-        // ── Cancel any existing active subscription
-        const existing = this.subscriptionRepository.findActiveByBusinessId(businessId);
-        if (existing) {
-            this.subscriptionRepository.update(existing.id, {
-                status: 'cancelled',
-                endDate: new Date(),
-            });
-        }
-
-        // ── Calculate dates
         const startDate = new Date();
         let endDate = null;
         let trialEndDate = null;
@@ -77,21 +52,32 @@ class CreateSubscriptionUseCase {
             }
         }
 
-        // ── Create subscription (plain object — repo hydrates the entity)
-        const saved = this.subscriptionRepository.create({
-            businessId,
-            planId: effectivePlanId,
-            status: isTrial ? 'trial' : 'active',
-            billingCycle: effectiveCycle,
-            startDate,
-            endDate,
-            trialEndDate,
-            features: plan.features,
+        // Cancel existing + create new, atomically.
+        const saved = await withTransaction(async () => {
+            const existing = await this.subscriptionRepository.findActiveByBusinessId(businessId);
+            if (existing) {
+                await this.subscriptionRepository.update(existing.id, {
+                    status: 'cancelled',
+                    endDate: new Date(),
+                });
+            }
+
+            return await this.subscriptionRepository.create({
+                businessId,
+                planId: effectivePlanId,
+                status: isTrial ? 'trial' : 'active',
+                billingCycle: effectiveCycle,
+                startDate,
+                endDate,
+                trialEndDate,
+                features: plan.features,
+                paymentReference: paymentReference || null,
+            });
         });
 
         return {
             success: true,
-            subscription: saved.toJSON(),
+            subscription: saved.toJSON ? saved.toJSON() : saved,
             message: isTrial
                 ? `Trial started. ${effectiveTrialDays} days of ${plan.name} access.`
                 : `${plan.name} subscription activated.`,

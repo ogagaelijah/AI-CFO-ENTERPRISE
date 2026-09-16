@@ -1,4 +1,8 @@
 // src/application/useCases/payments/MakePaymentUseCase.js
+// v2.0.0-prod — Writes wrapped in withTransaction.
+//               Ownership check reads raw business_id.
+
+const { withTransaction } = require('../../../infrastructure/database/sqlite/connection');
 
 class MakePaymentUseCase {
     constructor({
@@ -16,7 +20,7 @@ class MakePaymentUseCase {
     }
 
     async execute({
-        userId,                 // ← added
+        userId,
         businessId,
         creditorId,
         amount,
@@ -27,116 +31,133 @@ class MakePaymentUseCase {
         if (!userId) {
             throw new Error('User ID is required');
         }
-
         if (!businessId) {
             throw new Error('Business ID is required');
         }
-
         if (!creditorId) {
             throw new Error('Creditor ID is required');
         }
-
         if (!amount || amount <= 0) {
             throw new Error('Payment amount must be greater than zero');
         }
 
-        // Get creditor
         const creditor = await this.creditorRepository.findById(creditorId);
         if (!creditor) {
             throw new Error('Creditor not found');
         }
 
-        // Verify business ownership
-        if (creditor.businessId !== businessId) {
+        // Raw rows (snake_case). Coerce both sides so JWT strings match ints.
+        const creditorBusinessId = Number(creditor.business_id ?? creditor.businessId);
+        if (!Number.isInteger(creditorBusinessId) || creditorBusinessId !== Number(businessId)) {
             throw new Error('Access denied: Creditor does not belong to this business');
         }
 
-        // Check if creditor is already paid
-        if (creditor.isFullyPaid()) {
+        const balanceRemaining = Number(
+            creditor.balance_remaining ?? creditor.balanceRemaining ?? 0
+        );
+        if (balanceRemaining <= 0) {
             throw new Error('Creditor is already fully paid');
         }
-
-        // Check if payment exceeds balance
-        if (amount > creditor.balanceRemaining) {
-            throw new Error(`Payment amount (${amount}) exceeds remaining balance (${creditor.balanceRemaining})`);
+        if (amount > balanceRemaining) {
+            throw new Error(`Payment amount (${amount}) exceeds remaining balance (${balanceRemaining})`);
         }
 
-        // Record payment — now with both userId and businessId
-        const Payment = require('../../../domain/entities/Payment');
-        const payment = new Payment({
-            userId,                 // ← added
-            businessId,
-            type: 'OUT',
-            amount,
-            referenceType: 'CREDITOR',
-            referenceId: creditorId,
-            paymentDate,            // ← correct property name
-            paymentMethod,
-            notes,
-        });
+        // Everything in one transaction: payment + transaction + creditor update
+        // + optional purchase/expense status update.
+        const result = await withTransaction(async () => {
+            // 1. Payment
+            const Payment = require('../../../domain/entities/Payment');
+            const payment = new Payment({
+                userId,
+                businessId,
+                type: 'OUT',
+                amount,
+                referenceType: 'CREDITOR',
+                referenceId: creditorId,
+                paymentDate,
+                paymentMethod,
+                notes,
+            });
+            const savedPayment = await this.paymentRepository.create(payment);
 
-        const savedPayment = await this.paymentRepository.create(payment);
+            // 2. Transaction record
+            const Transaction = require('../../../domain/entities/Transaction');
+            const transaction = new Transaction({
+                businessId,
+                userId,
+                type: 'PAYMENT_OUT',
+                category: 'Creditor Payment',
+                amount,
+                description: `Payment made to creditor #${creditorId}`,
+                paymentStatus: 'PAID',
+                referenceId: creditorId,
+                referenceType: 'CREDITOR',
+                date: paymentDate,
+            });
+            await this.transactionRepository.create(transaction);
 
-        // Create transaction for payment
-        const Transaction = require('../../../domain/entities/Transaction');
-        const transaction = new Transaction({
-            businessId,
-            type: 'PAYMENT_OUT',
-            category: 'Creditor Payment',
-            amount,
-            description: `Payment made to creditor #${creditorId}`,
-            paymentStatus: 'PAID',
-            referenceId: creditorId,
-            referenceType: 'CREDITOR',
-            date: paymentDate,
-        });
+            // 3. Creditor update — computed from raw values, not entity methods
+            const newBalance = balanceRemaining - amount;
+            const newPaid = Number(creditor.amount_paid ?? creditor.amountPaid ?? 0) + amount;
 
-        await this.transactionRepository.create(transaction);
+            const updatedCreditor = await this.creditorRepository.update(creditorId, {
+                balance_remaining: newBalance,
+                amount_paid: newPaid,
+                status: newBalance <= 0 ? 'PAID' : 'ACTIVE',
+                last_payment_date: paymentDate instanceof Date
+                    ? paymentDate.toISOString()
+                    : paymentDate,
+            });
 
-        // Update creditor balance
-        creditor.makePayment(amount);
-        await this.creditorRepository.update(creditor.id, creditor);
+            // 4. Optional downstream status update (purchase or expense)
+            const refType = creditor.reference_type ?? creditor.referenceType;
+            const refId = creditor.reference_id ?? creditor.referenceId;
+            const originalAmount = Number(
+                creditor.original_amount ?? creditor.total_owed ?? creditor.originalAmount ?? 0
+            );
 
-        // If creditor is linked to a purchase, update purchase payment status
-        if (creditor.referenceType === 'PURCHASE' && creditor.referenceId) {
-            const purchase = await this.purchaseRepository.findById(creditor.referenceId);
-            if (purchase && purchase.businessId === businessId) {
-                const totalPaid = creditor.amountPaid;
-                const totalAmount = creditor.originalAmount;
-
-                if (totalPaid >= totalAmount) {
-                    purchase.markAsPaid();
-                } else if (totalPaid > 0) {
-                    purchase.markAsPartial(totalPaid);
+            if (refType === 'PURCHASE' && refId && this.purchaseRepository) {
+                const purchase = await this.purchaseRepository.findById(refId);
+                const purchaseBiz = Number(purchase?.business_id ?? purchase?.businessId);
+                if (purchase && purchaseBiz === Number(businessId)) {
+                    const patch = { payment_status: newPaid >= originalAmount ? 'PAID' : 'PARTIAL' };
+                    if (newPaid >= originalAmount) {
+                        patch.balance_remaining = 0;
+                    } else {
+                        patch.balance_remaining = originalAmount - newPaid;
+                    }
+                    await this.purchaseRepository.update(refId, patch);
                 }
-                await this.purchaseRepository.update(purchase.id, purchase);
-            }
-        }
-
-        // If creditor is linked to expense, update expense payment status
-        if (creditor.referenceType === 'EXPENSE' && creditor.referenceId) {
-            const expense = await this.expenseRepository.findById(creditor.referenceId);
-            if (expense && expense.businessId === businessId) {
-                const totalPaid = creditor.amountPaid;
-                const totalAmount = creditor.originalAmount;
-
-                if (totalPaid >= totalAmount) {
-                    expense.markAsPaid();
-                } else if (totalPaid > 0) {
-                    expense.markAsPartial(totalPaid);
+            } else if (refType === 'EXPENSE' && refId && this.expenseRepository) {
+                const expense = await this.expenseRepository.findById(refId);
+                const expenseBiz = Number(expense?.business_id ?? expense?.businessId);
+                if (expense && expenseBiz === Number(businessId)) {
+                    const patch = { payment_status: newPaid >= originalAmount ? 'PAID' : 'PARTIAL' };
+                    if (newPaid >= originalAmount) {
+                        patch.balance_remaining = 0;
+                    } else {
+                        patch.balance_remaining = originalAmount - newPaid;
+                    }
+                    await this.expenseRepository.update(refId, patch);
                 }
-                await this.expenseRepository.update(expense.id, expense);
             }
-        }
+
+            return {
+                savedPayment,
+                updatedCreditor,
+                newBalance,
+                fullyPaid: newBalance <= 0,
+            };
+        });
 
         return {
             success: true,
-            payment: savedPayment.toJSON(),
-            creditor: creditor.toJSON(),
-            remainingBalance: creditor.balanceRemaining,
-            message: creditor.isFullyPaid()
+            payment: result.savedPayment.toJSON ? result.savedPayment.toJSON() : result.savedPayment,
+            creditor: result.updatedCreditor,
+            remainingBalance: result.newBalance,
+            message: result.fullyPaid
                 ? 'Creditor fully paid'
-                : `Payment made. Remaining balance: ${creditor.balanceRemaining}`,
+                : `Payment made. Remaining balance: ${result.newBalance}`,
         };
     }
 }

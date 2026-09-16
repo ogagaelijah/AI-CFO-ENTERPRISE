@@ -1,47 +1,117 @@
 // src/config/plans.js
 // Single Source of Truth for subscription plans, features, limits, pricing.
-// v3.1.0-prod
+// v4.0.0-prod
 //
-// All other modules (payment, gating, UI) MUST read from this file.
-// Do NOT hardcode plan data anywhere else.
+// Structure:
+//   CORE_FEATURES        — every tier gets these (sales, inventory, customers...)
+//   INDUSTRY_FEATURES    — per-industry modules (projects, time_entries, invoices, etc.)
+//   INTELLIGENCE_FEATURES— analytics, forecast, risk, decisions, ai_advisor
+//   TEAM_FEATURES        — team_roles, multi_business
+//   SUPPORT_FEATURES     — support_email, support_priority, account_manager, api_access, white_label
 //
-// Tiers:
-//   basic      — ₦2,500/mo  or  ₦25,000/yr  (save 17%)
-//   pro        — ₦4,500/mo  or  ₦45,000/yr  (save 17%) — 14-day trial
-//   enterprise — ₦10,500/mo or  ₦105,000/yr (save 17%)
-//   free       — internal only, hidden from UI
+// Plans are composed: a tier declares which groups it gets, plus per-feature overrides.
+// Adding a new industry = one line in INDUSTRY_FEATURES. No edits to plan blocks.
 
-const PLANS = {
-    // ─────────────────────────────────────────────
-    // FREE — internal-only (hidden, testing only)
-    // ─────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// Feature groups
+// ─────────────────────────────────────────────
+const CORE_FEATURES = {
+    sales: true,
+    purchases: true,
+    expenses: true,
+    income: true,
+    customers: true,
+    suppliers: true,
+    debtors: true,
+    creditors: true,
+    payments: true,
+    inventory: true,
+};
+
+// Industry-specific modules. All industries share the same tiering:
+// available from Basic up (and on the internal `free` plan for testing).
+// Add a new industry here → it flows to every tier that gets INDUSTRY_FEATURES.
+const INDUSTRY_FEATURES = {
+    // Consultancy
+    projects: true,
+    time_entries: true,
+    invoices: true,
+    // Logistics (next)
+    // trips: true,
+    // vehicles: true,
+    // drivers: true,
+    // Education
+    // students: true,
+    // classes: true,
+    // fees: true,
+    // Real Estate
+    // properties: true,
+    // tenants: true,
+    // rent: true,
+    // Healthcare
+    // patients: true,
+    // visits: true,
+    // medical_supplies: true,
+    // Construction
+    // materials: true,
+    // Manufacturing
+    // raw_materials: true,
+    // production: true,
+    // finished_goods: true,
+};
+
+const INTELLIGENCE_FEATURES = {
+    analytics: true,
+    forecast: true,
+    risk: true,
+    decisions: true,
+    alerts: true,
+    ai_advisor: true,
+};
+
+const TEAM_FEATURES = {
+    team_roles: true,
+    multi_business: true,
+};
+
+const SUPPORT_FEATURES = {
+    support_email: true,
+    support_priority: true,
+    account_manager: true,
+    api_access: true,
+    white_label: true,
+};
+
+// Every feature key that exists anywhere in the system.
+// Ensures each plan has all keys defined (as false if not granted).
+const ALL_FEATURE_KEYS = [
+    ...Object.keys(CORE_FEATURES),
+    ...Object.keys(INDUSTRY_FEATURES),
+    ...Object.keys(INTELLIGENCE_FEATURES),
+    ...Object.keys(TEAM_FEATURES),
+    ...Object.keys(SUPPORT_FEATURES),
+    // Report features (handled per-tier, not grouped)
+    'reports_basic',
+    'reports_financial',
+    'reports_inventory',
+    'reports_yearly',
+    'reports_executive',
+    'reports_aging',
+    'reports_export',
+];
+
+// ─────────────────────────────────────────────
+// Tier composition
+// Declares which groups each tier gets + per-feature overrides.
+// Reports are declared explicitly per tier (they vary by tier granularly).
+// `intelligence: false` explicitly disables the INTELLIGENCE_FEATURES group.
+// `support: {...}` provides an explicit allow-list when a tier does NOT get
+// the full SUPPORT_FEATURES group.
+// ─────────────────────────────────────────────
+const TIER_COMPOSITION = {
     free: {
-        id: 'free',
-        name: 'Free (Internal)',
-        description: 'Internal test plan. Not shown to users.',
-        hidden: true,
-        trialDays: 0,
-        currency: 'NGN',
-
-        pricing: {
-            monthly: 0,
-            yearly: 0,
-            yearlyDiscountPercent: 0,
-            yearlySavings: 0,
-        },
-
-        features: {
-            sales: true,
-            purchases: true,
-            expenses: true,
-            income: true,
-            customers: true,
-            suppliers: true,
-            debtors: true,
-            creditors: true,
-            payments: true,
-            inventory: true,
-
+        groups: [CORE_FEATURES, INDUSTRY_FEATURES],
+        reports: {
             reports_basic: true,
             reports_financial: true,
             reports_inventory: true,
@@ -49,24 +119,72 @@ const PLANS = {
             reports_executive: false,
             reports_aging: false,
             reports_export: false,
-
-            analytics: false,
-            forecast: false,
-            risk: false,
-            decisions: false,
-            alerts: false,
-            ai_advisor: false,
-
-            team_roles: false,
-            multi_business: false,
-
-            support_email: true,
-            support_priority: false,
-            account_manager: false,
-            api_access: false,
-            white_label: false,
         },
+        intelligence: false,
+        support: { support_email: true },
+    },
+    basic: {
+        groups: [CORE_FEATURES, INDUSTRY_FEATURES],
+        reports: {
+            reports_basic: true,
+            reports_financial: true,
+            reports_inventory: true,
+            reports_yearly: false,
+            reports_executive: false,
+            reports_aging: false,
+            reports_export: false,
+        },
+        intelligence: false,
+        support: { support_email: true },
+    },
+    pro: {
+        groups: [CORE_FEATURES, INDUSTRY_FEATURES, INTELLIGENCE_FEATURES],
+        reports: {
+            reports_basic: true,
+            reports_financial: true,
+            reports_inventory: true,
+            reports_yearly: true,
+            reports_executive: true,
+            reports_aging: true,
+            reports_export: true,
+        },
+        intelligence: true,
+        support: { support_email: true, support_priority: true },
+    },
+    enterprise: {
+        groups: [CORE_FEATURES, INDUSTRY_FEATURES, INTELLIGENCE_FEATURES, TEAM_FEATURES, SUPPORT_FEATURES],
+        reports: {
+            reports_basic: true,
+            reports_financial: true,
+            reports_inventory: true,
+            reports_yearly: true,
+            reports_executive: true,
+            reports_aging: true,
+            reports_export: true,
+        },
+        intelligence: true,
+        support: {
+            support_email: true,
+            support_priority: true,
+            account_manager: true,
+            api_access: true,
+            white_label: true,
+        },
+    },
+};
 
+// ─────────────────────────────────────────────
+// Tier metadata (pricing, limits, name, trial)
+// ─────────────────────────────────────────────
+const TIER_META = {
+    free: {
+        id: 'free',
+        name: 'Free (Internal)',
+        description: 'Internal test plan. Not shown to users.',
+        hidden: true,
+        trialDays: 0,
+        currency: 'NGN',
+        pricing: { monthly: 0, yearly: 0, yearlyDiscountPercent: 0, yearlySavings: 0 },
         limits: {
             transactions_per_month: 100,
             inventory_items: 50,
@@ -76,10 +194,6 @@ const PLANS = {
             data_retention_months: 1,
         },
     },
-
-    // ─────────────────────────────────────────────
-    // BASIC — ₦2,500/mo or ₦25,000/yr
-    // ─────────────────────────────────────────────
     basic: {
         id: 'basic',
         name: 'Basic',
@@ -87,51 +201,7 @@ const PLANS = {
         hidden: false,
         trialDays: 0,
         currency: 'NGN',
-
-        pricing: {
-            monthly: 2500,
-            yearly: 25000,
-            yearlyDiscountPercent: 17, // 2 months free
-            yearlySavings: 5000,       // 2500*12 - 25000
-        },
-
-        features: {
-            sales: true,
-            purchases: true,
-            expenses: true,
-            income: true,
-            customers: true,
-            suppliers: true,
-            debtors: true,
-            creditors: true,
-            payments: true,
-            inventory: true,
-
-            reports_basic: true,
-            reports_financial: true,
-            reports_inventory: true,
-            reports_yearly: false,
-            reports_executive: false,
-            reports_aging: false,
-            reports_export: false,
-
-            analytics: false,
-            forecast: false,
-            risk: false,
-            decisions: false,
-            alerts: false,
-            ai_advisor: false,
-
-            team_roles: false,
-            multi_business: false,
-
-            support_email: true,
-            support_priority: false,
-            account_manager: false,
-            api_access: false,
-            white_label: false,
-        },
-
+        pricing: { monthly: 2500, yearly: 25000, yearlyDiscountPercent: 17, yearlySavings: 5000 },
         limits: {
             transactions_per_month: 500,
             inventory_items: 100,
@@ -141,10 +211,6 @@ const PLANS = {
             data_retention_months: 6,
         },
     },
-
-    // ─────────────────────────────────────────────
-    // PRO — ₦4,500/mo or ₦45,000/yr  (14-day trial)
-    // ─────────────────────────────────────────────
     pro: {
         id: 'pro',
         name: 'Pro',
@@ -152,51 +218,7 @@ const PLANS = {
         hidden: false,
         trialDays: 14,
         currency: 'NGN',
-
-        pricing: {
-            monthly: 4500,
-            yearly: 45000,
-            yearlyDiscountPercent: 17,
-            yearlySavings: 9000, // 4500*12 - 45000
-        },
-
-        features: {
-            sales: true,
-            purchases: true,
-            expenses: true,
-            income: true,
-            customers: true,
-            suppliers: true,
-            debtors: true,
-            creditors: true,
-            payments: true,
-            inventory: true,
-
-            reports_basic: true,
-            reports_financial: true,
-            reports_inventory: true,
-            reports_yearly: true,
-            reports_executive: true,
-            reports_aging: true,
-            reports_export: true,
-
-            analytics: true,
-            forecast: true,
-            risk: true,
-            decisions: true,
-            alerts: true,
-            ai_advisor: true,
-
-            team_roles: false,
-            multi_business: false,
-
-            support_email: true,
-            support_priority: true,
-            account_manager: false,
-            api_access: false,
-            white_label: false,
-        },
-
+        pricing: { monthly: 4500, yearly: 45000, yearlyDiscountPercent: 17, yearlySavings: 9000 },
         limits: {
             transactions_per_month: 5000,
             inventory_items: 1000,
@@ -206,10 +228,6 @@ const PLANS = {
             data_retention_months: 24,
         },
     },
-
-    // ─────────────────────────────────────────────
-    // ENTERPRISE — ₦10,500/mo or ₦105,000/yr
-    // ─────────────────────────────────────────────
     enterprise: {
         id: 'enterprise',
         name: 'Enterprise',
@@ -217,53 +235,9 @@ const PLANS = {
         hidden: false,
         trialDays: 0,
         currency: 'NGN',
-
-        pricing: {
-            monthly: 10500,
-            yearly: 105000,
-            yearlyDiscountPercent: 17,
-            yearlySavings: 21000, // 10500*12 - 105000
-        },
-
-        features: {
-            sales: true,
-            purchases: true,
-            expenses: true,
-            income: true,
-            customers: true,
-            suppliers: true,
-            debtors: true,
-            creditors: true,
-            payments: true,
-            inventory: true,
-
-            reports_basic: true,
-            reports_financial: true,
-            reports_inventory: true,
-            reports_yearly: true,
-            reports_executive: true,
-            reports_aging: true,
-            reports_export: true,
-
-            analytics: true,
-            forecast: true,
-            risk: true,
-            decisions: true,
-            alerts: true,
-            ai_advisor: true,
-
-            team_roles: true,
-            multi_business: true,
-
-            support_email: true,
-            support_priority: true,
-            account_manager: true,
-            api_access: true,
-            white_label: true,
-        },
-
+        pricing: { monthly: 10500, yearly: 105000, yearlyDiscountPercent: 17, yearlySavings: 21000 },
         limits: {
-            transactions_per_month: -1, // -1 = unlimited
+            transactions_per_month: -1,
             inventory_items: -1,
             customers: -1,
             users: -1,
@@ -274,7 +248,56 @@ const PLANS = {
 };
 
 // ─────────────────────────────────────────────
-// Helpers
+// Compose plans from groups + overrides
+// ─────────────────────────────────────────────
+function composeFeatures(tierId) {
+    const comp = TIER_COMPOSITION[tierId];
+    if (!comp) throw new Error(`Unknown tier: ${tierId}`);
+
+    // Start: every known feature key = false
+    const features = {};
+    for (const key of ALL_FEATURE_KEYS) features[key] = false;
+
+    // Apply each group the tier is given
+    for (const group of comp.groups || []) {
+        for (const key of Object.keys(group)) features[key] = true;
+    }
+
+    // Apply reports map (explicit per tier)
+    if (comp.reports) {
+        for (const [key, val] of Object.entries(comp.reports)) features[key] = val;
+    }
+
+    // Intelligence explicitly off
+    if (comp.intelligence === false) {
+        for (const key of Object.keys(INTELLIGENCE_FEATURES)) features[key] = false;
+    }
+
+    // Support allow-list — only applied when the tier did NOT receive the
+    // full SUPPORT_FEATURES group. Turns everything off, then enables the list.
+    if (comp.support && !(comp.groups || []).includes(SUPPORT_FEATURES)) {
+        for (const key of Object.keys(SUPPORT_FEATURES)) features[key] = false;
+        for (const [key, val] of Object.entries(comp.support)) features[key] = val;
+    }
+
+    // Team explicitly off (for tiers that don't get TEAM_FEATURES)
+    if (!(comp.groups || []).includes(TEAM_FEATURES)) {
+        for (const key of Object.keys(TEAM_FEATURES)) features[key] = false;
+    }
+
+    return features;
+}
+
+const PLANS = {};
+for (const [tierId, meta] of Object.entries(TIER_META)) {
+    PLANS[tierId] = {
+        ...meta,
+        features: composeFeatures(tierId),
+    };
+}
+
+// ─────────────────────────────────────────────
+// Helpers (public API — unchanged)
 // ─────────────────────────────────────────────
 
 /** Get a plan by id, or null */
@@ -312,7 +335,6 @@ function getPricing(planId, cycle = null) {
     if (cycle === 'monthly') return plan.pricing.monthly;
     if (cycle === 'yearly') return plan.pricing.yearly;
 
-    // No cycle specified → return full pricing block
     return { ...plan.pricing, currency: plan.currency };
 }
 

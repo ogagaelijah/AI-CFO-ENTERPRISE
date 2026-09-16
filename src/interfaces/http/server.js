@@ -1,5 +1,6 @@
 // src/interfaces/http/server.js
-// v2.2.0-prod — Sentry v8+, structured logging, plan gating, PORT compatible (Render)
+// v2.3.0-prod — Sentry v8+, structured logging, plan gating, PORT compatible (Render)
+//               Adds Consultancy routes: /api/projects, /api/time-entries, /api/invoices
 
 const { initSentry, Sentry } = require('../../shared/utils/sentry');
 initSentry();
@@ -76,6 +77,9 @@ const riskRoutes = require('./routes/riskRoutes');
 const decisionRoutes = require('./routes/decisionRoutes');
 const advisorRoutes = require('./routes/advisorRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
+const projectRoutes = require('./routes/projectRoutes');
+const timeEntryRoutes = require('./routes/timeEntryRoutes');
+const invoiceRoutes = require('./routes/invoiceRoutes');
 
 app.use('/api/auth/login', strictLimiter);
 app.use('/api/auth/register', strictLimiter);
@@ -99,6 +103,11 @@ app.use('/api/purchases', standardLimiter, authMiddleware, planGuard({ feature: 
 app.use('/api/creditors', standardLimiter, authMiddleware, planGuard({ feature: 'creditors' }), creditorRoutes);
 app.use('/api/suppliers', standardLimiter, authMiddleware, planGuard({ feature: 'suppliers' }), supplierRoutes);
 app.use('/api/customers', standardLimiter, authMiddleware, planGuard({ feature: 'customers' }), customerRoutes);
+
+// Consultancy modules — available on every tier (see plans.js INDUSTRY_FEATURES)
+app.use('/api/projects', standardLimiter, authMiddleware, planGuard({ feature: 'projects' }), projectRoutes);
+app.use('/api/time-entries', standardLimiter, authMiddleware, planGuard({ feature: 'time_entries' }), timeEntryRoutes);
+app.use('/api/invoices', standardLimiter, authMiddleware, planGuard({ feature: 'invoices' }), invoiceRoutes);
 
 app.use('/api/reports', generousLimiter, authMiddleware, planGuard({ feature: 'reports_basic' }), reportRoutes);
 

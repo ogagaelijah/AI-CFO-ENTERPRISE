@@ -1,5 +1,7 @@
 // src/application/useCases/expenses/RecordExpenseUseCase.js
-// v2.1.0-prod — Fixed missing business_id
+// v2.2.0-prod — Writes wrapped in withTransaction.
+
+const { withTransaction } = require('../../../infrastructure/database/sqlite/connection');
 
 class RecordExpenseUseCase {
     constructor(expenseRepository, paymentRepository = null) {
@@ -22,46 +24,43 @@ class RecordExpenseUseCase {
             throw new Error('Business ID is required');
         }
 
-        // Normalize category
-        category = category ? category.toUpperCase().trim() : 'OTHER';
+        const normalizedCategory = category ? category.toUpperCase().trim() : 'OTHER';
 
         if (!amount || amount <= 0) {
             throw new Error('Amount must be greater than 0');
         }
 
         const expenseDate = date instanceof Date ? date : new Date(date);
+        const dateOnly = expenseDate.toISOString().split('T')[0];
 
         const expenseData = {
             user_id: userId,
-            business_id: businessId,          // 🔑 CRITICAL FIX
-            category: category,
-            amount: amount,
+            business_id: businessId,
+            category: normalizedCategory,
+            amount,
             description: description || null,
-            date: expenseDate.toISOString().split('T')[0],
+            date: dateOnly,
         };
 
-        // 1. Create the expense
-        const savedExpense = await this.expenseRepository.create(expenseData);
+        const savedExpense = await withTransaction(async () => {
+            const expense = await this.expenseRepository.create(expenseData);
 
-        // 2. Create corresponding Payment record
-        if (this.paymentRepository) {
-            try {
+            if (this.paymentRepository) {
                 await this.paymentRepository.create({
-                    businessId: businessId,
-                    userId: userId,
+                    businessId,
+                    userId,
                     type: 'MADE',
-                    amount: amount,
+                    amount,
                     paymentDate: expenseDate,
                     referenceType: 'EXPENSE',
-                    referenceId: savedExpense.id,
+                    referenceId: expense.id,
                     paymentMethod: 'CASH',
-                    notes: description || `Expense: ${category}`,
+                    notes: description || `Expense: ${normalizedCategory}`,
                 });
-                console.log(`✅ Payment record created for expense ${savedExpense.id}: ₦${amount}`);
-            } catch (error) {
-                console.error('⚠️ Failed to create payment for expense:', error.message);
             }
-        }
+
+            return expense;
+        });
 
         return savedExpense;
     }

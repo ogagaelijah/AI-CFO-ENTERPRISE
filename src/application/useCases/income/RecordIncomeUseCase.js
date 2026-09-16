@@ -1,5 +1,7 @@
 // src/application/useCases/income/RecordIncomeUseCase.js
-// v2.1.0-prod — Fixed missing business_id
+// v2.2.0-prod — Writes wrapped in withTransaction.
+
+const { withTransaction } = require('../../../infrastructure/database/sqlite/connection');
 
 class RecordIncomeUseCase {
     constructor(incomeRepository, paymentRepository = null) {
@@ -21,51 +23,48 @@ class RecordIncomeUseCase {
         if (!businessId) {
             throw new Error('Business ID is required');
         }
-
         if (!source) {
             throw new Error('Source is required');
         }
 
-        // Normalize source
-        source = source.toUpperCase().trim();
+        const normalizedSource = source.toUpperCase().trim();
 
         if (!amount || amount <= 0) {
             throw new Error('Amount must be greater than 0');
         }
 
         const incomeDate = date instanceof Date ? date : new Date(date);
+        const dateOnly = incomeDate.toISOString().split('T')[0];
 
         const incomeData = {
             user_id: userId,
-            business_id: businessId,          // 🔑 CRITICAL FIX
-            source: source,
-            amount: amount,
+            business_id: businessId,
+            source: normalizedSource,
+            amount,
             description: description || null,
-            date: incomeDate.toISOString().split('T')[0],
+            date: dateOnly,
         };
 
-        // 1. Create the income
-        const savedIncome = await this.incomeRepository.create(incomeData);
+        // Both writes atomic. If payment insert fails, income is rolled back too.
+        const savedIncome = await withTransaction(async () => {
+            const income = await this.incomeRepository.create(incomeData);
 
-        // 2. Create corresponding Payment record
-        if (this.paymentRepository) {
-            try {
+            if (this.paymentRepository) {
                 await this.paymentRepository.create({
-                    businessId: businessId,
-                    userId: userId,
+                    businessId,
+                    userId,
                     type: 'RECEIVED',
-                    amount: amount,
+                    amount,
                     paymentDate: incomeDate,
                     referenceType: 'INCOME',
-                    referenceId: savedIncome.id,
+                    referenceId: income.id,
                     paymentMethod: 'CASH',
-                    notes: description || `Income: ${source}`,
+                    notes: description || `Income: ${normalizedSource}`,
                 });
-                console.log(`✅ Payment record created for income ${savedIncome.id}: ₦${amount}`);
-            } catch (error) {
-                console.error('⚠️ Failed to create payment for income:', error.message);
             }
-        }
+
+            return income;
+        });
 
         return savedIncome;
     }
