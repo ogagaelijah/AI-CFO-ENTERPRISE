@@ -1,5 +1,7 @@
 // src/application/services/reports/DailyReportService.js
-// v2.2.0-prod — multi-tenant + Top 5 Customers + Top 5 Products
+// v2.4.0-prod — Adds cashReceivedToday / cashPaidToday.
+//               Revenue and other-income come from RevenueCalculator.
+//               Business-scoped throughout. No silent swallows.
 
 const RevenueCalculator = require('./calculators/RevenueCalculator');
 const CogsCalculator = require('./calculators/CogsCalculator');
@@ -38,7 +40,10 @@ class DailyReportService {
         this.inventoryRepository = inventoryRepository;
         this.paymentRepository = paymentRepository;
 
-        this.revenueCalculator = revenueCalculator || new RevenueCalculator({ saleRepository: this.saleRepository });
+        this.revenueCalculator = revenueCalculator || new RevenueCalculator({
+            saleRepository: this.saleRepository,
+            incomeRepository: this.incomeRepository,
+        });
         this.cogsCalculator = cogsCalculator || new CogsCalculator({ saleRepository: this.saleRepository });
         this.profitCalculator = profitCalculator || new ProfitCalculator({
             saleRepository: this.saleRepository,
@@ -101,7 +106,6 @@ class DailyReportService {
         const map = {};
 
         for (const sale of sales) {
-            // Support both single-item and multi-item sales
             if (sale.items && Array.isArray(sale.items) && sale.items.length > 0) {
                 for (const item of sale.items) {
                     const name = (item.name || item.itemName || 'Unknown Product').trim();
@@ -168,22 +172,14 @@ class DailyReportService {
             startDate: dateStr, endDate: dateStr,
         });
 
-        let todayExpensesList = [];
-        let todayIncomeList = [];
-        try {
-            todayExpensesList = this._safeArray(
-                await this.expenseRepository.findByDateRange(businessId, dateStr, dateStr)
-            );
-        } catch (e) { /* ignore */ }
-        try {
-            todayIncomeList = this._safeArray(
-                await this.incomeRepository.findByDateRange(businessId, dateStr, dateStr)
-            );
-        } catch (e) { /* ignore */ }
+        // Expenses only — used for the P&L line and key-transactions list.
+        const todayExpensesList = this._safeArray(
+            await this.expenseRepository.findByDateRange(businessId, dateStr, dateStr)
+        );
 
         const todayTotalExpenses = todayExpensesList.reduce((s, e) => s + this._safeNumber(e.amount), 0);
-        const todayOtherIncome = todayIncomeList.reduce((s, i) => s + this._safeNumber(i.amount), 0);
-        const todayPureSales = this._safeNumber(todayRevenue.totalRevenue);
+        const todayPureSales = this._safeNumber(todayRevenue.salesRevenue ?? todayRevenue.totalRevenue);
+        const todayOtherIncome = this._safeNumber(todayRevenue.otherRevenue);
         const todayCombinedRevenue = todayPureSales + todayOtherIncome;
 
         const todayProfit = await this.profitCalculator.calculate({
@@ -199,6 +195,9 @@ class DailyReportService {
             userId, businessId,
             startDate: dateStr, endDate: dateStr,
         });
+
+        // NEW: cash received and paid today, from the payments ledger
+        const todayCashFlow = await this.paymentRepository.getCashFlowForDate(businessId, dateStr);
 
         const todayAr = await this.arCalculator.calculate({
             userId, businessId, asAtDate: dateStr,
@@ -250,22 +249,13 @@ class DailyReportService {
             startDate: prevDateStr, endDate: prevDateStr,
         });
 
-        let prevExpensesList = [];
-        let prevIncomeList = [];
-        try {
-            prevExpensesList = this._safeArray(
-                await this.expenseRepository.findByDateRange(businessId, prevDateStr, prevDateStr)
-            );
-        } catch (e) { /* ignore */ }
-        try {
-            prevIncomeList = this._safeArray(
-                await this.incomeRepository.findByDateRange(businessId, prevDateStr, prevDateStr)
-            );
-        } catch (e) { /* ignore */ }
+        const prevExpensesList = this._safeArray(
+            await this.expenseRepository.findByDateRange(businessId, prevDateStr, prevDateStr)
+        );
 
         const prevTotalExpenses = prevExpensesList.reduce((s, e) => s + this._safeNumber(e.amount), 0);
-        const prevOtherIncome = prevIncomeList.reduce((s, i) => s + this._safeNumber(i.amount), 0);
-        const prevPureSales = this._safeNumber(prevRevenue.totalRevenue);
+        const prevPureSales = this._safeNumber(prevRevenue.salesRevenue ?? prevRevenue.totalRevenue);
+        const prevOtherIncome = this._safeNumber(prevRevenue.otherRevenue);
         const prevCombinedRevenue = prevPureSales + prevOtherIncome;
 
         const prevProfit = await this.profitCalculator.calculate({
@@ -286,18 +276,12 @@ class DailyReportService {
         );
 
         // ===== TRANSACTIONS =====
-        let todaySales = [];
-        let todayPurchases = [];
-        try {
-            todaySales = this._safeArray(
-                await this.saleRepository.findByDateRange(businessId, dateStr, dateStr)
-            );
-        } catch (e) { /* ignore */ }
-        try {
-            todayPurchases = this._safeArray(
-                await this.purchaseRepository.findByDateRange(businessId, dateStr, dateStr)
-            );
-        } catch (e) { /* ignore */ }
+        const todaySales = this._safeArray(
+            await this.saleRepository.findByDateRange(businessId, dateStr, dateStr)
+        );
+        const todayPurchases = this._safeArray(
+            await this.purchaseRepository.findByDateRange(businessId, dateStr, dateStr)
+        );
 
         const keyTransactions = [
             ...todaySales.map(s => ({
@@ -306,7 +290,7 @@ class DailyReportService {
                 amount: this._safeNumber(s.total_price),
                 date: s.sale_date || dateStr,
             })),
-            ...todayIncomeList.map(i => ({
+            ...todayRevenue.incomes.map(i => ({
                 type: 'INCOME',
                 description: i.source || 'Income',
                 amount: this._safeNumber(i.amount),
@@ -330,7 +314,7 @@ class DailyReportService {
             (s, p) => s + this._safeNumber(p.total_cost), 0
         );
 
-        // ===== TOP 5 CUSTOMERS & TOP 5 PRODUCTS =====
+        // ===== TOP 5 =====
         const topCustomers = this._getTopCustomers(todaySales, 5);
         const topProducts = this._getTopProducts(todaySales, 5);
 
@@ -348,6 +332,8 @@ class DailyReportService {
                 netMargin: todayProfit.netMargin || 0,
                 purchases: todayPurchasesTotal,
                 income: todayOtherIncome,
+                cashReceivedToday: todayCashFlow.cashIn || 0,
+                cashPaidToday: todayCashFlow.cashOut || 0,
                 cash: {
                     opening: todayCash.openingCash || 0,
                     closing: todayCash.closingCash || 0,
@@ -388,8 +374,6 @@ class DailyReportService {
             transactions: keyTransactions,
             debtors: debtorsData,
             creditors: creditorsData,
-
-            // ===== NEW: Top 5 =====
             topCustomers,
             topProducts,
         };

@@ -17,6 +17,7 @@ class ProfitLossService {
 
         this.revenueCalculator = revenueCalculator || new RevenueCalculator({
             saleRepository: this.saleRepository,
+            incomeRepository: this.incomeRepository,
         });
 
         this.cogsCalculator = cogsCalculator || new CogsCalculator({
@@ -42,7 +43,7 @@ class ProfitLossService {
         endDate,
         period = 'monthly',
     }) {
-        // 1. Get core product revenue
+        // 1. Revenue (sales + other income) from the calculator
         const revenueData = await this.revenueCalculator.calculate({
             userId,
             businessId,
@@ -50,7 +51,7 @@ class ProfitLossService {
             endDate,
         });
 
-        // 2. Get Cost of Goods Sold (COGS)
+        // 2. Cost of Goods Sold
         const cogsData = await this.cogsCalculator.calculate({
             userId,
             businessId,
@@ -58,20 +59,9 @@ class ProfitLossService {
             endDate,
         });
 
-        // 3. Get non-operating other income
-        const incomes = await this.incomeRepository.findByDateRange(
-            userId,
-            startDate,
-            endDate
-        );
-        const totalOtherRevenue = (incomes || []).reduce(
-            (sum, i) => sum + this._safeNumber(i.amount),
-            0
-        );
-
-        // 4. Get operating expenses
+        // 3. Operating expenses — business-scoped, failures propagate
         const expenses = await this.expenseRepository.findByDateRange(
-            userId,
+            businessId,
             startDate,
             endDate
         );
@@ -81,17 +71,17 @@ class ProfitLossService {
             0
         );
 
-        const pureOperatingRevenue = this._safeNumber(revenueData.totalRevenue);
+        const pureOperatingRevenue = this._safeNumber(revenueData.salesRevenue ?? revenueData.totalRevenue);
+        const totalOtherRevenue = this._safeNumber(revenueData.otherRevenue);
         const totalCogs = this._safeNumber(cogsData.totalCogs);
 
-        // 5. Pure accounting formulas (all operands are guaranteed numbers)
+        // 5. Pure accounting formulas
         const grossProfit = pureOperatingRevenue - totalCogs;
         const operatingProfit = grossProfit - totalOperatingExpenses;
         const netProfit = operatingProfit + totalOtherRevenue;
 
         const combinedTotalRevenue = pureOperatingRevenue + totalOtherRevenue;
 
-        // Margins
         const grossMargin = pureOperatingRevenue > 0 ? (grossProfit / pureOperatingRevenue) * 100 : 0;
         const operatingMargin = pureOperatingRevenue > 0 ? (operatingProfit / pureOperatingRevenue) * 100 : 0;
         const netMargin = combinedTotalRevenue > 0 ? (netProfit / combinedTotalRevenue) * 100 : 0;

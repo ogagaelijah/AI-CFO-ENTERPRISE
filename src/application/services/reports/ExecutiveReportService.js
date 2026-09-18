@@ -1,3 +1,6 @@
+// src/application/services/reports/ExecutiveReportService.js
+// v2.2.0-prod — Revenue + other income come from RevenueCalculator.
+
 const RevenueCalculator = require('./calculators/RevenueCalculator');
 const CogsCalculator = require('./calculators/CogsCalculator');
 const ProfitCalculator = require('./calculators/ProfitCalculator');
@@ -39,7 +42,10 @@ class ExecutiveReportService {
         this.inventoryRepository = inventoryRepository;
         this.paymentRepository = paymentRepository;
 
-        this.revenueCalculator = revenueCalculator || new RevenueCalculator({ saleRepository: this.saleRepository });
+        this.revenueCalculator = revenueCalculator || new RevenueCalculator({
+            saleRepository: this.saleRepository,
+            incomeRepository: this.incomeRepository,
+        });
         this.cogsCalculator = cogsCalculator || new CogsCalculator({ saleRepository: this.saleRepository });
         this.profitCalculator = profitCalculator || new ProfitCalculator({
             saleRepository: this.saleRepository,
@@ -104,7 +110,7 @@ class ExecutiveReportService {
         const startStr = this._formatDateStr(start);
         const endStr = this._formatDateStr(end);
 
-        // 1. Fetch core calculators in parallel
+        // 1. Core revenue + COGS
         const [revenueData, cogsData] = await Promise.all([
             this.revenueCalculator.calculate({
                 userId,
@@ -120,23 +126,18 @@ class ExecutiveReportService {
             }),
         ]);
 
-        // 2. Async repository calls — businessId-scoped, awaited
-        const expensesRaw = await this.expenseRepository.findByDateRange(businessId, startStr, endStr);
-        const incomeRaw = await this.incomeRepository.findByDateRange(businessId, startStr, endStr);
-
-        const expenses = this._safeArray(expensesRaw);
-        const income = this._safeArray(incomeRaw);
+        // 2. Operating expenses — business-scoped, failures propagate.
+        const expenses = this._safeArray(
+            await this.expenseRepository.findByDateRange(businessId, startStr, endStr)
+        );
 
         const totalOperatingExpenses = expenses.reduce(
             (sum, e) => sum + this._safeNumber(e.amount),
             0
         );
-        const totalOtherIncome = income.reduce(
-            (sum, i) => sum + this._safeNumber(i.amount),
-            0
-        );
 
-        const pureProductRevenue = this._safeNumber(revenueData.totalRevenue);
+        const pureProductRevenue = this._safeNumber(revenueData.salesRevenue ?? revenueData.totalRevenue);
+        const totalOtherIncome = this._safeNumber(revenueData.otherRevenue);
         const totalCogs = this._safeNumber(cogsData.totalCogs);
 
         // 3. Profit calculation (single source of truth)
@@ -151,7 +152,7 @@ class ExecutiveReportService {
             incomeData: { total: totalOtherIncome },
         });
 
-        // 4. Supporting metrics in parallel
+        // 4. Supporting metrics
         const [cashData, arData, apData, inventoryData] = await Promise.all([
             this.cashCalculator.calculate({
                 userId,
@@ -230,8 +231,8 @@ class ExecutiveReportService {
             ? (netProfit / combinedRevenueBase) * 100
             : 0;
 
-        const expenseRatio = pureProductRevenue > 0
-            ? (totalOperatingExpenses / pureProductRevenue) * 100
+        const expenseRatio = combinedRevenueBase > 0
+            ? (totalOperatingExpenses / combinedRevenueBase) * 100
             : 0;
 
         // Rounded values

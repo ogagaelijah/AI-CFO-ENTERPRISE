@@ -1,7 +1,7 @@
 // src/interfaces/http/routes/dashboardRoutes.js
 // Aggregated dashboard endpoint — SSOT consumer
-// v2.3.0-prod — Adds `invoices` KPI (today's invoice count) alongside `projects`.
-//               Cache version bumped v8 → v9.
+// v2.4.0-prod — Adds `cash_in` / `cash_out` (today's cash movements).
+//               Cache version bumped v9 → v10.
 
 'use strict';
 
@@ -201,8 +201,8 @@ router.get('/summary', async (req, res) => {
       });
     }
 
-    // v9: added `invoices` KPI — discard v8 cache so every user sees the new stat
-    const cacheKey = `aicfo:dashboard:${businessId}:daily:v9`;
+    // v10: added cash_in / cash_out — discard v9 cache
+    const cacheKey = `aicfo:dashboard:${businessId}:daily:v10`;
 
     const data = await cacheService.getOrSet(
       cacheKey,
@@ -260,6 +260,7 @@ async function fetchDashboardData({ userId, businessId }) {
     cashFlowResult,
     activeProjectsRaw,
     todayInvoicesRaw,
+    cashFlowTodayRaw,
   ] = await Promise.allSettled([
     dailyReportService.generate({ userId, businessId, date: todayStr }),
     analyticsProvider.generateAnalytics({
@@ -281,6 +282,7 @@ async function fetchDashboardData({ userId, businessId }) {
     }),
     projectRepo.countByBusinessId(businessId, { status: 'ACTIVE' }),
     invoiceRepo.countByBusinessId(businessId, { fromDate: todayStr, toDate: todayStr }),
+    paymentRepo.getCashFlowForDate(businessId, todayStr),
   ]);
 
   const daily = dailyResult.status === 'fulfilled' ? dailyResult.value : null;
@@ -303,6 +305,9 @@ async function fetchDashboardData({ userId, businessId }) {
   const todayInvoices = todayInvoicesRaw.status === 'fulfilled'
     ? Number(todayInvoicesRaw.value) || 0
     : 0;
+  const cashFlowToday = cashFlowTodayRaw.status === 'fulfilled'
+    ? cashFlowTodayRaw.value || { cashIn: 0, cashOut: 0 }
+    : { cashIn: 0, cashOut: 0 };
 
   // ─────────────────────────────────────────────
   // Navigate analytics (SSOT)
@@ -353,7 +358,7 @@ async function fetchDashboardData({ userId, businessId }) {
   const cashCurrent = Number(cashFlow?.closingCash ?? cashFlow?.summary?.closingCash ?? 0);
 
   // ─────────────────────────────────────────────
-  // FIXED: Health Score extraction
+  // Health Score
   // ─────────────────────────────────────────────
   const healthObj = analytics?.health || snapshot?.health || {};
 
@@ -408,6 +413,16 @@ async function fetchDashboardData({ userId, businessId }) {
       flow: cashCurrent,
       formatted: `₦${Number(cashCurrent).toLocaleString()}`,
       label: 'Cash Position',
+    },
+    cash_in: {
+      today: Number(cashFlowToday.cashIn) || 0,
+      formatted: `₦${Number(cashFlowToday.cashIn || 0).toLocaleString()}`,
+      label: 'Cash Received Today',
+    },
+    cash_out: {
+      today: Number(cashFlowToday.cashOut) || 0,
+      formatted: `₦${Number(cashFlowToday.cashOut || 0).toLocaleString()}`,
+      label: 'Cash Paid Today',
     },
     receivables: {
       total: debtorsTotal,
@@ -484,8 +499,8 @@ async function fetchDashboardData({ userId, businessId }) {
       userId,
       businessId,
       generatedAt: new Date().toISOString(),
-      source: 'cashflow+daily+analytics+risk+repos+projects+invoices',
-      version: '2.3.0',
+      source: 'cashflow+daily+analytics+risk+repos+projects+invoices+cashinout',
+      version: '2.4.0',
     },
   };
 }

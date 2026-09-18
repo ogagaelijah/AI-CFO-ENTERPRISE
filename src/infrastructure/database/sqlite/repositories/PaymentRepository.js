@@ -206,6 +206,41 @@ class PaymentRepository extends BaseRepository {
         return this.getNetCashBefore(businessId, beforeDate);
     }
 
+    /**
+     * Cash in/out for a specific date (or date range).
+     * Returns { cashIn, cashOut } — the sum of all payments by direction.
+     *
+     * @param {number} businessId
+     * @param {string} startDate - YYYY-MM-DD
+     * @param {string} [endDate] - YYYY-MM-DD (defaults to startDate for single-day)
+     */
+    async getCashFlowForDate(businessId, startDate, endDate = null) {
+        if (!businessId || !startDate) {
+            return { cashIn: 0, cashOut: 0 };
+        }
+
+        const end = endDate || startDate;
+        const startIso = this._toISOString(startDate);
+        const endIso = this._toISOString(end);
+
+        const result = await this._query(
+            `SELECT
+                COALESCE(SUM(CASE WHEN UPPER(payment_type) IN ('IN', 'RECEIVED') THEN amount ELSE 0 END), 0) AS cash_in,
+                COALESCE(SUM(CASE WHEN UPPER(payment_type) IN ('OUT', 'MADE') THEN amount ELSE 0 END), 0) AS cash_out
+             FROM payments
+             WHERE business_id = $1
+               AND DATE(payment_date) >= DATE($2)
+               AND DATE(payment_date) <= DATE($3)`,
+            [businessId, startIso, endIso]
+        );
+
+        const row = result.rows[0] || {};
+        return {
+            cashIn: Number(row.cash_in) || 0,
+            cashOut: Number(row.cash_out) || 0,
+        };
+    }
+
     async findByFilters(filters) {
         return this.findByBusinessId(
             filters.businessId,

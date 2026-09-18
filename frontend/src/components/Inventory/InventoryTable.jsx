@@ -40,7 +40,6 @@ const InventoryTable = ({ items, onAdjust, onEdit, onDelete }) => {
                   <td className="px-4 py-3">
                     <div>
                       <p className="text-sm font-medium text-gray-900 dark:text-white">{item.item_name}</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">ID: {item.id}</p>
                     </div>
                   </td>
                   <td className="px-4 py-3 text-right text-sm font-medium text-gray-900 dark:text-white">

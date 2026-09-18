@@ -1,10 +1,10 @@
 // frontend/src/components/dashboard/StatsGrid.jsx
-// v1.4.0-prod — config label wins over API label; projects + invoices links
+// v1.5.0-prod — adds cash_in / cash_out (today's cash movements).
 
 import { Link } from 'react-router-dom';
 import { STAT_COLORS } from '../../config/industryConfig';
 
-const DAILY_KEYS = new Set(['revenue', 'sales', 'profit', 'expenses']);
+const DAILY_KEYS = new Set(['revenue', 'sales', 'profit', 'expenses', 'cash_in', 'cash_out']);
 const BALANCE_KEYS = new Set([
   'inventory', 'receivables', 'payables', 'debtors', 'creditors', 'cash',
 ]);
@@ -12,6 +12,7 @@ const CURRENCY_KEYS = new Set([
   'revenue', 'profit', 'expenses', 'cash', 'inventory',
   'receivables', 'payables', 'debtors', 'creditors',
   'raw_materials', 'materials', 'rent', 'fees',
+  'cash_in', 'cash_out',
 ]);
 
 const KPI_LINKS = {
@@ -24,6 +25,8 @@ const KPI_LINKS = {
   payables: '/creditors',
   expenses: '/expenses',
   cash: '/reports',
+  cash_in: '/reports',
+  cash_out: '/reports',
   income: '/income',
   purchases: '/purchases',
   customers: '/customers',

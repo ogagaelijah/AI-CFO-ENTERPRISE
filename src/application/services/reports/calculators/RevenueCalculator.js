@@ -1,18 +1,22 @@
 // src/application/services/reports/calculators/RevenueCalculator.js
+// v2.0.0-prod — totalRevenue now means combined revenue (sales + other income).
+//               Consumers that need sales-only should read `salesRevenue`.
 
 /**
  * RevenueCalculator - Single source of truth for revenue calculations
  *
- * Calculates:
- * - Total revenue from sales
- * - Sales count
- * - Total units sold
- * - Average sale value
- * - Optional breakdown by product / customer
+ * Returns separate buckets so callers can decide how to combine them:
+ * - salesRevenue  : sum of sales.total_price (operating top-line)
+ * - otherRevenue  : sum of income.amount (non-operating)
+ * - totalRevenue  : salesRevenue + otherRevenue (combined top-line)
+ *
+ * Raw arrays (sales, incomes) are also returned for consumers that need
+ * to build breakdowns or aggregate by product/customer.
  */
 class RevenueCalculator {
-    constructor({ saleRepository }) {
+    constructor({ saleRepository, incomeRepository = null }) {
         this.saleRepository = saleRepository;
+        this.incomeRepository = incomeRepository;
     }
 
     _safeNumber(value) {
@@ -21,7 +25,7 @@ class RevenueCalculator {
     }
 
     /**
-     * Calculate revenue for a date range
+     * Calculate revenue for a date range.
      *
      * @param {Object} params
      * @param {string|number} params.userId
@@ -34,7 +38,6 @@ class RevenueCalculator {
         let sales = [];
 
         try {
-            // Prefer business-scoped query when businessId is available
             if (businessId && typeof this.saleRepository.findByBusinessIdAndDateRange === 'function') {
                 sales = await this.saleRepository.findByBusinessIdAndDateRange(
                     businessId,
@@ -42,7 +45,6 @@ class RevenueCalculator {
                     endDate
                 );
             } else {
-                // Fallback (backward compatible)
                 sales = await this.saleRepository.findByDateRange(
                     userId,
                     startDate,
@@ -57,12 +59,32 @@ class RevenueCalculator {
             sales = [];
         }
 
+        // Fetch income (non-operating revenue) — business-scoped.
+        // Failures propagate; we never silently return zero income.
+        let incomes = [];
+        if (this.incomeRepository && businessId) {
+            const incomesRaw = await this.incomeRepository.findByDateRange(
+                businessId,
+                startDate,
+                endDate
+            );
+            incomes = Array.isArray(incomesRaw) ? incomesRaw : [];
+        }
+
         const validSales = sales.filter((s) => this._safeNumber(s.total_price) > 0);
 
-        const totalRevenue = validSales.reduce(
+        const salesRevenue = validSales.reduce(
             (sum, s) => sum + this._safeNumber(s.total_price),
             0
         );
+
+        const otherRevenue = incomes.reduce(
+            (sum, i) => sum + this._safeNumber(i.amount),
+            0
+        );
+
+        // Combined top-line. This is the canonical "revenue" value for the period.
+        const totalRevenue = salesRevenue + otherRevenue;
 
         const salesCount = sales.length;
         const validSalesCount = validSales.length;
@@ -70,7 +92,7 @@ class RevenueCalculator {
             (sum, s) => sum + this._safeNumber(s.quantity),
             0
         );
-        const averageSaleValue = validSalesCount > 0 ? totalRevenue / validSalesCount : 0;
+        const averageSaleValue = validSalesCount > 0 ? salesRevenue / validSalesCount : 0;
 
         let breakdown = null;
         if (groupBy === 'product') {
@@ -80,13 +102,16 @@ class RevenueCalculator {
         }
 
         return {
+            salesRevenue,
+            otherRevenue,
             totalRevenue,
             salesCount,
             validSalesCount,
             totalUnits,
             averageSaleValue,
             breakdown,
-            sales, // kept for consumers that need the raw list (e.g. MonthlyReportService)
+            sales,       // raw sales array
+            incomes,     // raw income array
         };
     }
 

@@ -1,4 +1,6 @@
 // src/application/services/reports/WeeklyReportService.js
+// v2.2.0-prod — Revenue + other income come from RevenueCalculator.
+//               Removed separate income fetches. Business-scoped. No silent swallows.
 
 const RevenueCalculator = require('./calculators/RevenueCalculator');
 const CogsCalculator = require('./calculators/CogsCalculator');
@@ -10,15 +12,12 @@ const InventoryCalculator = require('./calculators/InventoryCalculator');
 const ComparisonCalculator = require('./calculators/ComparisonCalculator');
 
 /**
- * Weekly Report Service - Production Ready
+ * Weekly Report Service
  *
- * Provides trend analysis and week-over-week performance changes.
- * Follows real-world business accounting standards:
- * - Product Sales = Pure core operating top-line revenue baseline
+ * - Product Sales = sales.salesRevenue (operating top-line)
+ * - Total Revenue (Combined) = salesRevenue + otherRevenue
  * - Gross Profit = Product Sales - COGS
- * - Total Revenue (Combined Top-Line) = Product Sales + Other Income
  * - Net Profit = Gross Profit - Operating Expenses + Other Income
- * - Week-over-Week Changes compare consistent combined top-lines
  */
 class WeeklyReportService {
     constructor({
@@ -48,7 +47,10 @@ class WeeklyReportService {
         this.inventoryRepository = inventoryRepository;
         this.paymentRepository = paymentRepository;
 
-        this.revenueCalculator = revenueCalculator || new RevenueCalculator({ saleRepository: this.saleRepository });
+        this.revenueCalculator = revenueCalculator || new RevenueCalculator({
+            saleRepository: this.saleRepository,
+            incomeRepository: this.incomeRepository,
+        });
         this.cogsCalculator = cogsCalculator || new CogsCalculator({ saleRepository: this.saleRepository });
         this.profitCalculator = profitCalculator || new ProfitCalculator({
             saleRepository: this.saleRepository,
@@ -127,27 +129,18 @@ class WeeklyReportService {
             this.cogsCalculator.calculate({ userId, businessId, startDate: currentStartStr, endDate: currentEndStr }),
         ]);
 
-        // Safe repository calls
-        let currentExpenses = [];
-        let currentIncome = [];
-
-        try {
-            const expensesResult = await this.expenseRepository.findByDateRange(userId, currentStartStr, currentEndStr);
-            currentExpenses = this._safeArray(expensesResult);
-        } catch (e) { /* ignore */ }
-
-        try {
-            const incomeResult = await this.incomeRepository.findByDateRange(userId, currentStartStr, currentEndStr);
-            currentIncome = this._safeArray(incomeResult);
-        } catch (e) { /* ignore */ }
+        // Operating expenses only. Failures propagate.
+        const currentExpenses = this._safeArray(
+            await this.expenseRepository.findByDateRange(businessId, currentStartStr, currentEndStr)
+        );
 
         const currentTotalExpenses = currentExpenses.reduce((s, e) => s + this._safeNumber(e.amount), 0);
-        const currentTotalOtherIncome = currentIncome.reduce((s, i) => s + this._safeNumber(i.amount), 0);
-        const currentPureRevenue = this._safeNumber(currentRevenue.totalRevenue);
+        const currentPureRevenue = this._safeNumber(currentRevenue.salesRevenue ?? currentRevenue.totalRevenue);
+        const currentTotalOtherIncome = this._safeNumber(currentRevenue.otherRevenue);
         const currentTotalCogs = this._safeNumber(currentCogs.totalCogs);
 
         // SSOT Calculation Matrix Injection
-        const currentProfit = await this.profitCalculator.calculate({
+        await this.profitCalculator.calculate({
             userId,
             businessId,
             startDate: currentStartStr,
@@ -201,26 +194,16 @@ class WeeklyReportService {
             this.cogsCalculator.calculate({ userId, businessId, startDate: prevStartStr, endDate: prevEndStr }),
         ]);
 
-        // Safe repository calls for previous week
-        let prevExpenses = [];
-        let prevIncome = [];
-
-        try {
-            const expensesResult = await this.expenseRepository.findByDateRange(userId, prevStartStr, prevEndStr);
-            prevExpenses = this._safeArray(expensesResult);
-        } catch (e) { /* ignore */ }
-
-        try {
-            const incomeResult = await this.incomeRepository.findByDateRange(userId, prevStartStr, prevEndStr);
-            prevIncome = this._safeArray(incomeResult);
-        } catch (e) { /* ignore */ }
+        const prevExpenses = this._safeArray(
+            await this.expenseRepository.findByDateRange(businessId, prevStartStr, prevEndStr)
+        );
 
         const prevTotalExpenses = prevExpenses.reduce((s, e) => s + this._safeNumber(e.amount), 0);
-        const prevTotalOtherIncome = prevIncome.reduce((s, i) => s + this._safeNumber(i.amount), 0);
-        const prevPureRevenue = this._safeNumber(prevRevenue.totalRevenue);
+        const prevPureRevenue = this._safeNumber(prevRevenue.salesRevenue ?? prevRevenue.totalRevenue);
+        const prevTotalOtherIncome = this._safeNumber(prevRevenue.otherRevenue);
         const prevTotalCogs = this._safeNumber(prevCogs.totalCogs);
 
-        const prevProfit = await this.profitCalculator.calculate({
+        await this.profitCalculator.calculate({
             userId,
             businessId,
             startDate: prevStartStr,

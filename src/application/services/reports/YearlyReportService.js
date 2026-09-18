@@ -1,4 +1,6 @@
 // src/application/services/reports/YearlyReportService.js
+// v2.2.0-prod — Revenue + other income come from RevenueCalculator.
+//               Removed separate income fetches. Business-scoped. No silent swallows.
 
 const RevenueCalculator = require('./calculators/RevenueCalculator');
 const CogsCalculator = require('./calculators/CogsCalculator');
@@ -11,11 +13,11 @@ const ComparisonCalculator = require('./calculators/ComparisonCalculator');
 
 /**
  * Yearly Report Service - Strategic annual perspective
- * 
- * Provides annual performance summary with YoY comparisons,
- * strategic insights, major risks, and opportunities.
- * 
- * All data flows through canonical calculators (single source of truth)
+ *
+ * - Product Sales = sales.salesRevenue (operating top-line)
+ * - Total Revenue (Combined) = salesRevenue + otherRevenue
+ * - Gross Profit = Product Sales - COGS
+ * - Net Profit = Gross Profit - Operating Expenses + Other Income
  */
 class YearlyReportService {
     constructor({
@@ -47,6 +49,7 @@ class YearlyReportService {
 
         this.revenueCalculator = revenueCalculator || new RevenueCalculator({
             saleRepository: this.saleRepository,
+            incomeRepository: this.incomeRepository,
         });
 
         this.cogsCalculator = cogsCalculator || new CogsCalculator({
@@ -141,22 +144,14 @@ class YearlyReportService {
             endDate: currentEndStr,
         });
 
-        let currentExpensesList = [];
-        let currentIncomeList = [];
-
-        try {
-            const result = await this.expenseRepository.findByDateRange(userId, currentStartStr, currentEndStr);
-            currentExpensesList = this._safeArray(result);
-        } catch (e) { /* ignore */ }
-
-        try {
-            const result = await this.incomeRepository.findByDateRange(userId, currentStartStr, currentEndStr);
-            currentIncomeList = this._safeArray(result);
-        } catch (e) { /* ignore */ }
+        // Operating expenses only. Failures propagate.
+        const currentExpensesList = this._safeArray(
+            await this.expenseRepository.findByDateRange(businessId, currentStartStr, currentEndStr)
+        );
 
         const currentTotalExpenses = currentExpensesList.reduce((s, e) => s + this._safeNumber(e.amount), 0);
-        const currentOtherIncome = currentIncomeList.reduce((s, i) => s + this._safeNumber(i.amount), 0);
-        const currentPureSales = this._safeNumber(currentRevenue.totalRevenue);
+        const currentPureSales = this._safeNumber(currentRevenue.salesRevenue ?? currentRevenue.totalRevenue);
+        const currentOtherIncome = this._safeNumber(currentRevenue.otherRevenue);
         const currentCombinedRevenue = currentPureSales + currentOtherIncome;
 
         const currentProfit = await this.profitCalculator.calculate({
@@ -253,22 +248,13 @@ class YearlyReportService {
             endDate: prevEndStr,
         });
 
-        let prevExpensesList = [];
-        let prevIncomeList = [];
-
-        try {
-            const result = await this.expenseRepository.findByDateRange(userId, prevStartStr, prevEndStr);
-            prevExpensesList = this._safeArray(result);
-        } catch (e) { /* ignore */ }
-
-        try {
-            const result = await this.incomeRepository.findByDateRange(userId, prevStartStr, prevEndStr);
-            prevIncomeList = this._safeArray(result);
-        } catch (e) { /* ignore */ }
+        const prevExpensesList = this._safeArray(
+            await this.expenseRepository.findByDateRange(businessId, prevStartStr, prevEndStr)
+        );
 
         const prevTotalExpenses = prevExpensesList.reduce((s, e) => s + this._safeNumber(e.amount), 0);
-        const prevOtherIncome = prevIncomeList.reduce((s, i) => s + this._safeNumber(i.amount), 0);
-        const prevPureSales = this._safeNumber(prevRevenue.totalRevenue);
+        const prevPureSales = this._safeNumber(prevRevenue.salesRevenue ?? prevRevenue.totalRevenue);
+        const prevOtherIncome = this._safeNumber(prevRevenue.otherRevenue);
         const prevCombinedRevenue = prevPureSales + prevOtherIncome;
 
         const prevProfit = await this.profitCalculator.calculate({
@@ -295,7 +281,6 @@ class YearlyReportService {
         // YEAR-OVER-YEAR COMPARISONS
         // =============================================
 
-        // Check if previous year has data
         const hasPriorYearData = prevCombinedRevenue > 0 || prevProfit.netProfit !== 0;
 
         let revenueChange = 0;
@@ -322,7 +307,7 @@ class YearlyReportService {
         }
 
         // =============================================
-        // PROFESSIONAL STRATEGIC INSIGHTS
+        // STRATEGIC INSIGHTS
         // =============================================
 
         const strategicInsights = [];
@@ -355,12 +340,12 @@ class YearlyReportService {
             strategicInsights.push(`Overdue receivables of ₦${currentAr.overdueAmount.toLocaleString()} represent tied-up working capital. Strengthening collections processes will improve cash flow and financial flexibility.`);
         }
 
-        if (currentTotalExpenses > currentPureSales * 0.4 && currentPureSales > 0) {
-            strategicInsights.push(`Operating expenses represent ${this._round2((currentTotalExpenses / currentPureSales) * 100)}% of revenue. Strategic cost optimization could significantly improve profitability.`);
+        if (currentTotalExpenses > currentCombinedRevenue * 0.4 && currentCombinedRevenue > 0) {
+            strategicInsights.push(`Operating expenses represent ${this._round2((currentTotalExpenses / currentCombinedRevenue) * 100)}% of revenue. Strategic cost optimization could significantly improve profitability.`);
         }
 
         // =============================================
-        // PROFESSIONAL MAJOR RISKS
+        // MAJOR RISKS
         // =============================================
 
         const majorRisks = [];
@@ -385,12 +370,12 @@ class YearlyReportService {
             majorRisks.push(`Net margin of ${this._round2(netMargin)}% is below sustainable thresholds. Profitability erosion may limit future investment capacity and business resilience.`);
         }
 
-        if (currentTotalExpenses > currentPureSales * 0.6 && currentPureSales > 0) {
-            majorRisks.push(`Operating expenses (${this._round2((currentTotalExpenses / currentPureSales) * 100)}% of revenue) are elevated. Expense management is critical to maintaining profitability and operational sustainability.`);
+        if (currentTotalExpenses > currentCombinedRevenue * 0.6 && currentCombinedRevenue > 0) {
+            majorRisks.push(`Operating expenses (${this._round2((currentTotalExpenses / currentCombinedRevenue) * 100)}% of revenue) are elevated. Expense management is critical to maintaining profitability and operational sustainability.`);
         }
 
         // =============================================
-        // PROFESSIONAL MAJOR OPPORTUNITIES
+        // MAJOR OPPORTUNITIES
         // =============================================
 
         const majorOpportunities = [];

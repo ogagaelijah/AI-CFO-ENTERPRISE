@@ -1,5 +1,5 @@
 // src/infrastructure/database/sqlite/repositories/DebtorRepository.js
-// v3.2.0-prod — Postgres async. Added findAllOverdue for the notification job.
+// v3.3.0-prod — Postgres async. overdue_count now uses due_date instead of status.
 
 const BaseRepository = require('./BaseRepository');
 
@@ -174,7 +174,15 @@ class DebtorRepository extends BaseRepository {
                 COALESCE(SUM(balance_remaining), 0) as total_outstanding,
                 COUNT(CASE WHEN balance_remaining > 0 AND status != 'PAID' THEN 1 END)::int as active_count,
                 COUNT(CASE WHEN balance_remaining <= 0 OR status = 'PAID' THEN 1 END)::int as paid_count,
-                COUNT(CASE WHEN status = 'OVERDUE' AND balance_remaining > 0 THEN 1 END)::int as overdue_count
+                COUNT(
+                    CASE
+                        WHEN balance_remaining > 0
+                         AND status != 'PAID'
+                         AND due_date IS NOT NULL
+                         AND DATE(due_date) < CURRENT_DATE
+                        THEN 1
+                    END
+                )::int as overdue_count
              FROM debtors
              WHERE business_id = $1`,
             [businessId]

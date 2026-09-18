@@ -31,7 +31,7 @@ const InventoryRepository = require('../../../infrastructure/database/sqlite/rep
 const CustomerRepository = require('../../../infrastructure/database/sqlite/repositories/CustomerRepository');
 const SupplierRepository = require('../../../infrastructure/database/sqlite/repositories/SupplierRepository');
 const ReportRepository = require('../../../infrastructure/database/sqlite/repositories/ReportRepository');
-const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository'); // ← ADDED
+const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository');
 
 // ===== Initialize Repositories =====
 const saleRepo = new SaleRepository();
@@ -44,7 +44,7 @@ const inventoryRepo = new InventoryRepository();
 const customerRepo = new CustomerRepository();
 const supplierRepo = new SupplierRepository();
 const reportRepo = new ReportRepository();
-const paymentRepo = new PaymentRepository(); // ← ADDED
+const paymentRepo = new PaymentRepository();
 
 // ===== Initialize Report Services (SSOT) =====
 const profitLossService = new ProfitLossService({
@@ -55,7 +55,7 @@ const profitLossService = new ProfitLossService({
 });
 
 const cashFlowService = new CashFlowService({
-  paymentRepository: paymentRepo,          // ← ADDED (this was the missing piece)
+  paymentRepository: paymentRepo,
   saleRepository: saleRepo,
   expenseRepository: expenseRepo,
   incomeRepository: incomeRepo,
@@ -81,6 +81,7 @@ const dailyReportService = new DailyReportService({
   debtorRepository: debtorRepo,
   creditorRepository: creditorRepo,
   inventoryRepository: inventoryRepo,
+  paymentRepository: paymentRepo,
   reportRepository: reportRepo,
 });
 
@@ -91,6 +92,7 @@ const weeklyReportService = new WeeklyReportService({
   debtorRepository: debtorRepo,
   creditorRepository: creditorRepo,
   inventoryRepository: inventoryRepo,
+  paymentRepository: paymentRepo,
   reportRepository: reportRepo,
 });
 
@@ -101,6 +103,7 @@ const monthlyReportService = new MonthlyReportService({
   debtorRepository: debtorRepo,
   creditorRepository: creditorRepo,
   inventoryRepository: inventoryRepo,
+  paymentRepository: paymentRepo,
   reportRepository: reportRepo,
 });
 
@@ -111,6 +114,7 @@ const yearlyReportService = new YearlyReportService({
   debtorRepository: debtorRepo,
   creditorRepository: creditorRepo,
   inventoryRepository: inventoryRepo,
+  paymentRepository: paymentRepo,
   reportRepository: reportRepo,
 });
 
@@ -121,6 +125,7 @@ const executiveReportService = new ExecutiveReportService({
   debtorRepository: debtorRepo,
   creditorRepository: creditorRepo,
   inventoryRepository: inventoryRepo,
+  paymentRepository: paymentRepo,
   reportRepository: reportRepo,
 });
 

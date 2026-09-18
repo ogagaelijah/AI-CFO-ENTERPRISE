@@ -1,7 +1,7 @@
 /**
  * Forecast Mapper - Main
  * Maps backend forecast data to frontend format
- * SSOT: All forecast data mapping
+ * SSOT v5.8.0 – Current values for Executive Summary, projected for Metrics
  */
 
 import {
@@ -17,7 +17,7 @@ import { mapConfidence } from './confidenceMapper';
  */
 export function mapForecastResponse(data = {}) {
   const forecastData = data.data || data;
-  
+
   if (!forecastData || Object.keys(forecastData).length === 0) {
     return getEmptyForecastData();
   }
@@ -28,6 +28,7 @@ export function mapForecastResponse(data = {}) {
   const scenarios = forecastData.scenarios || {};
   const confidence = forecastData.confidence || {};
   const risks = forecastData.risks || {};
+  const current = forecastData.current || {}; // SSOT current values
 
   return {
     baseForecast: mapBaseForecast(baseForecast),
@@ -35,22 +36,27 @@ export function mapForecastResponse(data = {}) {
     scenarios: mapScenarios(scenarios),
     confidence: mapConfidence(confidence),
     risks: mapRisksData(risks),
+    current, // pass through for any component that needs pure SSOT
     metadata: {
-      horizon: metadata.horizon || '30D',
-      generatedAt: forecastData.generatedAt || new Date().toISOString(),
+      horizon: metadata.horizon || forecastData.horizon || '30D',
+      generatedAt:
+        forecastData.generatedAt ||
+        metadata.generatedAt ||
+        new Date().toISOString(),
       dataPoints: metadata.dataPoints || {},
       durationMs: metadata.durationMs || 0,
       warnings: metadata.warnings || [],
       partialSuccess: metadata.partialSuccess || false,
     },
-    executive: mapExecutive(summary, metadata, baseForecast),
+    // Critical: pass current into executive mapper
+    executive: mapExecutive(summary, metadata, baseForecast, current),
     status: summary.status || 'NEUTRAL',
     available: true,
   };
 }
 
 /**
- * Map base forecast metrics
+ * Map base forecast metrics (projected values)
  */
 function mapBaseForecast(baseForecast = {}) {
   const metrics = [
@@ -80,16 +86,16 @@ function mapBaseForecast(baseForecast = {}) {
  */
 function mapForecastMetric(data = {}, name = '') {
   const forecast = data.forecast ?? 0;
-  const isAvailable = data.available !== false && forecast > 0;
+  const isAvailable = data.available !== false && (forecast > 0 || data.available === true);
   const dataStatus = data.dataStatus || 'INSUFFICIENT';
   const isInsufficient = dataStatus === 'INSUFFICIENT' || dataStatus === 'MINIMAL';
 
   return {
     name: data.displayName || name,
-    forecast: forecast,
+    forecast,
     formatted: formatCurrency(forecast),
     available: isAvailable,
-    dataStatus: dataStatus,
+    dataStatus,
     isInsufficient,
     reason: data.reason || null,
     method: data.method || null,
@@ -106,27 +112,40 @@ function mapForecastMetric(data = {}, name = '') {
 }
 
 /**
- * Map summary data
+ * Map summary data – supports both .value (new) and .forecast (legacy)
  */
 function mapSummary(summary = {}) {
+  const getVal = (obj) => obj?.value ?? obj?.forecast ?? 0;
+  const getConf = (obj) => obj?.confidence ?? 0;
+
   return {
     revenue: {
-      forecast: summary.revenue?.forecast ?? 0,
-      formatted: formatCurrency(summary.revenue?.forecast ?? 0),
-      confidence: summary.revenue?.confidence ?? 0,
-      confidenceLevel: getConfidenceLevel(summary.revenue?.confidence ?? 0),
+      forecast: getVal(summary.revenue),
+      value: getVal(summary.revenue),
+      formatted: formatCurrency(getVal(summary.revenue)),
+      confidence: getConf(summary.revenue),
+      confidenceLevel: getConfidenceLevel(getConf(summary.revenue)),
     },
     profit: {
-      forecast: summary.profit?.forecast ?? 0,
-      formatted: formatCurrency(summary.profit?.forecast ?? 0),
-      confidence: summary.profit?.confidence ?? 0,
-      confidenceLevel: getConfidenceLevel(summary.profit?.confidence ?? 0),
+      forecast: getVal(summary.profit),
+      value: getVal(summary.profit),
+      formatted: formatCurrency(getVal(summary.profit)),
+      confidence: getConf(summary.profit),
+      confidenceLevel: getConfidenceLevel(getConf(summary.profit)),
     },
     cashFlow: {
-      forecast: summary.cashFlow?.forecast ?? 0,
-      formatted: formatCurrency(summary.cashFlow?.forecast ?? 0),
-      confidence: summary.cashFlow?.confidence ?? 0,
-      confidenceLevel: getConfidenceLevel(summary.cashFlow?.confidence ?? 0),
+      forecast: getVal(summary.cashFlow),
+      value: getVal(summary.cashFlow),
+      formatted: formatCurrency(getVal(summary.cashFlow)),
+      confidence: getConf(summary.cashFlow),
+      confidenceLevel: getConfidenceLevel(getConf(summary.cashFlow)),
+    },
+    expenses: {
+      forecast: getVal(summary.expenses),
+      value: getVal(summary.expenses),
+      formatted: formatCurrency(getVal(summary.expenses)),
+      confidence: getConf(summary.expenses),
+      confidenceLevel: getConfidenceLevel(getConf(summary.expenses)),
     },
     risks: {
       critical: summary.risks?.critical ?? 0,
@@ -255,23 +274,71 @@ export function getEmptyForecastData() {
   return {
     baseForecast: {},
     summary: {
-      revenue: { forecast: 0, formatted: '₦0', confidence: 0, confidenceLevel: { label: 'Very Low', color: '#DC2626' } },
-      profit: { forecast: 0, formatted: '₦0', confidence: 0, confidenceLevel: { label: 'Very Low', color: '#DC2626' } },
-      cashFlow: { forecast: 0, formatted: '₦0', confidence: 0, confidenceLevel: { label: 'Very Low', color: '#DC2626' } },
+      revenue: { forecast: 0, value: 0, formatted: '₦0', confidence: 0 },
+      profit: { forecast: 0, value: 0, formatted: '₦0', confidence: 0 },
+      cashFlow: { forecast: 0, value: 0, formatted: '₦0', confidence: 0 },
+      expenses: { forecast: 0, value: 0, formatted: '₦0', confidence: 0 },
       risks: { critical: 0, high: 0, total: 0, overallSeverity: 'LOW' },
       status: 'NEUTRAL',
     },
-    scenarios: { available: false, conservative: null, expected: null, optimistic: null, comparison: null },
-    confidence: { available: false, results: {}, bestMetric: null, maxScore: 0, summary: 'No confidence data' },
-    risks: { risks: [], overallSeverity: 'LOW', summary: 'No risks detected', counts: { critical: 0, high: 0, medium: 0, low: 0, total: 0 } },
-    metadata: { horizon: '30D', generatedAt: new Date().toISOString(), dataPoints: {}, durationMs: 0, warnings: [], partialSuccess: false },
+    scenarios: {
+      available: false,
+      conservative: null,
+      expected: null,
+      optimistic: null,
+      comparison: null,
+    },
+    confidence: {
+      available: false,
+      results: {},
+      bestMetric: null,
+      maxScore: 0,
+      summary: 'No confidence data',
+    },
+    risks: {
+      risks: [],
+      overallSeverity: 'LOW',
+      summary: 'No risks detected',
+      counts: { critical: 0, high: 0, medium: 0, low: 0, total: 0 },
+    },
+    current: {
+      revenue: 0,
+      profit: 0,
+      cashFlow: 0,
+      expenses: 0,
+    },
+    metadata: {
+      horizon: '30D',
+      generatedAt: new Date().toISOString(),
+      dataPoints: {},
+      durationMs: 0,
+      warnings: [],
+      partialSuccess: false,
+    },
     executive: {
-      keyMetrics: { revenue: 0, profit: 0, cashFlow: 0, revenueConfidence: 0, profitConfidence: 0, cashConfidence: 0 },
-      riskSummary: { critical: 0, high: 0, total: 0, overallSeverity: 'LOW' },
+      keyMetrics: {
+        revenue: 0,
+        profit: 0,
+        cashFlow: 0,
+        expenses: 0,
+        revenueConfidence: 0,
+        profitConfidence: 0,
+        cashConfidence: 0,
+      },
+      riskSummary: {
+        critical: 0,
+        high: 0,
+        total: 0,
+        overallSeverity: 'LOW',
+      },
       status: 'NEUTRAL',
       statusEmoji: 'ℹ️',
       statusColor: '#6B7280',
-      executiveSummary: { narrative: 'No forecast data available', status: 'NEUTRAL', summary: 'No forecast data available' },
+      executiveSummary: {
+        narrative: 'No forecast data available',
+        status: 'NEUTRAL',
+        summary: 'No forecast data available',
+      },
       meta: { horizon: '30D', generatedAt: null },
     },
     status: 'NEUTRAL',

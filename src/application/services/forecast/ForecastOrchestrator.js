@@ -1,5 +1,5 @@
 // src/application/services/forecast/ForecastOrchestrator.js
-// SSOT v5.7.0-prod | Logical projections + derived Profit
+// SSOT v5.8.0-prod | Current values = SSOT | Projection only for horizon
 
 'use strict';
 
@@ -9,7 +9,7 @@ const { ConfidenceEngine, ForecastRiskDetector } = require('./intelligence');
 
 class ForecastOrchestrator {
   static LIMITS = Object.freeze({
-    VERSION: '5.7.0-prod',
+    VERSION: '5.8.0-prod',
     MAX_WHATIF_CHANGES: 10,
     FREEZE_DEPTH_LIMIT: 4,
     MAX_ARRAY_FREEZE_SIZE: 5000,
@@ -82,20 +82,34 @@ class ForecastOrchestrator {
       const period = this._buildPeriod(normalizedHorizon, safeNow);
       const t = data.trendRates || {};
 
-      // ── 1. Project the primary drivers ───────────────────────────────
+      // ── CURRENT (SSOT) – never projected ─────────────────────────────
+      const current = Object.freeze({
+        revenue: Number(data.currentRevenue) || 0,
+        profit: Number(data.currentProfit) || 0,
+        expenses: Number(data.currentExpenses) || 0,
+        cashFlow: Number(data.openingCash) || 0,
+        cogs: Number(data.currentCogs) || 0,
+        inventory: Number(data.currentInventory) || 0,
+        receivables: Number(data.currentReceivables) || 0,
+        payables: Number(data.currentPayables) || 0,
+        grossMargin: Number(data.currentGrossMargin) || 0,
+        netMargin: Number(data.currentNetMargin) || 0,
+      });
+
+      // ── 1. Project the primary drivers (horizon only) ────────────────
       const revenueResult = this.projectionEngine.project(
-        data.currentRevenue, t.revenue, days
+        current.revenue, t.revenue, days
       );
 
       const cogsResult = this.projectionEngine.project(
-        data.currentCogs, t.cogs, days
+        current.cogs, t.cogs, days
       );
 
       const expenseResult = this.projectionEngine.project(
-        data.currentExpenses, t.expenses, days
+        current.expenses, t.expenses, days
       );
 
-      // ── 2. DERIVE Profit (never project it independently) ────────────
+      // ── 2. DERIVE Profit from projected drivers ─────────────────────
       const derivedProfitValue =
         (revenueResult.forecast || 0) -
         (cogsResult.forecast || 0) -
@@ -104,7 +118,7 @@ class ForecastOrchestrator {
       const profitResult = this.projectionEngine.fromValue(derivedProfitValue, {
         score: 60,
         assumptions: [
-          'Derived as Revenue − COGS − Expenses',
+          'Derived as Revenue − COGS − Expenses (projected)',
           `Horizon ${days} days`,
         ],
         basis: {
@@ -114,29 +128,29 @@ class ForecastOrchestrator {
         },
       });
 
-      // ── 3. Mild movement for stocks ──────────────────────────────────
+      // ── 3. Project secondary metrics ────────────────────────────────
       const cashFlowResult = this.projectionEngine.project(
-        data.openingCash, t.cashFlow, days
+        current.cashFlow, t.cashFlow, days
       );
 
       const inventoryResult = this.projectionEngine.project(
-        data.currentInventory, t.inventory, days
+        current.inventory, t.inventory, days
       );
 
       const receivablesResult = this.projectionEngine.project(
-        data.currentReceivables, t.receivables, days
+        current.receivables, t.receivables, days
       );
 
       const payablesResult = this.projectionEngine.project(
-        data.currentPayables, t.payables, days
+        current.payables, t.payables, days
       );
 
       const salesVolumeResult = this.projectionEngine.project(
-        data.currentRevenue * 0.01, t.salesVolume, days
+        current.revenue * 0.01, t.salesVolume, days
       );
 
       const demandResult = this.projectionEngine.project(
-        data.currentRevenue * 0.01, t.demand, days
+        current.revenue * 0.01, t.demand, days
       );
 
       const baseForecast = Object.freeze({
@@ -152,7 +166,7 @@ class ForecastOrchestrator {
         demand: demandResult,
       });
 
-      // ── Scenarios / What-If / Confidence / Risks (kept) ──────────────
+      // ── Scenarios / What-If / Confidence / Risks ────────────────────
       let scenarios = null;
       try {
         scenarios = await this.scenarioEngine.generate({
@@ -160,6 +174,7 @@ class ForecastOrchestrator {
           horizon: normalizedHorizon, period, traceId: tid,
         });
       } catch (err) {
+        this.logger.warn('[ForecastOrchestrator] scenarioEngine failed', { traceId: tid, error: err.message });
         scenarios = Object.freeze({ available: false, reason: 'SCENARIO_ERROR' });
       }
 
@@ -173,6 +188,7 @@ class ForecastOrchestrator {
             horizon: normalizedHorizon, traceId: tid,
           });
         } catch (err) {
+          this.logger.warn('[ForecastOrchestrator] whatIfEngine failed', { traceId: tid, error: err.message });
           whatIfResult = Object.freeze({ available: false, reason: 'WHATIF_ERROR' });
         }
       }
@@ -188,6 +204,7 @@ class ForecastOrchestrator {
             }, { now: safeNow, traceId: tid })
           : Object.freeze({ available: false });
       } catch (err) {
+        this.logger.warn('[ForecastOrchestrator] confidenceEngine failed', { traceId: tid, error: err.message });
         confidenceResults = Object.freeze({ available: false });
       }
 
@@ -203,14 +220,15 @@ class ForecastOrchestrator {
             expenses: expenseResult,
           },
           historicalData: {
-            revenue: data.currentRevenue || 0,
-            cash: data.openingCash || 0,
-            receivables: data.currentReceivables || 0,
-            expenses: data.currentExpenses || 0,
+            revenue: current.revenue,
+            cash: current.cashFlow,
+            receivables: current.receivables,
+            expenses: current.expenses,
           },
           traceId: tid,
         });
       } catch (err) {
+        this.logger.warn('[ForecastOrchestrator] riskDetector failed', { traceId: tid, error: err.message });
         riskResults = Object.freeze({ risks: [], overallSeverity: 'UNKNOWN' });
       }
 
@@ -220,14 +238,24 @@ class ForecastOrchestrator {
         generatedAt: safeNow.toISOString(),
         horizon: normalizedHorizon,
         period,
+
+        // ── SSOT current values (use these for top cards / summary) ──
+        current,
+
+        // ── Projected values for the selected horizon ────────────────
         baseForecast,
+
         scenarios,
         whatIf: whatIfResult,
         confidence: confidenceResults,
         risks: riskResults,
+
+        // Executive summary now uses CURRENT (SSOT) values
         summary: this._generateExecutiveSummary({
-          revenueResult, profitResult, cashFlowResult, riskResults,
+          current,
+          riskResults,
         }),
+
         metadata: {
           orchestratorVersion: F.VERSION,
           traceId: tid,
@@ -237,10 +265,10 @@ class ForecastOrchestrator {
           horizon: normalizedHorizon,
           period,
           dataPoints: {
-            revenue: data.currentRevenue ? 1 : 0,
-            profit: data.currentProfit ? 1 : 0,
-            cashFlow: data.openingCash ? 1 : 0,
-            inventory: data.currentInventory ? 1 : 0,
+            revenue: current.revenue ? 1 : 0,
+            profit: current.profit ? 1 : 0,
+            cashFlow: current.cashFlow ? 1 : 0,
+            inventory: current.inventory ? 1 : 0,
           },
           warnings: this._collectWarnings(baseForecast),
           durationMs,
@@ -263,35 +291,53 @@ class ForecastOrchestrator {
 
   // ── Helpers ────────────────────────────────────────────────────────
 
-  _generateExecutiveSummary({ revenueResult, profitResult, cashFlowResult, riskResults }) {
-    const revenueForecast = revenueResult?.forecast ?? 0;
-    const profitForecast = profitResult?.forecast ?? 0;
-    const cashFlowForecast = cashFlowResult?.forecast ?? 0;
-
+  /**
+   * Executive Summary + top metric cards MUST use current SSOT values.
+   * Projection is only for horizon / scenarios / what-if.
+   */
+  _generateExecutiveSummary({ current, riskResults }) {
     const risks = riskResults?.risks || [];
     const criticalRisks = risks.filter(r => r.severity === 'CRITICAL');
     const highRisks = risks.filter(r => r.severity === 'HIGH');
 
     return this._freeze({
-      revenue: { forecast: revenueForecast, confidence: revenueResult?.confidence?.score ?? 0 },
-      profit: { forecast: profitForecast, confidence: profitResult?.confidence?.score ?? 0 },
-      cashFlow: { forecast: cashFlowForecast, confidence: cashFlowResult?.confidence?.score ?? 0 },
+      revenue: {
+        value: current.revenue,
+        confidence: 65, // current is known → high confidence
+      },
+      profit: {
+        value: current.profit,
+        confidence: 65,
+      },
+      cashFlow: {
+        value: current.cashFlow,
+        confidence: 65,
+      },
+      expenses: {
+        value: current.expenses,
+        confidence: 65,
+      },
       risks: {
         critical: criticalRisks.length,
         high: highRisks.length,
         total: risks.length,
         overallSeverity: riskResults?.overallSeverity || 'LOW',
       },
-      status: this._determineOverallStatus({ profitForecast, cashFlowForecast, criticalRisks, highRisks }),
+      status: this._determineOverallStatus({
+        profit: current.profit,
+        cashFlow: current.cashFlow,
+        criticalRisks,
+        highRisks,
+      }),
     }, 0);
   }
 
-  _determineOverallStatus({ profitForecast, cashFlowForecast, criticalRisks, highRisks }) {
+  _determineOverallStatus({ profit, cashFlow, criticalRisks, highRisks }) {
     if (criticalRisks.length > 0) return 'CRITICAL';
-    if (profitForecast < 0) return 'WARNING';
-    if (cashFlowForecast < 0) return 'WARNING';
+    if (profit < 0) return 'WARNING';
+    if (cashFlow < 0) return 'WARNING';
     if (highRisks.length > 2) return 'WARNING';
-    if (profitForecast > 0 && cashFlowForecast > 0) return 'POSITIVE';
+    if (profit > 0 && cashFlow > 0) return 'POSITIVE';
     return 'NEUTRAL';
   }
 

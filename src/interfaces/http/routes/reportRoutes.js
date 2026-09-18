@@ -50,6 +50,7 @@ const dailyReportService = new DailyReportService({
     debtorRepository: debtorRepo,
     creditorRepository: creditorRepo,
     inventoryRepository: inventoryRepo,
+    paymentRepository: paymentRepo,
 });
 
 const weeklyReportService = new WeeklyReportService({
@@ -60,6 +61,7 @@ const weeklyReportService = new WeeklyReportService({
     debtorRepository: debtorRepo,
     creditorRepository: creditorRepo,
     inventoryRepository: inventoryRepo,
+    paymentRepository: paymentRepo,
 });
 
 const monthlyReportService = new MonthlyReportService({
@@ -70,6 +72,7 @@ const monthlyReportService = new MonthlyReportService({
     debtorRepository: debtorRepo,
     creditorRepository: creditorRepo,
     inventoryRepository: inventoryRepo,
+    paymentRepository: paymentRepo,
     profitLossService: profitLossService,
 });
 
@@ -81,6 +84,7 @@ const yearlyReportService = new YearlyReportService({
     debtorRepository: debtorRepo,
     creditorRepository: creditorRepo,
     inventoryRepository: inventoryRepo,
+    paymentRepository: paymentRepo,
     profitLossService: profitLossService,
 });
 

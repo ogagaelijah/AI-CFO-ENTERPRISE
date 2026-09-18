@@ -75,30 +75,35 @@ const dailyReportService = new DailyReportService({
   saleRepository: saleRepo, expenseRepository: expenseRepo,
   incomeRepository: incomeRepo, debtorRepository: debtorRepo,
   creditorRepository: creditorRepo, inventoryRepository: inventoryRepo,
+  paymentRepository: paymentRepo,
   reportRepository: reportRepo,
 });
 const weeklyReportService = new WeeklyReportService({
   saleRepository: saleRepo, expenseRepository: expenseRepo,
   incomeRepository: incomeRepo, debtorRepository: debtorRepo,
   creditorRepository: creditorRepo, inventoryRepository: inventoryRepo,
+  paymentRepository: paymentRepo,
   reportRepository: reportRepo,
 });
 const monthlyReportService = new MonthlyReportService({
   saleRepository: saleRepo, expenseRepository: expenseRepo,
   incomeRepository: incomeRepo, debtorRepository: debtorRepo,
   creditorRepository: creditorRepo, inventoryRepository: inventoryRepo,
+  paymentRepository: paymentRepo,
   reportRepository: reportRepo,
 });
 const yearlyReportService = new YearlyReportService({
   saleRepository: saleRepo, expenseRepository: expenseRepo,
   incomeRepository: incomeRepo, debtorRepository: debtorRepo,
   creditorRepository: creditorRepo, inventoryRepository: inventoryRepo,
+  paymentRepository: paymentRepo,
   reportRepository: reportRepo,
 });
 const executiveReportService = new ExecutiveReportService({
   saleRepository: saleRepo, expenseRepository: expenseRepo,
   incomeRepository: incomeRepo, debtorRepository: debtorRepo,
   creditorRepository: creditorRepo, inventoryRepository: inventoryRepo,
+  paymentRepository: paymentRepo,
   reportRepository: reportRepo,
 });
 const agingService = new AgingService({

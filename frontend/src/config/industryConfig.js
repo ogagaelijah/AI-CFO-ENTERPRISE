@@ -25,6 +25,8 @@ export const INDUSTRY_CONFIGS = {
       { key: 'debtors',     label: 'Debtors Owed',    icon: Users,        color: 'yellow' },
       { key: 'creditors',   label: 'You Owe',         icon: CreditCard,   color: 'orange' },
       { key: 'cash',        label: 'Cash Position',   icon: Wallet,       color: 'purple' },
+      { key: 'cash_in',     label: 'Cash Received Today', icon: Wallet,   color: 'emerald' },
+      { key: 'cash_out',    label: 'Cash Paid Today',     icon: Wallet,   color: 'red' },
     ],
     quickActions: [
       { label: 'Record Sale', icon: ShoppingCart, href: '/sales' },
@@ -74,6 +76,8 @@ export const INDUSTRY_CONFIGS = {
       { key: 'inventory',      label: 'Finished Goods',    icon: Package,      color: 'teal' },
       { key: 'debtors',        label: 'Debtors Owed',      icon: Users,        color: 'yellow' },
       { key: 'creditors',      label: 'You Owe',           icon: CreditCard,   color: 'orange' },
+      { key: 'cash_in',        label: 'Cash Received Today', icon: Wallet,     color: 'emerald' },
+      { key: 'cash_out',       label: 'Cash Paid Today',     icon: Wallet,     color: 'red' },
     ],
     quickActions: [
       { label: 'Record Sale', icon: ShoppingCart, href: '/sales/record' },
@@ -124,6 +128,8 @@ export const INDUSTRY_CONFIGS = {
       { key: 'materials',   label: 'Materials',         icon: Package,      color: 'teal' },
       { key: 'debtors',     label: 'Debtors Owed',      icon: Users,        color: 'yellow' },
       { key: 'creditors',   label: 'You Owe',           icon: CreditCard,   color: 'orange' },
+      { key: 'cash_in',     label: 'Cash Received Today', icon: Wallet,     color: 'emerald' },
+      { key: 'cash_out',    label: 'Cash Paid Today',     icon: Wallet,     color: 'red' },
     ],
     quickActions: [
       { label: 'Record Sale', icon: ShoppingCart, href: '/sales/record' },
@@ -171,6 +177,8 @@ export const INDUSTRY_CONFIGS = {
       { key: 'debtors',     label: 'Patient Balances',  icon: Users,        color: 'yellow' },
       { key: 'creditors',   label: 'You Owe',           icon: CreditCard,   color: 'orange' },
       { key: 'cash',        label: 'Cash Position',     icon: Wallet,       color: 'purple' },
+      { key: 'cash_in',     label: 'Cash Received Today', icon: Wallet,     color: 'emerald' },
+      { key: 'cash_out',    label: 'Cash Paid Today',     icon: Wallet,     color: 'red' },
     ],
     quickActions: [
       { label: 'Record Visit', icon: Stethoscope, href: '/visits/record' },
@@ -219,6 +227,8 @@ export const INDUSTRY_CONFIGS = {
       { key: 'debtors',     label: 'Client Balances',   icon: Users,        color: 'yellow' },
       { key: 'creditors',   label: 'You Owe',           icon: CreditCard,   color: 'orange' },
       { key: 'cash',        label: 'Cash Position',     icon: Wallet,       color: 'purple' },
+      { key: 'cash_in',     label: 'Cash Received Today', icon: Wallet,     color: 'emerald' },
+      { key: 'cash_out',    label: 'Cash Paid Today',     icon: Wallet,     color: 'red' },
     ],
     quickActions: [
       { label: 'Log Hours', icon: Clock, href: '/hours' },
@@ -268,6 +278,8 @@ export const INDUSTRY_CONFIGS = {
       { key: 'debtors',     label: 'Tenant Balances',   icon: Users,        color: 'yellow' },
       { key: 'creditors',   label: 'You Owe',           icon: CreditCard,   color: 'orange' },
       { key: 'cash',        label: 'Cash Position',     icon: Wallet,       color: 'purple' },
+      { key: 'cash_in',     label: 'Cash Received Today', icon: Wallet,     color: 'emerald' },
+      { key: 'cash_out',    label: 'Cash Paid Today',     icon: Wallet,     color: 'red' },
     ],
     quickActions: [
       { label: 'Add Property', icon: Home, href: '/properties/add' },
@@ -316,6 +328,8 @@ export const INDUSTRY_CONFIGS = {
       { key: 'debtors',     label: 'Fee Balances',      icon: Receipt,      color: 'yellow' },
       { key: 'creditors',   label: 'You Owe',           icon: CreditCard,   color: 'orange' },
       { key: 'cash',        label: 'Cash Position',     icon: Wallet,       color: 'purple' },
+      { key: 'cash_in',     label: 'Cash Received Today', icon: Wallet,     color: 'emerald' },
+      { key: 'cash_out',    label: 'Cash Paid Today',     icon: Wallet,     color: 'red' },
     ],
     quickActions: [
       { label: 'Add Student', icon: Users, href: '/students/add' },
@@ -363,6 +377,8 @@ export const INDUSTRY_CONFIGS = {
       { key: 'debtors',     label: 'Debtors Owed',      icon: Users,        color: 'yellow' },
       { key: 'creditors',   label: 'You Owe',           icon: CreditCard,   color: 'orange' },
       { key: 'cash',        label: 'Cash Position',     icon: Wallet,       color: 'purple' },
+      { key: 'cash_in',     label: 'Cash Received Today', icon: Wallet,     color: 'emerald' },
+      { key: 'cash_out',    label: 'Cash Paid Today',     icon: Wallet,     color: 'red' },
     ],
     quickActions: [
       { label: 'Record Trip', icon: TruckIcon, href: '/trips/record' },

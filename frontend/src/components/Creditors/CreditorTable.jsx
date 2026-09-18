@@ -52,7 +52,6 @@ const CreditorTable = ({ creditors, onView, onPay, onEdit, onDelete }) => {
                   <td className="px-4 py-3">
                     <div>
                       <p className="text-sm font-medium text-gray-900 dark:text-white">{creditor.supplier_name}</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">ID: {creditor.id}</p>
                     </div>
                   </td>
                   <td className="px-4 py-3 text-right text-sm font-medium text-gray-900 dark:text-white">

@@ -1,22 +1,48 @@
 /**
  * Executive Mapper – Forecast
  * Maps forecast summary to executive format
+ * SSOT v5.8.0 – prefers current SSOT values over projected
  */
 
 import { getConfidenceLevel, getStatusColor, getStatusEmoji } from './helpers';
 
-export function mapExecutive(summary = {}, metadata = {}, baseForecast = {}) {
-  const revenue = summary?.revenue?.forecast ?? baseForecast?.revenue?.forecast ?? 0;
-  const profit = summary?.profit?.forecast ?? baseForecast?.profit?.forecast ?? 0;
-  const cashFlow = summary?.cashFlow?.forecast ?? baseForecast?.cashFlow?.forecast ?? 0;
+export function mapExecutive(summary = {}, metadata = {}, baseForecast = {}, current = {}) {
+  // Priority order for values:
+  // 1. current (pure SSOT from Analytics)
+  // 2. summary.*.value (new backend shape)
+  // 3. summary.*.forecast (legacy)
+  // 4. baseForecast (last resort)
 
-  const revenueConfidence = summary?.revenue?.confidence ?? 0;
-  const profitConfidence = summary?.profit?.confidence ?? 0;
-  const cashConfidence = summary?.cashFlow?.confidence ?? 0;
+  const pick = (metric) => {
+    if (current && current[metric] != null) return Number(current[metric]) || 0;
+    if (summary?.[metric]?.value != null) return Number(summary[metric].value) || 0;
+    if (summary?.[metric]?.forecast != null) return Number(summary[metric].forecast) || 0;
+    if (baseForecast?.[metric]?.forecast != null) return Number(baseForecast[metric].forecast) || 0;
+    return 0;
+  };
+
+  const pickConfidence = (metric) => {
+    if (summary?.[metric]?.confidence != null) return Number(summary[metric].confidence) || 0;
+    if (baseForecast?.[metric]?.confidence?.score != null) {
+      return Number(baseForecast[metric].confidence.score) || 0;
+    }
+    // Current values are known → high confidence
+    return 65;
+  };
+
+  const revenue = pick('revenue');
+  const profit = pick('profit');
+  const cashFlow = pick('cashFlow');
+  const expenses = pick('expenses');
+
+  const revenueConfidence = pickConfidence('revenue');
+  const profitConfidence = pickConfidence('profit');
+  const cashConfidence = pickConfidence('cashFlow');
 
   const risks = summary?.risks || {};
   const status = summary?.status || 'NEUTRAL';
 
+  // Build narrative
   const narrativeParts = [];
   if (revenue > 0) narrativeParts.push(`Revenue ₦${Number(revenue).toLocaleString()}`);
   if (profit !== 0) narrativeParts.push(`Profit ₦${Number(profit).toLocaleString()}`);
@@ -30,6 +56,7 @@ export function mapExecutive(summary = {}, metadata = {}, baseForecast = {}) {
       revenue,
       profit,
       cashFlow,
+      expenses,
       revenueConfidence,
       profitConfidence,
       cashConfidence,
@@ -49,7 +76,7 @@ export function mapExecutive(summary = {}, metadata = {}, baseForecast = {}) {
     executiveSummary: {
       narrative,
       status,
-      summary: `Forecast: Revenue ₦${Number(revenue).toLocaleString()} • Profit ₦${Number(profit).toLocaleString()} • ${status}`,
+      summary: `Current: Revenue ₦${Number(revenue).toLocaleString()} • Profit ₦${Number(profit).toLocaleString()} • ${status}`,
     },
     meta: {
       horizon: metadata?.horizon || '30D',
@@ -60,13 +87,33 @@ export function mapExecutive(summary = {}, metadata = {}, baseForecast = {}) {
 
 export function getEmptyExecutive() {
   return {
-    keyMetrics: { revenue: 0, profit: 0, cashFlow: 0, revenueConfidence: 0, profitConfidence: 0, cashConfidence: 0 },
-    riskSummary: { critical: 0, high: 0, total: 0, overallSeverity: 'LOW' },
+    keyMetrics: {
+      revenue: 0,
+      profit: 0,
+      cashFlow: 0,
+      expenses: 0,
+      revenueConfidence: 0,
+      profitConfidence: 0,
+      cashConfidence: 0,
+    },
+    riskSummary: {
+      critical: 0,
+      high: 0,
+      total: 0,
+      overallSeverity: 'LOW',
+    },
     status: 'NEUTRAL',
     statusEmoji: 'ℹ️',
     statusColor: '#6B7280',
-    executiveSummary: { narrative: 'No forecast data available', status: 'NEUTRAL', summary: 'No forecast data available' },
-    meta: { horizon: '30D', generatedAt: null },
+    executiveSummary: {
+      narrative: 'No forecast data available',
+      status: 'NEUTRAL',
+      summary: 'No forecast data available',
+    },
+    meta: {
+      horizon: '30D',
+      generatedAt: null,
+    },
   };
 }
 

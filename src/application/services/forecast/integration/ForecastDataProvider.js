@@ -1,5 +1,5 @@
 // src/application/services/forecast/integration/ForecastDataProvider.js
-// SSOT v5.7.0-prod – pure consumer of Analytics
+// SSOT v5.8.0-prod – pure consumer of Analytics
 
 'use strict';
 
@@ -61,7 +61,7 @@ class ForecastDataProvider {
       return Number(val) || 0;
     };
 
-    // ---------- CURRENT PERIOD ONLY (never YTD) ----------
+    // ---------- CURRENT PERIOD ONLY (SSOT – never YTD) ----------
     const current = {
       revenue: getNumber(metrics.revenue ?? pl.revenue ?? executive.revenue ?? kpis.revenue?.value ?? monthly.revenue),
       profit: getNumber(metrics.netProfit ?? pl.netProfit ?? executive.netProfit ?? kpis.netProfit?.value ?? monthly.netProfit),
@@ -75,28 +75,33 @@ class ForecastDataProvider {
       cogs: getNumber(metrics.cogs ?? monthly.kpiDashboard?.cogs),
     };
 
-    // Derive COGS if missing
+    // Derive COGS if missing and we have margin
     if (current.cogs === 0 && current.revenue > 0 && current.grossMargin > 0) {
       current.cogs = current.revenue * (1 - current.grossMargin / 100);
     }
 
-    // ---------- TREND RATES (heavily clamped) ----------
-    const clamp = (rawPercent, max = 0.18) => {
+    // ---------- TREND RATES (conservative – default 0) ----------
+    // Only apply real trends when Analytics actually has previous-period data.
+    // Hard-coded drift is forbidden – it was the source of the ₦1,313 / ₦20,687 bug.
+    const clamp = (rawPercent, max = 0.15) => {
       const r = (Number(rawPercent) || 0) / 100;
       return Math.max(-max, Math.min(max, r));
     };
 
+    const revenueTrend = clamp(comparison.revenueChange);
+    const expenseTrend = clamp(comparison.expenseChange ?? comparison.expensesChange ?? 0);
+
     const trendRates = {
-      revenue: clamp(comparison.revenueChange),
-      expenses: 0.01,               // mild upward drift
-      cogs: clamp(comparison.revenueChange), // moves with revenue
+      revenue: revenueTrend,
+      expenses: expenseTrend,          // was hard-coded 0.01 → removed
+      cogs: revenueTrend,              // moves with revenue when present
       cashFlow: 0,
-      inventory: 0.005,
-      receivables: 0.005,
-      payables: 0.005,
-      profit: 0,                    // we will derive profit, not project it
-      salesVolume: clamp(comparison.revenueChange),
-      demand: clamp(comparison.revenueChange),
+      inventory: 0,
+      receivables: 0,
+      payables: 0,
+      profit: 0,                       // always derived, never projected independently
+      salesVolume: revenueTrend,
+      demand: revenueTrend,
     };
 
     return {

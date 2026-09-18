@@ -1,4 +1,6 @@
 // src/application/services/reports/MonthlyReportService.js
+// v2.2.0-prod — Revenue + other income come from RevenueCalculator.
+//               Removed separate income fetches. Business-scoped. No silent swallows.
 
 const RevenueCalculator = require('./calculators/RevenueCalculator');
 const CogsCalculator = require('./calculators/CogsCalculator');
@@ -10,12 +12,12 @@ const InventoryCalculator = require('./calculators/InventoryCalculator');
 const ComparisonCalculator = require('./calculators/ComparisonCalculator');
 
 /**
- * Monthly Report Service - Refactored to use canonical calculators
- * 
- * Management analysis report
- * Shows MoM trends, YTD, KPIs, Risks, AI Insights
- * 
- * All data flows through canonical calculators (single source of truth)
+ * Monthly Report Service - Management analysis report
+ *
+ * - Product Sales = sales.salesRevenue (operating top-line)
+ * - Total Revenue (Combined) = salesRevenue + otherRevenue
+ * - Gross Profit = Product Sales - COGS
+ * - Net Profit = Gross Profit - Operating Expenses + Other Income
  */
 class MonthlyReportService {
     constructor({
@@ -47,6 +49,7 @@ class MonthlyReportService {
 
         this.revenueCalculator = revenueCalculator || new RevenueCalculator({
             saleRepository: this.saleRepository,
+            incomeRepository: this.incomeRepository,
         });
 
         this.cogsCalculator = cogsCalculator || new CogsCalculator({
@@ -150,23 +153,14 @@ class MonthlyReportService {
             endDate: monthEndStr,
         });
 
-        // Get expenses & other income
-        let currentExpensesList = [];
-        let currentIncomeList = [];
-
-        try {
-            const result = await this.expenseRepository.findByDateRange(userId, monthStartStr, monthEndStr);
-            currentExpensesList = this._safeArray(result);
-        } catch (e) { /* ignore */ }
-
-        try {
-            const result = await this.incomeRepository.findByDateRange(userId, monthStartStr, monthEndStr);
-            currentIncomeList = this._safeArray(result);
-        } catch (e) { /* ignore */ }
+        // Operating expenses only. Failures propagate.
+        const currentExpensesList = this._safeArray(
+            await this.expenseRepository.findByDateRange(businessId, monthStartStr, monthEndStr)
+        );
 
         const currentTotalExpenses = currentExpensesList.reduce((s, e) => s + this._safeNumber(e.amount), 0);
-        const currentOtherIncome = currentIncomeList.reduce((s, i) => s + this._safeNumber(i.amount), 0);
-        const currentPureSales = this._safeNumber(currentRevenue.totalRevenue);
+        const currentPureSales = this._safeNumber(currentRevenue.salesRevenue ?? currentRevenue.totalRevenue);
+        const currentOtherIncome = this._safeNumber(currentRevenue.otherRevenue);
         const currentCombinedRevenue = currentPureSales + currentOtherIncome;
 
         const currentProfit = await this.profitCalculator.calculate({
@@ -233,22 +227,13 @@ class MonthlyReportService {
             endDate: prevMonthEndStr,
         });
 
-        let prevExpensesList = [];
-        let prevIncomeList = [];
-
-        try {
-            const result = await this.expenseRepository.findByDateRange(userId, prevMonthStartStr, prevMonthEndStr);
-            prevExpensesList = this._safeArray(result);
-        } catch (e) { /* ignore */ }
-
-        try {
-            const result = await this.incomeRepository.findByDateRange(userId, prevMonthStartStr, prevMonthEndStr);
-            prevIncomeList = this._safeArray(result);
-        } catch (e) { /* ignore */ }
+        const prevExpensesList = this._safeArray(
+            await this.expenseRepository.findByDateRange(businessId, prevMonthStartStr, prevMonthEndStr)
+        );
 
         const prevTotalExpenses = prevExpensesList.reduce((s, e) => s + this._safeNumber(e.amount), 0);
-        const prevOtherIncome = prevIncomeList.reduce((s, i) => s + this._safeNumber(i.amount), 0);
-        const prevPureSales = this._safeNumber(prevRevenue.totalRevenue);
+        const prevPureSales = this._safeNumber(prevRevenue.salesRevenue ?? prevRevenue.totalRevenue);
+        const prevOtherIncome = this._safeNumber(prevRevenue.otherRevenue);
         const prevCombinedRevenue = prevPureSales + prevOtherIncome;
 
         const prevProfit = await this.profitCalculator.calculate({
@@ -280,28 +265,21 @@ class MonthlyReportService {
             endDate: monthEndStr,
         });
 
-        let ytdExpensesList = [];
-        let ytdIncomeList = [];
-
-        try {
-            const result = await this.expenseRepository.findByDateRange(userId, ytdStartStr, monthEndStr);
-            ytdExpensesList = this._safeArray(result);
-        } catch (e) { /* ignore */ }
-
-        try {
-            const result = await this.incomeRepository.findByDateRange(userId, ytdStartStr, monthEndStr);
-            ytdIncomeList = this._safeArray(result);
-        } catch (e) { /* ignore */ }
+        const ytdExpensesList = this._safeArray(
+            await this.expenseRepository.findByDateRange(businessId, ytdStartStr, monthEndStr)
+        );
 
         const ytdTotalExpenses = ytdExpensesList.reduce((s, e) => s + this._safeNumber(e.amount), 0);
-        const ytdOtherIncome = ytdIncomeList.reduce((s, i) => s + this._safeNumber(i.amount), 0);
+        const ytdPureSales = this._safeNumber(ytdRevenue.salesRevenue ?? ytdRevenue.totalRevenue);
+        const ytdOtherIncome = this._safeNumber(ytdRevenue.otherRevenue);
+        const ytdCombinedRevenue = ytdPureSales + ytdOtherIncome;
 
         const ytdProfit = await this.profitCalculator.calculate({
             userId,
             businessId,
             startDate: ytdStartStr,
             endDate: monthEndStr,
-            revenueData: { totalRevenue: ytdRevenue.totalRevenue },
+            revenueData: { totalRevenue: ytdPureSales },
             cogsData: { totalCogs: ytdCogs.totalCogs },
             expenseData: { total: ytdTotalExpenses },
             incomeData: { total: ytdOtherIncome },
@@ -409,22 +387,22 @@ class MonthlyReportService {
             });
         }
 
-        if (currentTotalExpenses > currentPureSales * 0.5 && currentPureSales > 0) {
+        if (currentTotalExpenses > currentCombinedRevenue * 0.5 && currentCombinedRevenue > 0) {
             risks.push({
                 type: 'Medium Risk',
-                description: `Operating expenses (${this._round2((currentTotalExpenses / currentPureSales) * 100)}% of revenue) are high relative to revenue. Review non-essential spending and identify cost-saving opportunities.`,
+                description: `Operating expenses (${this._round2((currentTotalExpenses / currentCombinedRevenue) * 100)}% of revenue) are high relative to revenue. Review non-essential spending and identify cost-saving opportunities.`,
             });
         }
 
-        if (currentAr.totalOutstanding > currentPureSales * 0.3 && currentPureSales > 0) {
+        if (currentAr.totalOutstanding > currentCombinedRevenue * 0.3 && currentCombinedRevenue > 0) {
             risks.push({
                 type: 'Medium Risk',
-                description: `Accounts receivable (${this._round2((currentAr.totalOutstanding / currentPureSales) * 100)}% of revenue) are elevated. Consider tightening credit terms or accelerating collection efforts.`,
+                description: `Accounts receivable (${this._round2((currentAr.totalOutstanding / currentCombinedRevenue) * 100)}% of revenue) are elevated. Consider tightening credit terms or accelerating collection efforts.`,
             });
         }
 
         // =============================================
-        // PROFESSIONAL AI INSIGHTS
+        // AI INSIGHTS
         // =============================================
 
         const insights = [];
@@ -456,7 +434,7 @@ class MonthlyReportService {
         }
 
         // =============================================
-        // PROFESSIONAL RECOMMENDATIONS
+        // RECOMMENDATIONS
         // =============================================
 
         const recommendations = [];
@@ -481,11 +459,11 @@ class MonthlyReportService {
             recommendations.push('Immediate cost rationalization is required. Review fixed and variable expenses, delay non-critical capital expenditures, and focus on cash preservation while exploring revenue-enhancing strategies.');
         }
 
-        if (currentAr.totalOutstanding > currentPureSales * 0.3 && currentPureSales > 0) {
+        if (currentAr.totalOutstanding > currentCombinedRevenue * 0.3 && currentCombinedRevenue > 0) {
             recommendations.push('Review customer credit terms and payment behaviour. Consider discounts for early payment and stricter enforcement of payment deadlines to improve cash flow.');
         }
 
-        if (currentTotalExpenses > currentPureSales * 0.6 && currentPureSales > 0) {
+        if (currentTotalExpenses > currentCombinedRevenue * 0.6 && currentCombinedRevenue > 0) {
             recommendations.push('Expense ratio is elevated. Conduct a line-by-line expense review to identify cost-saving opportunities without compromising operational effectiveness.');
         }
 
@@ -527,7 +505,7 @@ class MonthlyReportService {
                 expenses: currentTotalExpenses,
                 netProfit: this._round2(netProfit),
                 netMargin: this._round2(netMargin),
-                ytdRevenue: (ytdRevenue.totalRevenue || 0) + ytdOtherIncome,
+                ytdRevenue: ytdCombinedRevenue,
                 ytdNetProfit: ytdProfit.netProfit || 0,
                 totalSales: currentSales.length,
                 uniqueCustomers: new Set(currentSales.map(s => s.customer_name)).size,
@@ -544,7 +522,7 @@ class MonthlyReportService {
                 },
             },
             yearToDate: {
-                revenue: (ytdRevenue.totalRevenue || 0) + ytdOtherIncome,
+                revenue: ytdCombinedRevenue,
                 netProfit: ytdProfit.netProfit || 0,
             },
             inventory: {

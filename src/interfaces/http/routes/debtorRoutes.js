@@ -5,7 +5,6 @@ const router = express.Router();
 const DebtorRepository = require('../../../infrastructure/database/sqlite/repositories/DebtorRepository');
 const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository');
 const TransactionRepository = require('../../../infrastructure/database/sqlite/repositories/TransactionRepository');
-const GetDebtorsUseCase = require('../../../application/useCases/debtors/GetDebtorsUseCase');
 const RecordDebtorPaymentUseCase = require('../../../application/useCases/debtors/RecordDebtorPaymentUseCase');
 const { authMiddleware } = require('../middleware/authMiddleware');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
@@ -16,7 +15,6 @@ const paymentRepo = new PaymentRepository();
 const transactionRepo = new TransactionRepository();
 
 // Initialize Use Cases
-const getDebtorsUseCase = new GetDebtorsUseCase({ debtorRepository: debtorRepo });
 const recordDebtorPaymentUseCase = new RecordDebtorPaymentUseCase({
     debtorRepository: debtorRepo,
     paymentRepository: paymentRepo,
@@ -32,21 +30,25 @@ router.use(authMiddleware);
 router.get('/', async (req, res) => {
     try {
         const userId = req.user.id;
+        const businessId = req.user.businessId;
         const { status, customerType, limit = 50, offset = 0 } = req.query;
 
-        // FIXED: pass userId correctly
+        if (!businessId) {
+            return res.status(400).json({ success: false, message: 'Business context required' });
+        }
+
         const debtors = await debtorRepo.findByFilters({
+            businessId,
             userId,
-            businessId: null, // show all for this user for now
             status,
             customerType,
             limit: parseInt(limit),
             offset: parseInt(offset),
         });
 
-        const summary = await debtorRepo.getSummary(userId);
-        const totalOutstanding = await debtorRepo.getTotalOutstanding(userId);
-        const overdue = await debtorRepo.findOverdue(userId);
+        const summary = await debtorRepo.getSummary(businessId);
+        const totalOutstanding = await debtorRepo.getTotalOutstanding(businessId);
+        const overdue = await debtorRepo.findOverdue(businessId);
 
         res.json({
             success: true,
@@ -78,9 +80,12 @@ router.get('/', async (req, res) => {
 // =============================================
 router.get('/active', async (req, res) => {
     try {
-        const userId = req.user.id;
-        const debtors = await debtorRepo.findActive(userId);
-        const totalOutstanding = await debtorRepo.getTotalOutstanding(userId);
+        const businessId = req.user.businessId;
+        if (!businessId) {
+            return res.status(400).json({ success: false, message: 'Business context required' });
+        }
+        const debtors = await debtorRepo.findActive(businessId);
+        const totalOutstanding = await debtorRepo.getTotalOutstanding(businessId);
 
         res.json({
             success: true,
@@ -104,8 +109,11 @@ router.get('/active', async (req, res) => {
 // =============================================
 router.get('/overdue', async (req, res) => {
     try {
-        const userId = req.user.id;
-        const debtors = await debtorRepo.findOverdue(userId);
+        const businessId = req.user.businessId;
+        if (!businessId) {
+            return res.status(400).json({ success: false, message: 'Business context required' });
+        }
+        const debtors = await debtorRepo.findOverdue(businessId);
         const totalOverdue = debtors.reduce((sum, d) => sum + (d.balance_remaining || 0), 0);
 
         res.json({
@@ -130,10 +138,13 @@ router.get('/overdue', async (req, res) => {
 // =============================================
 router.get('/summary', async (req, res) => {
     try {
-        const userId = req.user.id;
-        const summary = await debtorRepo.getSummary(userId);
-        const totalOutstanding = await debtorRepo.getTotalOutstanding(userId);
-        const overdue = await debtorRepo.findOverdue(userId);
+        const businessId = req.user.businessId;
+        if (!businessId) {
+            return res.status(400).json({ success: false, message: 'Business context required' });
+        }
+        const summary = await debtorRepo.getSummary(businessId);
+        const totalOutstanding = await debtorRepo.getTotalOutstanding(businessId);
+        const overdue = await debtorRepo.findOverdue(businessId);
 
         res.json({
             success: true,
@@ -159,6 +170,7 @@ router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
+        const businessId = req.user.businessId;
         const debtorId = parseInt(id);
 
         if (isNaN(debtorId)) {
@@ -170,7 +182,8 @@ router.get('/:id', async (req, res) => {
             return res.status(404).json({ success: false, message: 'Debtor not found' });
         }
 
-        if (debtor.user_id !== userId) {
+        // Ownership check: business_id preferred, fallback to user_id
+        if (debtor.business_id !== businessId && debtor.user_id !== userId) {
             return res.status(403).json({ success: false, message: 'Access denied' });
         }
 
@@ -190,8 +203,11 @@ router.get('/:id', async (req, res) => {
 router.post('/', invalidateAfterWrite, async (req, res) => {
     try {
         const userId = req.user.id;
-        // Use businessId if available, otherwise fallback to userId
-        const businessId = req.user.businessId || userId;
+        const businessId = req.user.businessId;
+
+        if (!businessId) {
+            return res.status(400).json({ success: false, message: 'Business context required' });
+        }
 
         const { customerName, totalOwed, dueDate, customerType = 'CUSTOMER', notes = '' } = req.body;
 
@@ -204,7 +220,7 @@ router.post('/', invalidateAfterWrite, async (req, res) => {
 
         const debtor = await debtorRepo.create({
             user_id: userId,
-            business_id: businessId,          // ← FIXED: now saves business_id
+            business_id: businessId,
             customer_name: customerName,
             total_owed: totalOwed,
             balance_remaining: totalOwed,
@@ -235,8 +251,12 @@ router.post('/:id/payment', invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
-        const businessId = req.user.businessId || userId;
+        const businessId = req.user.businessId;
         const { amount, notes = '', paymentMethod = 'CASH' } = req.body;
+
+        if (!businessId) {
+            return res.status(400).json({ success: false, message: 'Business context required' });
+        }
 
         const debtorId = parseInt(id);
         if (isNaN(debtorId)) {
@@ -256,19 +276,15 @@ router.post('/:id/payment', invalidateAfterWrite, async (req, res) => {
             paymentMethod,
         });
 
-        if (result.success) {
-            res.json({
-                success: true,
-                message: result.message,
-                data: {
-                    debtor: result.debtor,
-                    payment: result.payment,
-                    remainingBalance: result.remainingBalance,
-                }
-            });
-        } else {
-            res.status(400).json({ success: false, message: result.message });
-        }
+        res.json({
+            success: true,
+            message: result.message,
+            data: {
+                debtor: result.debtor,
+                payment: result.payment,
+                remainingBalance: result.remainingBalance,
+            }
+        });
     } catch (error) {
         console.error('❌ Error recording debtor payment:', error);
         res.status(500).json({
@@ -285,6 +301,7 @@ router.delete('/:id', invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
+        const businessId = req.user.businessId;
         const debtorId = parseInt(id);
 
         if (isNaN(debtorId)) {
@@ -295,7 +312,7 @@ router.delete('/:id', invalidateAfterWrite, async (req, res) => {
         if (!existing) {
             return res.status(404).json({ success: false, message: 'Debtor not found' });
         }
-        if (existing.user_id !== userId) {
+        if (existing.business_id !== businessId && existing.user_id !== userId) {
             return res.status(403).json({ success: false, message: 'Access denied' });
         }
         if (existing.balance_remaining > 0 && existing.status !== 'PAID') {

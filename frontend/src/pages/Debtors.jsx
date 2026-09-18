@@ -90,7 +90,11 @@ const Debtors = () => {
     if (debtor.balance_remaining <= 0 || debtor.status === 'PAID') {
       return { label: 'Paid', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400', icon: '✅' };
     }
-    if (debtor.status === 'OVERDUE' || (debtor.due_date && new Date(debtor.due_date) < new Date())) {
+
+    // Overdue only if strictly before today (calendar-day comparison, matches backend)
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const dueStr = debtor.due_date ? String(debtor.due_date).slice(0, 10) : null;
+    if (dueStr && dueStr < todayStr) {
       return { label: 'Overdue', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400', icon: '🔴' };
     }
     return { label: 'Active', color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400', icon: '🟡' };
@@ -264,7 +268,7 @@ const Debtors = () => {
                       <td className="px-4 py-3 text-sm">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${status.color}`}>
                           {status.icon} {status.label}
-                          {status.label === 'Overdue' && ` (${daysOverdue}d)`}
+                          {status.label === 'Overdue' && daysOverdue > 0 && ` (${daysOverdue}d)`}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">

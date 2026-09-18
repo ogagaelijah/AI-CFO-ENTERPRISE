@@ -2,12 +2,12 @@
 
 /**
  * ProfitCalculator - Single source of truth for profit calculations
- * 
+ *
  * Accounting Rules (per IFRS/IAS 1):
  * - Gross Profit = Revenue - COGS (Operating Revenue ONLY)
  * - Operating Profit = Gross Profit - Operating Expenses
  * - Net Profit = Operating Profit + Other Income - Other Expenses
- * 
+ *
  * This is the SINGLE SOURCE OF TRUTH for all profit calculations.
  */
 class ProfitCalculator {
@@ -36,11 +36,16 @@ class ProfitCalculator {
         expenseData = null,
         incomeData = null,
     }) {
-        // Get operating revenue (product sales only)
+        // Get operating revenue (product sales only).
+        // Falls back to RevenueCalculator if caller didn't provide it.
+        // Failures propagate — no silent zeros.
         let revenue = revenueData;
         if (!revenue) {
             const RevenueCalculator = require('./RevenueCalculator');
-            const revenueCalc = new RevenueCalculator({ saleRepository: this.saleRepository });
+            const revenueCalc = new RevenueCalculator({
+                saleRepository: this.saleRepository,
+                incomeRepository: this.incomeRepository,
+            });
             revenue = await revenueCalc.calculate({ userId, businessId, startDate, endDate });
         }
 
@@ -52,54 +57,44 @@ class ProfitCalculator {
             cogs = await cogsCalc.calculate({ userId, businessId, startDate, endDate });
         }
 
-        // Get operating expenses
+        // Get operating expenses — business-scoped, no silent swallow.
         let expenses = expenseData;
         if (!expenses) {
-            let expensesData = [];
-            try {
-                const result = await this.expenseRepository.findByDateRange(userId, startDate, endDate);
-                expensesData = this._safeArray(result);
-            } catch (error) {
-                console.warn('⚠️ ProfitCalculator: Could not fetch expenses:', error.message);
-                expensesData = [];
-            }
+            const expensesData = this._safeArray(
+                await this.expenseRepository.findByDateRange(businessId, startDate, endDate)
+            );
             expenses = {
                 total: expensesData.reduce((sum, e) => sum + this._safeNumber(e.amount), 0),
                 byCategory: this._groupByCategory(expensesData),
             };
         }
 
-        // Get other income (non-operating)
+        // Get other income — business-scoped, no silent swallow.
         let otherIncome = incomeData;
         if (!otherIncome) {
-            let incomeDataArray = [];
-            try {
-                const result = await this.incomeRepository.findByDateRange(userId, startDate, endDate);
-                incomeDataArray = this._safeArray(result);
-            } catch (error) {
-                console.warn('⚠️ ProfitCalculator: Could not fetch income:', error.message);
-                incomeDataArray = [];
-            }
+            const incomeDataArray = this._safeArray(
+                await this.incomeRepository.findByDateRange(businessId, startDate, endDate)
+            );
             otherIncome = {
                 total: incomeDataArray.reduce((sum, i) => sum + this._safeNumber(i.amount), 0),
                 bySource: this._groupBySource(incomeDataArray),
             };
         }
 
-        const productRevenue = this._safeNumber(revenue.totalRevenue);
+        const productRevenue = this._safeNumber(revenue.salesRevenue ?? revenue.totalRevenue);
         const totalCogs = this._safeNumber(cogs.totalCogs);
         const totalExpenses = this._safeNumber(expenses.total);
         const totalOtherIncome = this._safeNumber(otherIncome.total);
 
-        // ✅ Accounting Rule 1: Gross Profit = Revenue - COGS (Operating Revenue ONLY)
+        // Accounting Rule 1: Gross Profit = Revenue - COGS (Operating Revenue ONLY)
         const grossProfit = productRevenue - totalCogs;
         const grossMargin = productRevenue > 0 ? (grossProfit / productRevenue) * 100 : 0;
 
-        // ✅ Accounting Rule 2: Operating Profit = Gross Profit - Operating Expenses
+        // Accounting Rule 2: Operating Profit = Gross Profit - Operating Expenses
         const operatingProfit = grossProfit - totalExpenses;
         const operatingMargin = productRevenue > 0 ? (operatingProfit / productRevenue) * 100 : 0;
 
-        // ✅ Accounting Rule 3: Net Profit = Operating Profit + Other Income - Other Expenses
+        // Accounting Rule 3: Net Profit = Operating Profit + Other Income - Other Expenses
         const netProfit = operatingProfit + totalOtherIncome;
         const netMargin = productRevenue > 0 ? (netProfit / productRevenue) * 100 : 0;
 
