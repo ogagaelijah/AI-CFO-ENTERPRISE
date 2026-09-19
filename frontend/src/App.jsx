@@ -29,6 +29,7 @@ import Advisor from './pages/Advisor';
 import Projects from './pages/Projects';
 import TimeEntries from './pages/TimeEntries';
 import Invoices from './pages/Invoices';
+import Students from './pages/Students';                    // ← ADDED
 
 function App() {
   return (
@@ -80,6 +81,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <Invoices />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/students"                                   // ← ADDED
+              element={
+                <ProtectedRoute>
+                  <Students />
                 </ProtectedRoute>
               }
             />
@@ -172,7 +181,7 @@ function App() {
               }
             />
             <Route
-              path="/clients"                                      // ← ADDED
+              path="/clients"
               element={
                 <ProtectedRoute>
                   <Customers />
