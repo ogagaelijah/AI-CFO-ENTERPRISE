@@ -29,7 +29,9 @@ import Advisor from './pages/Advisor';
 import Projects from './pages/Projects';
 import TimeEntries from './pages/TimeEntries';
 import Invoices from './pages/Invoices';
-import Students from './pages/Students';                    // ← ADDED
+import Students from './pages/Students';
+import Classes from './pages/Classes';
+import Enrollments from './pages/Enrollments';                // ← ADDED
 
 function App() {
   return (
@@ -85,10 +87,26 @@ function App() {
               }
             />
             <Route
-              path="/students"                                   // ← ADDED
+              path="/students"
               element={
                 <ProtectedRoute>
                   <Students />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/classes"
+              element={
+                <ProtectedRoute>
+                  <Classes />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/enrollments"                                // ← ADDED
+              element={
+                <ProtectedRoute>
+                  <Enrollments />
                 </ProtectedRoute>
               }
             />

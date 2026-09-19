@@ -1,5 +1,6 @@
 // frontend/src/pages/Dashboard.jsx
-// v2.1.0-prod — Non-blocking load, plan-aware nav, banner always visible.
+// v2.1.1-prod — Non-blocking load, plan-aware nav, banner always visible.
+//               Added min-w-0 to flex child so content respects viewport width.
 
 import { useState } from 'react';
 import { Home } from 'lucide-react';
@@ -103,7 +104,7 @@ const Dashboard = () => {
   const closeMenu = () => setIsMobileMenuOpen(false);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-slate-900 transition-colors duration-300 flex">
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-900 transition-colors duration-300 flex overflow-x-hidden">
       <DashboardSidebar
         navItems={navItems}
         isMobileOpen={isMobileMenuOpen}
@@ -111,7 +112,7 @@ const Dashboard = () => {
         onLogout={handleLogout}
       />
 
-      <div className="flex-1 flex flex-col min-h-screen md:ml-64">
+      <div className="flex-1 flex flex-col min-h-screen md:ml-64 min-w-0">
         <DashboardHeader
           user={user}
           industryConfig={industryConfig}
@@ -120,7 +121,7 @@ const Dashboard = () => {
           onMenuToggle={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
         />
 
-        <main className="flex-1 p-4 sm:p-6 space-y-4 sm:space-y-6">
+        <main className="flex-1 p-4 sm:p-6 space-y-4 sm:space-y-6 min-w-0">
           {isReadOnly ? (
             <ReadOnlyBanner />
           ) : isTrial ? (

@@ -1,5 +1,6 @@
 // src/infrastructure/database/sqlite/repositories/EnrollmentRepository.js
 // Postgres async. Multi-tenant. Explicit columns only.
+// v1.1.0-prod — Added findByBusinessIdWithDetails (joined student + class names).
 
 'use strict';
 
@@ -87,6 +88,73 @@ class EnrollmentRepository extends BaseRepository {
         return result.rows.map((r) => this._hydrate(r));
     }
 
+    /**
+     * Enriched listing: joins students + classes so each row carries
+     * studentName, admissionNumber, className, classLevel.
+     * One query, one round trip. Scales to any number of students/classes.
+     */
+    async findByBusinessIdWithDetails(businessId, options = {}) {
+        let sql = `
+            SELECT
+                e.id,
+                e.business_id,
+                e.student_id,
+                e.class_id,
+                e.term,
+                e.session,
+                e.status,
+                e.enrolled_on,
+                e.metadata,
+                e.created_at,
+                e.updated_at,
+                s.full_name         AS student_name,
+                s.admission_number  AS admission_number,
+                c.name              AS class_name,
+                c.level             AS class_level
+            FROM enrollments e
+            LEFT JOIN students s ON s.id = e.student_id
+            LEFT JOIN classes  c ON c.id = e.class_id
+            WHERE e.business_id = $1
+        `;
+        const params = [businessId];
+        let i = 2;
+
+        if (options.status) {
+            sql += ` AND e.status = $${i++}`;
+            params.push(options.status);
+        }
+        if (options.studentId) {
+            sql += ` AND e.student_id = $${i++}`;
+            params.push(options.studentId);
+        }
+        if (options.classId) {
+            sql += ` AND e.class_id = $${i++}`;
+            params.push(options.classId);
+        }
+        if (options.session) {
+            sql += ` AND e.session = $${i++}`;
+            params.push(options.session);
+        }
+        if (options.term) {
+            sql += ` AND e.term = $${i++}`;
+            params.push(options.term);
+        }
+
+        sql += ' ORDER BY e.enrolled_on DESC, e.id DESC';
+
+        if (options.limit) {
+            sql += ` LIMIT $${i++}`;
+            params.push(options.limit);
+        }
+        if (options.offset) {
+            sql += ` OFFSET $${i++}`;
+            params.push(options.offset);
+        }
+
+        const result = await this._query(sql, params);
+        return result.rows.map((r) => this._hydrateDetailed(r));
+    }
+
     async findActiveByStudent(businessId, studentId) {
         return this.findByBusinessId(businessId, {
             studentId,
@@ -102,10 +170,6 @@ class EnrollmentRepository extends BaseRepository {
         return this.findByBusinessId(businessId, { ...options, session });
     }
 
-    /**
-     * Find the active enrollment for a student in a specific session + term.
-     * Returns the first match or null.
-     */
     async findActiveByStudentSessionTerm(businessId, studentId, session, term) {
         const result = await this._query(
             `SELECT * FROM enrollments
@@ -229,6 +293,32 @@ class EnrollmentRepository extends BaseRepository {
             createdAt: row.created_at ? new Date(row.created_at) : new Date(),
             updatedAt: row.updated_at ? new Date(row.updated_at) : new Date(),
         });
+    }
+
+    /**
+     * Returns a plain object (not an Enrollment entity) because the enriched
+     * row carries extra columns (student_name, admission_number, class_name,
+     * class_level) that the entity does not model. Use cases serialize this
+     * directly for the API.
+     */
+    _hydrateDetailed(row) {
+        return {
+            id: row.id,
+            businessId: row.business_id,
+            studentId: row.student_id,
+            classId: row.class_id,
+            term: row.term,
+            session: row.session,
+            status: row.status,
+            enrolledOn: row.enrolled_on,
+            metadata: typeof row.metadata === 'string' ? safeParse(row.metadata) : (row.metadata || {}),
+            createdAt: row.created_at ? new Date(row.created_at) : new Date(),
+            updatedAt: row.updated_at ? new Date(row.updated_at) : new Date(),
+            studentName: row.student_name || null,
+            admissionNumber: row.admission_number || null,
+            className: row.class_name || null,
+            classLevel: row.class_level || null,
+        };
     }
 }
 
