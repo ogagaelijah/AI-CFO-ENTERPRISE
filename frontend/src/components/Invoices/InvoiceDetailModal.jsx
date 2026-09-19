@@ -1,6 +1,6 @@
 // frontend/src/components/Invoices/InvoiceDetailModal.jsx
 
-import { X } from 'lucide-react';
+import { X, CreditCard, Send } from 'lucide-react';
 
 const STATUS_STYLES = {
   DRAFT:     'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700',
@@ -26,8 +26,24 @@ const Row = ({ label, value, valueClass = '' }) => (
   </div>
 );
 
-const InvoiceDetailModal = ({ isOpen, invoice, isLoading, onClose }) => {
+const InvoiceDetailModal = ({
+  isOpen,
+  invoice,
+  isLoading,
+  onClose,
+  onRecordPayment,
+  onMarkAsSent,
+}) => {
   if (!isOpen) return null;
+
+  const status = invoice?.status;
+  const balance = Number(invoice?.balance) || 0;
+
+  const canMarkAsSent = status === 'DRAFT';
+  const canRecordPayment =
+    (status === 'SENT' || status === 'OVERDUE') && balance > 0;
+
+  const showActions = !isLoading && invoice && (canMarkAsSent || canRecordPayment);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -102,6 +118,29 @@ const InvoiceDetailModal = ({ isOpen, invoice, isLoading, onClose }) => {
             </>
           )}
         </div>
+
+        {showActions && (
+          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+            {canMarkAsSent && (
+              <button
+                onClick={() => onMarkAsSent && onMarkAsSent(invoice)}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
+              >
+                <Send className="w-4 h-4" />
+                <span>Mark as Sent</span>
+              </button>
+            )}
+            {canRecordPayment && (
+              <button
+                onClick={() => onRecordPayment && onRecordPayment(invoice)}
+                className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
+              >
+                <CreditCard className="w-4 h-4" />
+                <span>Record Payment</span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,15 +1,25 @@
 // src/application/useCases/invoices/UpdateInvoiceUseCase.js
+// v2.0.0-prod — Handles DRAFT → SENT transition (creates linked debtor).
+
+const { withTransaction } = require('../../../infrastructure/database/sqlite/connection');
 
 class UpdateInvoiceUseCase {
-    constructor({ invoiceRepository, customerRepository = null, projectRepository = null }) {
+    constructor({
+        invoiceRepository,
+        customerRepository = null,
+        projectRepository = null,
+        debtorRepository = null,
+    }) {
         this.invoiceRepository = invoiceRepository;
         this.customerRepository = customerRepository;
         this.projectRepository = projectRepository;
+        this.debtorRepository = debtorRepository;
     }
 
     async execute({
         invoiceId,
         businessId,
+        userId = null,
         customerId,
         projectId,
         invoiceNumber,
@@ -35,8 +45,6 @@ class UpdateInvoiceUseCase {
         }
 
         // Money fields are locked once a payment has been recorded.
-        // Allowing a subtotal/total change after payment would silently
-        // corrupt the balance.
         const hasPayments = existing.amountPaid > 0;
         if (hasPayments && (subtotal !== undefined || tax !== undefined)) {
             throw new Error(
@@ -60,18 +68,28 @@ class UpdateInvoiceUseCase {
             };
         }
 
+        // Ownership check: existing must belong to this business.
+        const existingBizId = Number(existing.businessId);
+        if (existingBizId !== Number(businessId)) {
+            throw new Error('Access denied: Invoice does not belong to this business');
+        }
+
         // Verify ownership of any newly-referenced entities
+        let customerName = null;
         if (customerId !== undefined && customerId && this.customerRepository) {
             const c = await this.customerRepository.findById(customerId);
             if (!c) throw new Error('Customer not found');
-            if (c.businessId !== businessId) {
+            const cbId = Number(c.business_id ?? c.businessId);
+            if (cbId !== Number(businessId)) {
                 throw new Error('Access denied: Customer does not belong to this business');
             }
+            customerName = c.name;
         }
         if (projectId !== undefined && projectId && this.projectRepository) {
             const p = await this.projectRepository.findById(projectId);
             if (!p) throw new Error('Project not found');
-            if (p.businessId !== businessId) {
+            const pbId = Number(p.business_id ?? p.businessId);
+            if (pbId !== Number(businessId)) {
                 throw new Error('Access denied: Project does not belong to this business');
             }
         }
@@ -100,10 +118,13 @@ class UpdateInvoiceUseCase {
         }
 
         // Status transition — validate via entity rules before writing.
+        let nextStatus = null;
         if (status !== undefined) {
-            const clone = new (require('../../../domain/entities/Invoice'))(existing.toJSON());
+            const Invoice = require('../../../domain/entities/Invoice');
+            const clone = new Invoice(existing.toJSON());
             clone.updateStatus(status); // throws if invalid
-            updateData.status = clone.status;
+            nextStatus = clone.status;
+            updateData.status = nextStatus;
         }
 
         if (Object.keys(updateData).length === 0) {
@@ -114,7 +135,49 @@ class UpdateInvoiceUseCase {
             };
         }
 
-        const updated = await this.invoiceRepository.update(invoiceId, businessId, updateData);
+        // Atomic: update invoice + (if transitioning to SENT) create debtor.
+        const updated = await withTransaction(async () => {
+            const result = await this.invoiceRepository.update(invoiceId, businessId, updateData);
+
+            // Only create the debtor once — when transitioning from a
+            // non-SENT state to SENT, and only if a debtor doesn't already exist.
+            const isTransitioningToSent =
+                nextStatus === 'SENT' &&
+                existing.status !== 'SENT' &&
+                existing.status !== 'PAID' &&
+                existing.status !== 'CANCELLED';
+
+            if (isTransitioningToSent && this.debtorRepository) {
+                const alreadyLinked = await this.debtorRepository.findByReference(
+                    businessId,
+                    'INVOICE',
+                    invoiceId
+                );
+                if (!alreadyLinked) {
+                    const finalCustomerId = updateData.customerId !== undefined
+                        ? updateData.customerId
+                        : existing.customerId;
+
+                    await this.debtorRepository.create({
+                        userId,
+                        businessId,
+                        customer_id: finalCustomerId || null,
+                        customer_name: customerName || 'Unknown Client',
+                        customer_type: 'CLIENT',
+                        total_owed: result.total,
+                        amount_paid: result.amountPaid || 0,
+                        balance_remaining: result.balance,
+                        status: 'ACTIVE',
+                        due_date: result.dueDate || null,
+                        reference_type: 'INVOICE',
+                        reference_id: invoiceId,
+                        notes: `Invoice ${result.invoiceNumber}`,
+                    });
+                }
+            }
+
+            return result;
+        });
 
         return {
             success: true,

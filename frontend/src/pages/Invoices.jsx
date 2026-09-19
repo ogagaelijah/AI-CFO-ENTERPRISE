@@ -10,6 +10,7 @@ import InvoiceTable from '../components/Invoices/InvoiceTable';
 import RecordInvoiceModal from '../components/Invoices/RecordInvoiceModal';
 import EditInvoiceModal from '../components/Invoices/EditInvoiceModal';
 import InvoiceDetailModal from '../components/Invoices/InvoiceDetailModal';
+import RecordInvoicePaymentModal from '../components/Invoices/RecordInvoicePaymentModal';
 import ConfirmModal from '../components/Invoices/ConfirmModal';
 
 const Invoices = () => {
@@ -27,6 +28,7 @@ const Invoices = () => {
   const [showModal, setShowModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
@@ -155,6 +157,67 @@ const Invoices = () => {
     }
   };
 
+  const handleMarkAsSent = async (invoice) => {
+    if (!invoice) return;
+    setError('');
+    setSuccess('');
+    try {
+      const response = await api.put(`/invoices/${invoice.id}`, {
+        status: 'SENT',
+        businessId: user?.businessId || user?.id,
+      });
+
+      if (response.data?.success) {
+        setShowDetailModal(false);
+        setSelectedInvoice(null);
+        setSuccess(`✅ Invoice ${invoice.invoiceNumber || ''} marked as sent. Client balance updated.`);
+        await fetchInvoices();
+      } else {
+        setError(response.data?.message || 'Failed to mark invoice as sent');
+      }
+    } catch (error) {
+      console.error('Error marking invoice as sent:', error);
+      setError(error.response?.data?.message || 'Failed to mark invoice as sent');
+    }
+  };
+
+  const handleRecordPaymentSubmit = async (data) => {
+    if (!selectedInvoice) return;
+    setError('');
+    setSuccess('');
+    try {
+      const response = await api.post(`/invoices/${selectedInvoice.id}/payments`, {
+        amount: data.amount,
+        paymentDate: data.paymentDate,
+        paymentMethod: data.paymentMethod,
+        notes: data.notes,
+        businessId: user?.businessId || user?.id,
+      });
+
+      if (response.data?.success) {
+        setShowPaymentModal(false);
+        setShowDetailModal(false);
+        setSelectedInvoice(null);
+        setSuccess(
+          response.data?.message ||
+          `✅ Payment of ₦${Number(data.amount).toLocaleString()} recorded.`
+        );
+        await fetchInvoices();
+      } else {
+        setError(response.data?.message || 'Failed to record payment');
+      }
+    } catch (error) {
+      console.error('Error recording invoice payment:', error);
+      setError(error.response?.data?.message || 'Failed to record payment');
+    }
+  };
+
+  const handleOpenPaymentFromDetail = (invoice) => {
+    setSelectedInvoice(invoice);
+    setShowDetailModal(false);
+    setShowPaymentModal(true);
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -248,6 +311,20 @@ const Invoices = () => {
           setShowDetailModal(false);
           setSelectedInvoice(null);
         }}
+        onRecordPayment={handleOpenPaymentFromDetail}
+        onMarkAsSent={handleMarkAsSent}
+      />
+
+      <RecordInvoicePaymentModal
+        isOpen={showPaymentModal}
+        invoice={selectedInvoice}
+        onSubmit={handleRecordPaymentSubmit}
+        onClose={() => {
+          setShowPaymentModal(false);
+          setSelectedInvoice(null);
+        }}
+        error={error}
+        setError={setError}
       />
 
       <ConfirmModal

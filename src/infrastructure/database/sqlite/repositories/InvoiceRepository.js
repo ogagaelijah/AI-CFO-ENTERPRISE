@@ -1,5 +1,6 @@
 // src/infrastructure/database/sqlite/repositories/InvoiceRepository.js
 // Postgres async. Multi-tenant. Explicit columns only (no key-derived SQL).
+// v1.1.0-prod — Added markAsSent, applyPayment.
 
 'use strict';
 
@@ -122,6 +123,56 @@ class InvoiceRepository extends BaseRepository {
             [businessId, toDateOnly(asOf)]
         );
         return result.rows.map((r) => this._hydrate(r));
+    }
+
+    /**
+     * Mark invoice as SENT. Only valid when current status is DRAFT.
+     * Returns the updated invoice, or null if not found / not in DRAFT.
+     */
+    async markAsSent(invoiceId, businessId) {
+        const result = await this._query(
+            `UPDATE invoices
+             SET status = 'SENT',
+                 updated_at = NOW()
+             WHERE id = $1 AND business_id = $2 AND status = 'DRAFT'
+             RETURNING id`,
+            [invoiceId, businessId]
+        );
+        if (result.rowCount === 0) return null;
+        return this.findById(invoiceId, businessId);
+    }
+
+    /**
+     * Apply a payment to an invoice. Increments amount_paid and
+     * flips status to PAID when fully settled. Never touches amount
+     * other than amount_paid — total is the source of truth.
+     *
+     * Returns the updated invoice, or null if not found / paid over.
+     */
+    async applyPayment(invoiceId, businessId, amount) {
+        const amt = round2(amount);
+        if (amt <= 0) {
+            throw new Error('Payment amount must be greater than zero');
+        }
+
+        // Compute new amount_paid and status in SQL for atomicity.
+        const result = await this._query(
+            `UPDATE invoices
+             SET amount_paid = amount_paid + $1,
+                 status = CASE
+                     WHEN amount_paid + $1 >= total THEN 'PAID'
+                     ELSE status
+                 END,
+                 updated_at = NOW()
+             WHERE id = $2
+               AND business_id = $3
+               AND status IN ('DRAFT', 'SENT', 'OVERDUE')
+               AND amount_paid + $1 <= total
+             RETURNING id`,
+            [amt, invoiceId, businessId]
+        );
+        if (result.rowCount === 0) return null;
+        return this.findById(invoiceId, businessId);
     }
 
     async update(id, businessId, data) {

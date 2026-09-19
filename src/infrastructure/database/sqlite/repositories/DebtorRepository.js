@@ -1,5 +1,5 @@
 // src/infrastructure/database/sqlite/repositories/DebtorRepository.js
-// v3.3.0-prod — Postgres async. overdue_count now uses due_date instead of status.
+// v3.4.0-prod — Postgres async. Added findByReference, deleteByReference.
 
 const BaseRepository = require('./BaseRepository');
 
@@ -48,6 +48,37 @@ class DebtorRepository extends BaseRepository {
     async findById(id) {
         const result = await this._query('SELECT * FROM debtors WHERE id = $1', [id]);
         return this._hydrate(result.rows[0] || null);
+    }
+
+    /**
+     * Find the debtor row linked to a source document.
+     * e.g. findByReference(businessId, 'INVOICE', invoiceId)
+     */
+    async findByReference(businessId, referenceType, referenceId) {
+        const result = await this._query(
+            `SELECT * FROM debtors
+             WHERE business_id = $1
+               AND reference_type = $2
+               AND reference_id = $3
+             LIMIT 1`,
+            [businessId, referenceType, referenceId]
+        );
+        return this._hydrate(result.rows[0] || null);
+    }
+
+    /**
+     * Delete the debtor row linked to a source document.
+     * Returns true if a row was deleted.
+     */
+    async deleteByReference(businessId, referenceType, referenceId) {
+        const result = await this._query(
+            `DELETE FROM debtors
+             WHERE business_id = $1
+               AND reference_type = $2
+               AND reference_id = $3`,
+            [businessId, referenceType, referenceId]
+        );
+        return result.rowCount > 0;
     }
 
     async findByBusinessId(businessId) {
@@ -105,10 +136,6 @@ class DebtorRepository extends BaseRepository {
         return result.rows.map(row => this._hydrate(row));
     }
 
-    /**
-     * Global overdue scan across all businesses.
-     * Used by the scheduled notification job.
-     */
     async findAllOverdue() {
         const today = new Date().toISOString().split('T')[0];
         const result = await this._query(
