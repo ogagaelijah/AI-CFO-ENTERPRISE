@@ -1,6 +1,6 @@
 // src/config/plans.js
 // Single Source of Truth for subscription plans, features, limits, pricing.
-// v4.0.0-prod
+// v4.1.0-prod
 //
 // Structure:
 //   CORE_FEATURES        — every tier gets these (sales, inventory, customers...)
@@ -36,18 +36,18 @@ const INDUSTRY_FEATURES = {
     projects: true,
     time_entries: true,
     invoices: true,
-    // Logistics (next)
-    // trips: true,
-    // vehicles: true,
-    // drivers: true,
     // Education
-    // students: true,
-    // classes: true,
-    // fees: true,
-    // Real Estate
+    students: true,
+    classes: true,
+    enrollments: true,
+    // Real Estate (next)
     // properties: true,
     // tenants: true,
     // rent: true,
+    // Logistics
+    // trips: true,
+    // vehicles: true,
+    // drivers: true,
     // Healthcare
     // patients: true,
     // visits: true,
