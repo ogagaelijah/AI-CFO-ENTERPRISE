@@ -1,7 +1,8 @@
 // src/interfaces/http/server.js
-// v2.5.0-prod — Sentry v8+, structured logging, plan gating, PORT compatible (Render)
+// v2.6.0-prod — Sentry v8+, structured logging, plan gating, PORT compatible (Render)
 //               Adds Consultancy routes: /api/projects, /api/time-entries, /api/invoices
 //               Adds Education routes: /api/students, /api/classes, /api/enrollments, /api/terms
+//               v2.6.0: cookie-config startup log, CORS allow-list, /api/debug/cookies
 
 const { initSentry, Sentry } = require('../../shared/utils/sentry');
 initSentry();
@@ -26,12 +27,33 @@ const {
 const { authMiddleware } = require('./middleware/authMiddleware');
 const { planGuard } = require('./middleware/planGuard');
 
+// ── CORS: allow-list from FRONTEND_URL (comma-separated for multiple origins)
+const ALLOWED_ORIGINS = (process.env.FRONTEND_URL || 'http://localhost:5173')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+logger.info({ allowedOrigins: ALLOWED_ORIGINS }, 'cors config');
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true); // same-origin / server-to-server
+    if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+    logger.warn({ origin, allowed: ALLOWED_ORIGINS }, 'cors: rejected origin');
+    return cb(new Error(`CORS: origin ${origin} not allowed`));
+  },
   credentials: true,
 }));
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
+
+// ── Cookie config log (helps diagnose "Not authenticated" on staging)
+logger.info({
+  nodeEnv: process.env.NODE_ENV || '(unset)',
+  frontendUrl: process.env.FRONTEND_URL || '(unset)',
+  cookieSecure: process.env.NODE_ENV !== 'development',
+  cookieSameSite: process.env.NODE_ENV === 'development' ? 'lax' : 'none',
+}, 'auth cookie config');
 
 app.use(pinoHttp({
   logger,
@@ -136,6 +158,20 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     message: 'AI CFO ENTERPRISE API is running',
+  });
+});
+
+// ── Debug endpoint: shows what cookies the browser actually sends.
+// Hit this from the frontend with `credentials: 'include'` to
+// diagnose cross-origin cookie issues.
+app.get('/api/debug/cookies', (req, res) => {
+  res.json({
+    receivedCookies: Object.keys(req.cookies || {}),
+    hasToken: Boolean(req.cookies?.token),
+    origin: req.headers.origin || null,
+    host: req.headers.host,
+    forwardedProto: req.headers['x-forwarded-proto'] || null,
+    userAgent: req.headers['user-agent'],
   });
 });
 

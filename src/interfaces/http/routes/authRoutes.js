@@ -1,9 +1,7 @@
 // src/interfaces/http/routes/authRoutes.js
-// v3.4.0-prod — Postgres-ready + cross-site cookies + transactional register
-//
-// v3.4.0 change: register flow wrapped in withTransaction so all three inserts
-// (user, business, subscription) go over a single pooled connection. Prevents
-// Supabase transaction-pooler recycling from silently discarding partial writes.
+// v3.5.0-prod — Added password validation on register.
+//               bcrypt silently truncates at 72 bytes; reject longer.
+//               Reject whitespace-only. Reject short.
 
 const express = require('express');
 const router = express.Router();
@@ -26,22 +24,33 @@ const securityEvents = new SecurityEventService();
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 const JWT_EXPIRES_IN = '7d';
 
-// Cross-site cookie handling:
-// - Local dev (NODE_ENV=development): same-origin → sameSite='lax', secure=false
-// - Staging / Production: cross-domain (frontend ≠ backend) → sameSite='none', secure=true
 const isDev = process.env.NODE_ENV === 'development';
 const COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: !isDev,             // must be true for sameSite='none'
+  secure: !isDev,
   sameSite: isDev ? 'lax' : 'none',
   maxAge: 7 * 24 * 60 * 60 * 1000,
 };
 
 const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 
-// ─────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────
+const PASSWORD_MIN_LENGTH = 8;
+const PASSWORD_MAX_BYTES = 72; // bcrypt truncates silently past 72 bytes
+
+const validatePassword = (password) => {
+  if (typeof password !== 'string') return 'Password must be a string';
+  if (password.length < PASSWORD_MIN_LENGTH) {
+    return `Password must be at least ${PASSWORD_MIN_LENGTH} characters`;
+  }
+  if (password.trim().length === 0) {
+    return 'Password cannot be only whitespace';
+  }
+  if (Buffer.byteLength(password, 'utf8') > PASSWORD_MAX_BYTES) {
+    return `Password is too long (max ${PASSWORD_MAX_BYTES} bytes)`;
+  }
+  return null;
+};
+
 const signToken = (user, business) =>
   jwt.sign(
     {
@@ -75,6 +84,11 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
 
+    const pwError = validatePassword(password);
+    if (pwError) {
+      return res.status(400).json({ success: false, message: pwError });
+    }
+
     const emailExists = await userRepo.emailExists(email);
     if (emailExists) {
       securityEvents.log({
@@ -96,10 +110,6 @@ router.post('/register', async (req, res) => {
     const hashedVerifyToken = hashToken(rawVerifyToken);
     const verifyExpiry = new Date(Date.now() + EMAIL_VERIFICATION_TTL_MS).toISOString();
 
-    // All three writes on a single pooled connection:
-    // Supabase's transaction pooler assigns one server connection per
-    // transaction. Without this wrapper, each insert runs on its own
-    // connection and pooler recycling can discard writes mid-sequence.
     const { user, business, trialPlanId, trialPlan, trialDays, trialEndDate } =
       await withTransaction(async () => {
         const u = await userRepo.create({
@@ -148,8 +158,6 @@ router.post('/register', async (req, res) => {
         };
       });
 
-    // Security event logged outside the transaction — it's an audit write
-    // that must not roll back the user's registration if it fails.
     securityEvents.log({
       eventType: 'REGISTER_SUCCESS',
       userId: user.id,
