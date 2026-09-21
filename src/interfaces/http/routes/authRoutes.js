@@ -36,7 +36,7 @@ const COOKIE_OPTIONS = {
 const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 
 const PASSWORD_MIN_LENGTH = 8;
-const PASSWORD_MAX_BYTES = 72; // bcrypt truncates silently past 72 bytes
+const PASSWORD_MAX_BYTES = 72;
 
 const validatePassword = (password) => {
   if (typeof password !== 'string') return 'Password must be a string';
@@ -176,7 +176,7 @@ router.post('/register', async (req, res) => {
     return res.status(201).json({
       success: true,
       message: `Account created. You have ${trialDays} days of ${trialPlan.name} access.`,
-      token,                                    // ← NEW: returned to frontend for Bearer auth
+      token,
       user: {
         id: user.id,
         fullName: user.fullName,
@@ -257,7 +257,7 @@ router.post('/login', async (req, res) => {
     return res.json({
       success: true,
       message: 'Login successful',
-      token,                                    // ← NEW: returned to frontend for Bearer auth
+      token,
       user: {
         id: user.id,
         fullName: user.fullName,
@@ -282,7 +282,6 @@ router.post('/login', async (req, res) => {
 // ─────────────────────────────────────────────
 router.get('/me', async (req, res) => {
   try {
-    // Read token from cookie OR Authorization header — matches authMiddleware
     const token =
       req.cookies.token ||
       (req.headers.authorization?.startsWith('Bearer ')
