@@ -1,9 +1,34 @@
 // src/infrastructure/database/sqlite/repositories/DebtorRepository.js
-// v3.5.0-prod — Read-time LEFT JOIN customers so existing rows with a
-//               stale customer_name fall back to the real name.
-//               Explicit null-preservation on create.
+// v3.6.1-prod — Read-time LEFT JOIN customers. Explicit null-preservation
+//               on create. DATE columns returned as 'YYYY-MM-DD' strings
+//               with NO timezone drift.
 
 const BaseRepository = require('./BaseRepository');
+
+// ── Global Postgres DATE parser fix ──
+// By default, node-pg parses a DATE (OID 1082) into a JS Date at local
+// midnight. Reading it back with .toISOString() shifts by a day in any
+// timezone east of UTC. We override the parser to return the raw string.
+const pg = require('pg');
+pg.types.setTypeParser(1082, (val) => val); // DATE → string as-is
+pg.types.setTypeParser(1083, (val) => val); // TIME → string as-is
+pg.types.setTypeParser(1114, (val) => val); // TIMESTAMP WITHOUT TZ → string
+// NOTE: we do NOT override 1184 (TIMESTAMPTZ) — those should stay Date objects.
+
+// Defensive normalization in case a Date slips through.
+const toDateOnly = (value) => {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'string') return value.slice(0, 10);
+    if (value instanceof Date) {
+        if (Number.isNaN(value.getTime())) return null;
+        // Use LOCAL components — matches how node-pg constructs DATE Dates.
+        const y = value.getFullYear();
+        const m = String(value.getMonth() + 1).padStart(2, '0');
+        const d = String(value.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    }
+    return String(value).slice(0, 10);
+};
 
 class DebtorRepository extends BaseRepository {
     constructor() {
@@ -12,8 +37,7 @@ class DebtorRepository extends BaseRepository {
 
     _hydrate(row) {
         if (!row) return null;
-        // Prefer the joined customer name over the stored one.
-        // Customers table is the source of truth for name.
+
         const resolvedName =
             row.joined_customer_name !== undefined && row.joined_customer_name !== null
                 ? row.joined_customer_name
@@ -22,13 +46,13 @@ class DebtorRepository extends BaseRepository {
         return {
             ...row,
             customer_name: resolvedName,
+            due_date: toDateOnly(row.due_date),
             total_owed: Number(row.total_owed) || 0,
             amount_paid: Number(row.amount_paid) || 0,
             balance_remaining: Number(row.balance_remaining) || 0,
         };
     }
 
-    // Shared SELECT prefix — keeps the JOIN consistent across every read.
     static SELECT_WITH_CUSTOMER =
         `SELECT d.*, c.name AS joined_customer_name
          FROM debtors d
@@ -47,7 +71,6 @@ class DebtorRepository extends BaseRepository {
             [
                 debtorData.userId ?? debtorData.user_id ?? null,
                 debtorData.businessId ?? debtorData.business_id ?? null,
-                // Preserve explicit null. Never fall through to a placeholder.
                 debtorData.customer_name !== undefined
                     ? debtorData.customer_name
                     : (debtorData.customerName !== undefined ? debtorData.customerName : null),
@@ -56,7 +79,7 @@ class DebtorRepository extends BaseRepository {
                 debtorData.balance_remaining ?? debtorData.balanceRemaining
                     ?? debtorData.total_owed ?? debtorData.totalOwed ?? 0,
                 debtorData.status || 'ACTIVE',
-                debtorData.due_date ?? debtorData.dueDate ?? null,
+                toDateOnly(debtorData.due_date ?? debtorData.dueDate ?? null),
                 debtorData.customer_id ?? debtorData.customerId ?? null,
                 debtorData.customer_type ?? debtorData.customerType ?? 'CUSTOMER',
                 debtorData.reference_type ?? debtorData.referenceType ?? null,
@@ -150,7 +173,7 @@ class DebtorRepository extends BaseRepository {
                AND d.balance_remaining > 0
                AND d.status != 'PAID'
                AND d.due_date IS NOT NULL
-               AND DATE(d.due_date) < DATE($2)
+               AND d.due_date < $2::date
              ORDER BY d.due_date ASC`,
             [businessId, today]
         );
@@ -164,7 +187,7 @@ class DebtorRepository extends BaseRepository {
              WHERE d.balance_remaining > 0
                AND d.status != 'PAID'
                AND d.due_date IS NOT NULL
-               AND DATE(d.due_date) < DATE($1)
+               AND d.due_date < $1::date
              ORDER BY d.due_date ASC`,
             [today]
         );
@@ -194,8 +217,7 @@ class DebtorRepository extends BaseRepository {
             status = 'PAID';
         } else if (debtor.due_date) {
             const today = new Date().toISOString().split('T')[0];
-            const dueDateStr = String(debtor.due_date).split('T')[0];
-            if (dueDateStr < today) {
+            if (debtor.due_date < today) {
                 status = 'OVERDUE';
             }
         }
@@ -228,7 +250,7 @@ class DebtorRepository extends BaseRepository {
                         WHEN balance_remaining > 0
                          AND status != 'PAID'
                          AND due_date IS NOT NULL
-                         AND DATE(due_date) < CURRENT_DATE
+                         AND due_date < CURRENT_DATE
                         THEN 1
                     END
                 )::int AS overdue_count
@@ -321,7 +343,11 @@ class DebtorRepository extends BaseRepository {
         for (const key of allowed) {
             if (data[key] !== undefined) {
                 fields.push(`${key} = $${i++}`);
-                values.push(data[key]);
+                if (key === 'due_date') {
+                    values.push(toDateOnly(data[key]));
+                } else {
+                    values.push(data[key]);
+                }
             }
         }
 
