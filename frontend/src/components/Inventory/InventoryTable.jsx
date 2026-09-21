@@ -1,4 +1,7 @@
 // frontend/src/components/Inventory/InventoryTable.jsx
+// v1.0.1 — onDelete now passes the full item object (was passing item.id,
+//          which broke the delete confirmation modal and the DELETE call).
+
 import { Package, Edit, Trash2 } from 'lucide-react';
 
 const InventoryTable = ({ items, onAdjust, onEdit, onDelete }) => {
@@ -78,7 +81,7 @@ const InventoryTable = ({ items, onAdjust, onEdit, onDelete }) => {
                       <Edit className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => onDelete(item.id)}
+                      onClick={() => onDelete(item)}
                       className="p-1 text-gray-400 hover:text-red-600 transition"
                       title="Delete"
                     >
