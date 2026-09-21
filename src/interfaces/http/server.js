@@ -1,8 +1,9 @@
 // src/interfaces/http/server.js
-// v2.6.0-prod — Sentry v8+, structured logging, plan gating, PORT compatible (Render)
+// v2.7.0-prod — Sentry v8+, structured logging, plan gating, PORT compatible (Render)
 //               Adds Consultancy routes: /api/projects, /api/time-entries, /api/invoices
-//               Adds Education routes: /api/students, /api/classes, /api/enrollments, /api/terms
+//               Adds Education routes: /api/students, /api/classes, /api/enrollments, /api/terms, /api/fees
 //               v2.6.0: cookie-config startup log, CORS allow-list, /api/debug/cookies
+//               v2.7.0: /api/fees mounted (Education)
 
 const { initSentry, Sentry } = require('../../shared/utils/sentry');
 initSentry();
@@ -37,7 +38,7 @@ logger.info({ allowedOrigins: ALLOWED_ORIGINS }, 'cors config');
 
 app.use(cors({
   origin: (origin, cb) => {
-    if (!origin) return cb(null, true); // same-origin / server-to-server
+    if (!origin) return cb(null, true);
     if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
     logger.warn({ origin, allowed: ALLOWED_ORIGINS }, 'cors: rejected origin');
     return cb(new Error(`CORS: origin ${origin} not allowed`));
@@ -107,6 +108,7 @@ const studentRoutes = require('./routes/studentRoutes');
 const classRoutes = require('./routes/classRoutes');
 const enrollmentRoutes = require('./routes/enrollmentRoutes');
 const termRoutes = require('./routes/termRoutes');
+const feeRoutes = require('./routes/feeRoutes');                   // ← ADDED
 
 app.use('/api/auth/login', strictLimiter);
 app.use('/api/auth/register', strictLimiter);
@@ -141,6 +143,7 @@ app.use('/api/students', standardLimiter, authMiddleware, planGuard({ feature: '
 app.use('/api/classes', standardLimiter, authMiddleware, planGuard({ feature: 'classes' }), classRoutes);
 app.use('/api/enrollments', standardLimiter, authMiddleware, planGuard({ feature: 'enrollments' }), enrollmentRoutes);
 app.use('/api/terms', standardLimiter, authMiddleware, planGuard({ feature: 'terms' }), termRoutes);
+app.use('/api/fees', standardLimiter, authMiddleware, planGuard({ feature: 'fees' }), feeRoutes);  // ← ADDED
 
 app.use('/api/reports', generousLimiter, authMiddleware, planGuard({ feature: 'reports_basic' }), reportRoutes);
 
@@ -162,8 +165,6 @@ app.get('/api/health', (req, res) => {
 });
 
 // ── Debug endpoint: shows what cookies the browser actually sends.
-// Hit this from the frontend with `credentials: 'include'` to
-// diagnose cross-origin cookie issues.
 app.get('/api/debug/cookies', (req, res) => {
   res.json({
     receivedCookies: Object.keys(req.cookies || {}),

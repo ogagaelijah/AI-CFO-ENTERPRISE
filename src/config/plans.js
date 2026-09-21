@@ -1,20 +1,9 @@
 // src/config/plans.js
 // Single Source of Truth for subscription plans, features, limits, pricing.
-// v4.2.0-prod
+// v4.3.0-prod
 //
-// Structure:
-//   CORE_FEATURES        — every tier gets these (sales, inventory, customers...)
-//   INDUSTRY_FEATURES    — per-industry modules (projects, time_entries, invoices, etc.)
-//   INTELLIGENCE_FEATURES— analytics, forecast, risk, decisions, ai_advisor
-//   TEAM_FEATURES        — team_roles, multi_business
-//   SUPPORT_FEATURES     — support_email, support_priority, account_manager, api_access, white_label
-//
-// Plans are composed: a tier declares which groups it gets, plus per-feature overrides.
-// Adding a new industry = one line in INDUSTRY_FEATURES. No edits to plan blocks.
+// v4.3.0 — Added `fees` to INDUSTRY_FEATURES (Education).
 
-// ─────────────────────────────────────────────
-// Feature groups
-// ─────────────────────────────────────────────
 const CORE_FEATURES = {
     sales: true,
     purchases: true,
@@ -28,9 +17,6 @@ const CORE_FEATURES = {
     inventory: true,
 };
 
-// Industry-specific modules. All industries share the same tiering:
-// available from Basic up (and on the internal `free` plan for testing).
-// Add a new industry here → it flows to every tier that gets INDUSTRY_FEATURES.
 const INDUSTRY_FEATURES = {
     // Consultancy
     projects: true,
@@ -41,6 +27,7 @@ const INDUSTRY_FEATURES = {
     classes: true,
     enrollments: true,
     terms: true,
+    fees: true,                       // ← ADDED
     // Real Estate (next)
     // properties: true,
     // tenants: true,
@@ -83,15 +70,12 @@ const SUPPORT_FEATURES = {
     white_label: true,
 };
 
-// Every feature key that exists anywhere in the system.
-// Ensures each plan has all keys defined (as false if not granted).
 const ALL_FEATURE_KEYS = [
     ...Object.keys(CORE_FEATURES),
     ...Object.keys(INDUSTRY_FEATURES),
     ...Object.keys(INTELLIGENCE_FEATURES),
     ...Object.keys(TEAM_FEATURES),
     ...Object.keys(SUPPORT_FEATURES),
-    // Report features (handled per-tier, not grouped)
     'reports_basic',
     'reports_financial',
     'reports_inventory',
@@ -101,14 +85,6 @@ const ALL_FEATURE_KEYS = [
     'reports_export',
 ];
 
-// ─────────────────────────────────────────────
-// Tier composition
-// Declares which groups each tier gets + per-feature overrides.
-// Reports are declared explicitly per tier (they vary by tier granularly).
-// `intelligence: false` explicitly disables the INTELLIGENCE_FEATURES group.
-// `support: {...}` provides an explicit allow-list when a tier does NOT get
-// the full SUPPORT_FEATURES group.
-// ─────────────────────────────────────────────
 const TIER_COMPOSITION = {
     free: {
         groups: [CORE_FEATURES, INDUSTRY_FEATURES],
@@ -174,9 +150,6 @@ const TIER_COMPOSITION = {
     },
 };
 
-// ─────────────────────────────────────────────
-// Tier metadata (pricing, limits, name, trial)
-// ─────────────────────────────────────────────
 const TIER_META = {
     free: {
         id: 'free',
@@ -248,40 +221,30 @@ const TIER_META = {
     },
 };
 
-// ─────────────────────────────────────────────
-// Compose plans from groups + overrides
-// ─────────────────────────────────────────────
 function composeFeatures(tierId) {
     const comp = TIER_COMPOSITION[tierId];
     if (!comp) throw new Error(`Unknown tier: ${tierId}`);
 
-    // Start: every known feature key = false
     const features = {};
     for (const key of ALL_FEATURE_KEYS) features[key] = false;
 
-    // Apply each group the tier is given
     for (const group of comp.groups || []) {
         for (const key of Object.keys(group)) features[key] = true;
     }
 
-    // Apply reports map (explicit per tier)
     if (comp.reports) {
         for (const [key, val] of Object.entries(comp.reports)) features[key] = val;
     }
 
-    // Intelligence explicitly off
     if (comp.intelligence === false) {
         for (const key of Object.keys(INTELLIGENCE_FEATURES)) features[key] = false;
     }
 
-    // Support allow-list — only applied when the tier did NOT receive the
-    // full SUPPORT_FEATURES group. Turns everything off, then enables the list.
     if (comp.support && !(comp.groups || []).includes(SUPPORT_FEATURES)) {
         for (const key of Object.keys(SUPPORT_FEATURES)) features[key] = false;
         for (const [key, val] of Object.entries(comp.support)) features[key] = val;
     }
 
-    // Team explicitly off (for tiers that don't get TEAM_FEATURES)
     if (!(comp.groups || []).includes(TEAM_FEATURES)) {
         for (const key of Object.keys(TEAM_FEATURES)) features[key] = false;
     }
@@ -297,38 +260,24 @@ for (const [tierId, meta] of Object.entries(TIER_META)) {
     };
 }
 
-// ─────────────────────────────────────────────
-// Helpers (public API — unchanged)
-// ─────────────────────────────────────────────
-
-/** Get a plan by id, or null */
 function getPlan(planId) {
     return PLANS[planId] || null;
 }
 
-/** Does this plan allow the given feature? */
 function hasFeature(planId, feature) {
     const plan = PLANS[planId];
     if (!plan) return false;
     return plan.features[feature] === true;
 }
 
-/** Get all features for a plan */
 function getFeatures(planId) {
     return PLANS[planId]?.features || PLANS.free.features;
 }
 
-/** Get limits for a plan */
 function getLimits(planId) {
     return PLANS[planId]?.limits || PLANS.free.limits;
 }
 
-/**
- * Get price info.
- * @param {string} planId
- * @param {'monthly'|'yearly'} [cycle]
- * @returns {number|object}
- */
 function getPricing(planId, cycle = null) {
     const plan = PLANS[planId];
     if (!plan) return null;
@@ -339,48 +288,35 @@ function getPricing(planId, cycle = null) {
     return { ...plan.pricing, currency: plan.currency };
 }
 
-/** Public plans only (excludes hidden) */
 function getPublicPlans() {
     return Object.values(PLANS).filter((p) => !p.hidden);
 }
 
-/** Public plan IDs only */
 function getPublicPlanIds() {
     return getPublicPlans().map((p) => p.id);
 }
 
-/** Is this a paid plan (price > 0)? */
 function isPaidPlan(planId) {
     const plan = PLANS[planId];
     return Boolean(plan && plan.pricing.monthly > 0);
 }
 
-/** Is this plan hidden from public UI? */
 function isHiddenPlan(planId) {
     return Boolean(PLANS[planId]?.hidden);
 }
 
-/** Plan to start a new user on trial (default = pro) */
 function getTrialPlan() {
     return 'pro';
 }
 
-/** Plan to fall back to when a trial/subscription ends */
 function getFallbackPlan() {
     return 'basic';
 }
 
-/** Total number of trial days for a plan */
 function getTrialDays(planId = 'pro') {
     return PLANS[planId]?.trialDays || 0;
 }
 
-/**
- * Payment table keyed by plan id, with both cycles.
- * Used by payment routes (SSOT — do NOT hardcode prices anywhere else).
- *
- * @returns {Object} e.g. { pro: { monthly: {amount, name}, yearly: {amount, name} }, ... }
- */
 function getPaymentPlans() {
     const result = {};
     for (const plan of getPublicPlans()) {

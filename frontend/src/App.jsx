@@ -32,7 +32,8 @@ import Invoices from './pages/Invoices';
 import Students from './pages/Students';
 import Classes from './pages/Classes';
 import Enrollments from './pages/Enrollments';
-import Terms from './pages/Terms';                            // ← ADDED
+import Terms from './pages/Terms';
+import Fees from './pages/Fees';                                // ← ADDED
 
 function App() {
   return (
@@ -112,10 +113,18 @@ function App() {
               }
             />
             <Route
-              path="/terms"                                       // ← ADDED
+              path="/terms"
               element={
                 <ProtectedRoute>
                   <Terms />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/fees"                                        // ← ADDED
+              element={
+                <ProtectedRoute>
+                  <Fees />
                 </ProtectedRoute>
               }
             />
