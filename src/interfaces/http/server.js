@@ -1,7 +1,7 @@
 // src/interfaces/http/server.js
-// v2.4.0-prod — Sentry v8+, structured logging, plan gating, PORT compatible (Render)
+// v2.5.0-prod — Sentry v8+, structured logging, plan gating, PORT compatible (Render)
 //               Adds Consultancy routes: /api/projects, /api/time-entries, /api/invoices
-//               Adds Education routes: /api/students, /api/classes, /api/enrollments
+//               Adds Education routes: /api/students, /api/classes, /api/enrollments, /api/terms
 
 const { initSentry, Sentry } = require('../../shared/utils/sentry');
 initSentry();
@@ -84,6 +84,7 @@ const invoiceRoutes = require('./routes/invoiceRoutes');
 const studentRoutes = require('./routes/studentRoutes');
 const classRoutes = require('./routes/classRoutes');
 const enrollmentRoutes = require('./routes/enrollmentRoutes');
+const termRoutes = require('./routes/termRoutes');
 
 app.use('/api/auth/login', strictLimiter);
 app.use('/api/auth/register', strictLimiter);
@@ -117,6 +118,7 @@ app.use('/api/invoices', standardLimiter, authMiddleware, planGuard({ feature: '
 app.use('/api/students', standardLimiter, authMiddleware, planGuard({ feature: 'students' }), studentRoutes);
 app.use('/api/classes', standardLimiter, authMiddleware, planGuard({ feature: 'classes' }), classRoutes);
 app.use('/api/enrollments', standardLimiter, authMiddleware, planGuard({ feature: 'enrollments' }), enrollmentRoutes);
+app.use('/api/terms', standardLimiter, authMiddleware, planGuard({ feature: 'terms' }), termRoutes);
 
 app.use('/api/reports', generousLimiter, authMiddleware, planGuard({ feature: 'reports_basic' }), reportRoutes);
 

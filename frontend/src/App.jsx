@@ -31,7 +31,8 @@ import TimeEntries from './pages/TimeEntries';
 import Invoices from './pages/Invoices';
 import Students from './pages/Students';
 import Classes from './pages/Classes';
-import Enrollments from './pages/Enrollments';                // ← ADDED
+import Enrollments from './pages/Enrollments';
+import Terms from './pages/Terms';                            // ← ADDED
 
 function App() {
   return (
@@ -103,10 +104,18 @@ function App() {
               }
             />
             <Route
-              path="/enrollments"                                // ← ADDED
+              path="/enrollments"
               element={
                 <ProtectedRoute>
                   <Enrollments />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/terms"                                       // ← ADDED
+              element={
+                <ProtectedRoute>
+                  <Terms />
                 </ProtectedRoute>
               }
             />

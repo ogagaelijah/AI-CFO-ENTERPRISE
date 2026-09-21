@@ -342,6 +342,7 @@ export const INDUSTRY_CONFIGS = {
       { icon: Users, label: 'Students', href: '/students' },
       { icon: GraduationCap, label: 'Classes', href: '/classes' },
       { icon: UserCheck, label: 'Enrollments', href: '/enrollments' },
+      { icon: Calendar, label: 'Terms', href: '/terms' },
       { icon: Receipt, label: 'Fees', href: '/fees' },
       { icon: DollarSign, label: 'Income', href: '/income' },
       { icon: TrendingDown, label: 'Expenses', href: '/expenses' },
