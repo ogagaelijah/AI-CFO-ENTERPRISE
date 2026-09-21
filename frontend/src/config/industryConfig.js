@@ -1,4 +1,6 @@
 // src/config/industryConfig.js
+// v1.1.0-prod — Consultancy and Construction share the same structure
+//               via CONSULTANCY_LIKE. Only label/icon/colors differ.
 import { 
   Store, Wrench, Building, Stethoscope, Briefcase, 
   Home as HomeIcon, GraduationCap, Truck as TruckIcon,
@@ -8,6 +10,58 @@ import {
   AlertTriangle, Briefcase as ProjectIcon, Clock, Wallet,
   Home, UserCheck, Users2, Receipt
 } from 'lucide-react';
+
+// ─────────────────────────────────────────────
+// Shared config for project-based businesses
+// (Consultancy, Construction). Same sidebar, same stats,
+// same quick actions. Only cosmetic label/colors differ.
+// ─────────────────────────────────────────────
+const CONSULTANCY_LIKE = {
+  stats: [
+    { key: 'revenue',     label: 'Revenue Today',     icon: DollarSign,   color: 'primary' },
+    { key: 'invoices',    label: 'Invoices Today',    icon: FileText,     color: 'blue' },
+    { key: 'profit',      label: 'Profit Today',      icon: TrendingUp,   color: 'emerald' },
+    { key: 'expenses',    label: 'Expenses Today',    icon: TrendingDown, color: 'red' },
+    { key: 'projects',    label: 'Active Projects',   icon: ProjectIcon,  color: 'amber' },
+    { key: 'debtors',     label: 'Client Balances',   icon: Users,        color: 'yellow' },
+    { key: 'creditors',   label: 'You Owe',           icon: CreditCard,   color: 'orange' },
+    { key: 'cash',        label: 'Cash Position',     icon: Wallet,       color: 'purple' },
+    { key: 'cash_in',     label: 'Cash Received Today', icon: Wallet,     color: 'emerald' },
+    { key: 'cash_out',    label: 'Cash Paid Today',     icon: Wallet,     color: 'red' },
+  ],
+  quickActions: [
+    { label: 'Log Hours', icon: Clock, href: '/hours' },
+    { label: 'Add Client', icon: Users, href: '/clients' },
+    { label: 'Create Invoice', icon: FileText, href: '/invoices' },
+    { label: 'View Reports', icon: FileText, href: '/reports' },
+  ],
+  features: ['Clients', 'Billable Hours', 'Projects', 'Invoices', 'Materials', 'Reports'],
+  sidebar: [
+    { type: 'section', label: '━━━ TRANSACTIONS ━━━' },
+    { icon: ProjectIcon, label: 'Projects', href: '/projects' },
+    { icon: Users, label: 'Clients', href: '/clients' },
+    { icon: FileText, label: 'Invoices', href: '/invoices' },
+    { icon: DollarSign, label: 'Income', href: '/income' },
+    { icon: TrendingDown, label: 'Expenses', href: '/expenses' },
+    { icon: Clock, label: 'Hours', href: '/hours' },
+    { icon: Package, label: 'Materials', href: '/inventory' },
+    { icon: Users, label: 'Debtors', href: '/debtors' },
+    { icon: CreditCard, label: 'Creditors', href: '/creditors' },
+    { icon: TruckIcon, label: 'Suppliers', href: '/suppliers' },
+
+    { type: 'section', label: '━━━ INTELLIGENCE ━━━' },
+    { icon: BarChart3, label: 'Analytics', href: '/analytics' },
+    { icon: FileText, label: 'Reports', href: '/reports' },
+    { icon: Calendar, label: 'Forecast', href: '/forecast' },
+    { icon: AlertTriangle, label: 'Risk', href: '/risk' },
+    { icon: Lightbulb, label: 'Decisions', href: '/decisions' },
+
+    { type: 'section', label: '━━━ ACCOUNT ━━━' },
+    { icon: Brain, label: 'AI Assistant', href: '/ai' },
+    { icon: Layers, label: 'Subscription', href: '/subscription' },
+    { icon: Settings, label: 'Settings', href: '/settings' },
+  ],
+};
 
 export const INDUSTRY_CONFIGS = {
   'RETAIL': {
@@ -113,53 +167,24 @@ export const INDUSTRY_CONFIGS = {
     ],
   },
 
+  // ── Consultancy (project-based) ──
+  'CONSULTANCY': {
+    label: 'Consultancy',
+    icon: Briefcase,
+    iconColor: 'text-purple-600 dark:text-purple-400',
+    bgColor: 'bg-purple-50 dark:bg-purple-900/30',
+    borderColor: 'border-purple-200 dark:border-purple-800',
+    ...CONSULTANCY_LIKE,
+  },
+
+  // ── Construction (project-based — same as Consultancy) ──
   'CONSTRUCTION': {
     label: 'Construction',
     icon: Building,
     iconColor: 'text-amber-600 dark:text-amber-400',
     bgColor: 'bg-amber-50 dark:bg-amber-900/30',
     borderColor: 'border-amber-200 dark:border-amber-800',
-    stats: [
-      { key: 'revenue',     label: 'Revenue Today',     icon: DollarSign,   color: 'primary' },
-      { key: 'sales',       label: 'Sales Today',       icon: ShoppingCart, color: 'blue' },
-      { key: 'profit',      label: 'Profit Today',      icon: TrendingUp,   color: 'emerald' },
-      { key: 'expenses',    label: 'Expenses Today',    icon: TrendingDown, color: 'red' },
-      { key: 'projects',    label: 'Active Projects',   icon: ProjectIcon,  color: 'amber' },
-      { key: 'materials',   label: 'Materials',         icon: Package,      color: 'teal' },
-      { key: 'debtors',     label: 'Debtors Owed',      icon: Users,        color: 'yellow' },
-      { key: 'creditors',   label: 'You Owe',           icon: CreditCard,   color: 'orange' },
-      { key: 'cash_in',     label: 'Cash Received Today', icon: Wallet,     color: 'emerald' },
-      { key: 'cash_out',    label: 'Cash Paid Today',     icon: Wallet,     color: 'red' },
-    ],
-    quickActions: [
-      { label: 'Record Sale', icon: ShoppingCart, href: '/sales/record' },
-      { label: 'Add Materials', icon: Package, href: '/inventory/add' },
-      { label: 'Create Project', icon: ProjectIcon, href: '/projects/create' },
-      { label: 'View Reports', icon: FileText, href: '/reports/daily' },
-    ],
-    features: ['Projects', 'Materials', 'Project Billing', 'Suppliers', 'Reports'],
-    sidebar: [
-      { type: 'section', label: '━━━ TRANSACTIONS ━━━' },
-      { icon: Building, label: 'Projects', href: '/projects' },
-      { icon: DollarSign, label: 'Income', href: '/income' },
-      { icon: TrendingDown, label: 'Expenses', href: '/expenses' },
-      { icon: Package, label: 'Materials', href: '/inventory' },
-      { icon: Users, label: 'Debtors', href: '/debtors' },
-      { icon: CreditCard, label: 'Creditors', href: '/creditors' },
-      { icon: TruckIcon, label: 'Suppliers', href: '/suppliers' },
-
-      { type: 'section', label: '━━━ INTELLIGENCE ━━━' },
-      { icon: BarChart3, label: 'Analytics', href: '/analytics' },
-      { icon: FileText, label: 'Reports', href: '/reports' },
-      { icon: Calendar, label: 'Forecast', href: '/forecast' },
-      { icon: AlertTriangle, label: 'Risk', href: '/risk' },
-      { icon: Lightbulb, label: 'Decisions', href: '/decisions' },
-
-      { type: 'section', label: '━━━ ACCOUNT ━━━' },
-      { icon: Brain, label: 'AI Assistant', href: '/ai' },
-      { icon: Layers, label: 'Subscription', href: '/subscription' },
-      { icon: Settings, label: 'Settings', href: '/settings' },
-    ],
+    ...CONSULTANCY_LIKE,
   },
 
   'HEALTHCARE': {
@@ -194,57 +219,6 @@ export const INDUSTRY_CONFIGS = {
       { icon: DollarSign, label: 'Income', href: '/income' },
       { icon: TrendingDown, label: 'Expenses', href: '/expenses' },
       { icon: Package, label: 'Supplies', href: '/inventory' },
-      { icon: Users, label: 'Debtors', href: '/debtors' },
-      { icon: CreditCard, label: 'Creditors', href: '/creditors' },
-      { icon: TruckIcon, label: 'Suppliers', href: '/suppliers' },
-
-      { type: 'section', label: '━━━ INTELLIGENCE ━━━' },
-      { icon: BarChart3, label: 'Analytics', href: '/analytics' },
-      { icon: FileText, label: 'Reports', href: '/reports' },
-      { icon: Calendar, label: 'Forecast', href: '/forecast' },
-      { icon: AlertTriangle, label: 'Risk', href: '/risk' },
-      { icon: Lightbulb, label: 'Decisions', href: '/decisions' },
-
-      { type: 'section', label: '━━━ ACCOUNT ━━━' },
-      { icon: Brain, label: 'AI Assistant', href: '/ai' },
-      { icon: Layers, label: 'Subscription', href: '/subscription' },
-      { icon: Settings, label: 'Settings', href: '/settings' },
-    ],
-  },
-
-  'CONSULTANCY': {
-    label: 'Consultancy',
-    icon: Briefcase,
-    iconColor: 'text-purple-600 dark:text-purple-400',
-    bgColor: 'bg-purple-50 dark:bg-purple-900/30',
-    borderColor: 'border-purple-200 dark:border-purple-800',
-    stats: [
-      { key: 'revenue',     label: 'Revenue Today',     icon: DollarSign,   color: 'primary' },
-      { key: 'invoices',    label: 'Invoices Today',    icon: FileText,     color: 'blue' },
-      { key: 'profit',      label: 'Profit Today',      icon: TrendingUp,   color: 'emerald' },
-      { key: 'expenses',    label: 'Expenses Today',    icon: TrendingDown, color: 'red' },
-      { key: 'projects',    label: 'Active Projects',   icon: ProjectIcon,  color: 'amber' },
-      { key: 'debtors',     label: 'Client Balances',   icon: Users,        color: 'yellow' },
-      { key: 'creditors',   label: 'You Owe',           icon: CreditCard,   color: 'orange' },
-      { key: 'cash',        label: 'Cash Position',     icon: Wallet,       color: 'purple' },
-      { key: 'cash_in',     label: 'Cash Received Today', icon: Wallet,     color: 'emerald' },
-      { key: 'cash_out',    label: 'Cash Paid Today',     icon: Wallet,     color: 'red' },
-    ],
-    quickActions: [
-      { label: 'Log Hours', icon: Clock, href: '/hours' },
-      { label: 'Add Client', icon: Users, href: '/clients' },
-      { label: 'Create Invoice', icon: FileText, href: '/invoices' },
-      { label: 'View Reports', icon: FileText, href: '/reports' },
-    ],
-    features: ['Clients', 'Billable Hours', 'Projects', 'Invoices', 'Reports'],
-    sidebar: [
-      { type: 'section', label: '━━━ TRANSACTIONS ━━━' },
-      { icon: ProjectIcon, label: 'Projects', href: '/projects' },
-      { icon: Users, label: 'Clients', href: '/clients' },
-      { icon: FileText, label: 'Invoices', href: '/invoices' },
-      { icon: DollarSign, label: 'Income', href: '/income' },
-      { icon: TrendingDown, label: 'Expenses', href: '/expenses' },
-      { icon: Clock, label: 'Hours', href: '/hours' },
       { icon: Users, label: 'Debtors', href: '/debtors' },
       { icon: CreditCard, label: 'Creditors', href: '/creditors' },
       { icon: TruckIcon, label: 'Suppliers', href: '/suppliers' },
