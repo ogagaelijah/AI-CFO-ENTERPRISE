@@ -1,5 +1,7 @@
 // src/infrastructure/database/sqlite/repositories/DebtorRepository.js
-// v3.4.0-prod — Postgres async. Added findByReference, deleteByReference.
+// v3.5.0-prod — Read-time LEFT JOIN customers so existing rows with a
+//               stale customer_name fall back to the real name.
+//               Explicit null-preservation on create.
 
 const BaseRepository = require('./BaseRepository');
 
@@ -10,13 +12,29 @@ class DebtorRepository extends BaseRepository {
 
     _hydrate(row) {
         if (!row) return null;
+        // Prefer the joined customer name over the stored one.
+        // Customers table is the source of truth for name.
+        const resolvedName =
+            row.joined_customer_name !== undefined && row.joined_customer_name !== null
+                ? row.joined_customer_name
+                : (row.customer_name || null);
+
         return {
             ...row,
+            customer_name: resolvedName,
             total_owed: Number(row.total_owed) || 0,
             amount_paid: Number(row.amount_paid) || 0,
             balance_remaining: Number(row.balance_remaining) || 0,
         };
     }
+
+    // Shared SELECT prefix — keeps the JOIN consistent across every read.
+    static SELECT_WITH_CUSTOMER =
+        `SELECT d.*, c.name AS joined_customer_name
+         FROM debtors d
+         LEFT JOIN customers c
+           ON c.id = d.customer_id
+          AND c.business_id = d.business_id`;
 
     async create(debtorData) {
         const result = await this._query(
@@ -29,10 +47,14 @@ class DebtorRepository extends BaseRepository {
             [
                 debtorData.userId ?? debtorData.user_id ?? null,
                 debtorData.businessId ?? debtorData.business_id ?? null,
-                debtorData.customer_name ?? debtorData.customerName,
-                debtorData.total_owed ?? debtorData.totalOwed,
+                // Preserve explicit null. Never fall through to a placeholder.
+                debtorData.customer_name !== undefined
+                    ? debtorData.customer_name
+                    : (debtorData.customerName !== undefined ? debtorData.customerName : null),
+                debtorData.total_owed ?? debtorData.totalOwed ?? 0,
                 debtorData.amount_paid ?? debtorData.amountPaid ?? 0,
-                debtorData.balance_remaining ?? debtorData.balanceRemaining ?? debtorData.total_owed ?? debtorData.totalOwed,
+                debtorData.balance_remaining ?? debtorData.balanceRemaining
+                    ?? debtorData.total_owed ?? debtorData.totalOwed ?? 0,
                 debtorData.status || 'ACTIVE',
                 debtorData.due_date ?? debtorData.dueDate ?? null,
                 debtorData.customer_id ?? debtorData.customerId ?? null,
@@ -46,30 +68,25 @@ class DebtorRepository extends BaseRepository {
     }
 
     async findById(id) {
-        const result = await this._query('SELECT * FROM debtors WHERE id = $1', [id]);
+        const result = await this._query(
+            `${DebtorRepository.SELECT_WITH_CUSTOMER} WHERE d.id = $1`,
+            [id]
+        );
         return this._hydrate(result.rows[0] || null);
     }
 
-    /**
-     * Find the debtor row linked to a source document.
-     * e.g. findByReference(businessId, 'INVOICE', invoiceId)
-     */
     async findByReference(businessId, referenceType, referenceId) {
         const result = await this._query(
-            `SELECT * FROM debtors
-             WHERE business_id = $1
-               AND reference_type = $2
-               AND reference_id = $3
+            `${DebtorRepository.SELECT_WITH_CUSTOMER}
+             WHERE d.business_id = $1
+               AND d.reference_type = $2
+               AND d.reference_id = $3
              LIMIT 1`,
             [businessId, referenceType, referenceId]
         );
         return this._hydrate(result.rows[0] || null);
     }
 
-    /**
-     * Delete the debtor row linked to a source document.
-     * Returns true if a row was deleted.
-     */
     async deleteByReference(businessId, referenceType, referenceId) {
         const result = await this._query(
             `DELETE FROM debtors
@@ -83,7 +100,9 @@ class DebtorRepository extends BaseRepository {
 
     async findByBusinessId(businessId) {
         const result = await this._query(
-            'SELECT * FROM debtors WHERE business_id = $1 ORDER BY balance_remaining DESC',
+            `${DebtorRepository.SELECT_WITH_CUSTOMER}
+             WHERE d.business_id = $1
+             ORDER BY d.balance_remaining DESC`,
             [businessId]
         );
         return result.rows.map(row => this._hydrate(row));
@@ -91,7 +110,9 @@ class DebtorRepository extends BaseRepository {
 
     async findByUserId(userId) {
         const result = await this._query(
-            'SELECT * FROM debtors WHERE user_id = $1 ORDER BY balance_remaining DESC',
+            `${DebtorRepository.SELECT_WITH_CUSTOMER}
+             WHERE d.user_id = $1
+             ORDER BY d.balance_remaining DESC`,
             [userId]
         );
         return result.rows.map(row => this._hydrate(row));
@@ -99,11 +120,11 @@ class DebtorRepository extends BaseRepository {
 
     async findActive(businessId) {
         const result = await this._query(
-            `SELECT * FROM debtors
-             WHERE business_id = $1
-               AND balance_remaining > 0
-               AND status != 'PAID'
-             ORDER BY balance_remaining DESC`,
+            `${DebtorRepository.SELECT_WITH_CUSTOMER}
+             WHERE d.business_id = $1
+               AND d.balance_remaining > 0
+               AND d.status != 'PAID'
+             ORDER BY d.balance_remaining DESC`,
             [businessId]
         );
         return result.rows.map(row => this._hydrate(row));
@@ -111,7 +132,7 @@ class DebtorRepository extends BaseRepository {
 
     async getTotalOutstanding(businessId) {
         const result = await this._query(
-            `SELECT COALESCE(SUM(balance_remaining), 0) as total_outstanding
+            `SELECT COALESCE(SUM(balance_remaining), 0) AS total_outstanding
              FROM debtors
              WHERE business_id = $1
                AND balance_remaining > 0
@@ -124,13 +145,13 @@ class DebtorRepository extends BaseRepository {
     async findOverdue(businessId) {
         const today = new Date().toISOString().split('T')[0];
         const result = await this._query(
-            `SELECT * FROM debtors
-             WHERE business_id = $1
-               AND balance_remaining > 0
-               AND status != 'PAID'
-               AND due_date IS NOT NULL
-               AND DATE(due_date) < DATE($2)
-             ORDER BY due_date ASC`,
+            `${DebtorRepository.SELECT_WITH_CUSTOMER}
+             WHERE d.business_id = $1
+               AND d.balance_remaining > 0
+               AND d.status != 'PAID'
+               AND d.due_date IS NOT NULL
+               AND DATE(d.due_date) < DATE($2)
+             ORDER BY d.due_date ASC`,
             [businessId, today]
         );
         return result.rows.map(row => this._hydrate(row));
@@ -139,12 +160,12 @@ class DebtorRepository extends BaseRepository {
     async findAllOverdue() {
         const today = new Date().toISOString().split('T')[0];
         const result = await this._query(
-            `SELECT * FROM debtors
-             WHERE balance_remaining > 0
-               AND status != 'PAID'
-               AND due_date IS NOT NULL
-               AND DATE(due_date) < DATE($1)
-             ORDER BY due_date ASC`,
+            `${DebtorRepository.SELECT_WITH_CUSTOMER}
+             WHERE d.balance_remaining > 0
+               AND d.status != 'PAID'
+               AND d.due_date IS NOT NULL
+               AND DATE(d.due_date) < DATE($1)
+             ORDER BY d.due_date ASC`,
             [today]
         );
         return result.rows.map(row => this._hydrate(row));
@@ -152,9 +173,10 @@ class DebtorRepository extends BaseRepository {
 
     async findByCustomerName(businessId, customerName) {
         const result = await this._query(
-            `SELECT * FROM debtors
-             WHERE business_id = $1 AND customer_name LIKE $2
-             ORDER BY balance_remaining DESC`,
+            `${DebtorRepository.SELECT_WITH_CUSTOMER}
+             WHERE d.business_id = $1
+               AND d.customer_name LIKE $2
+             ORDER BY d.balance_remaining DESC`,
             [businessId, `%${customerName}%`]
         );
         return result.rows.map(row => this._hydrate(row));
@@ -195,12 +217,12 @@ class DebtorRepository extends BaseRepository {
     async getSummary(businessId) {
         const result = await this._query(
             `SELECT
-                COUNT(*)::int as total_debtors,
-                COALESCE(SUM(total_owed), 0) as total_owed,
-                COALESCE(SUM(amount_paid), 0) as total_paid,
-                COALESCE(SUM(balance_remaining), 0) as total_outstanding,
-                COUNT(CASE WHEN balance_remaining > 0 AND status != 'PAID' THEN 1 END)::int as active_count,
-                COUNT(CASE WHEN balance_remaining <= 0 OR status = 'PAID' THEN 1 END)::int as paid_count,
+                COUNT(*)::int AS total_debtors,
+                COALESCE(SUM(total_owed), 0) AS total_owed,
+                COALESCE(SUM(amount_paid), 0) AS total_paid,
+                COALESCE(SUM(balance_remaining), 0) AS total_outstanding,
+                COUNT(CASE WHEN balance_remaining > 0 AND status != 'PAID' THEN 1 END)::int AS active_count,
+                COUNT(CASE WHEN balance_remaining <= 0 OR status = 'PAID' THEN 1 END)::int AS paid_count,
                 COUNT(
                     CASE
                         WHEN balance_remaining > 0
@@ -209,7 +231,7 @@ class DebtorRepository extends BaseRepository {
                          AND DATE(due_date) < CURRENT_DATE
                         THEN 1
                     END
-                )::int as overdue_count
+                )::int AS overdue_count
              FROM debtors
              WHERE business_id = $1`,
             [businessId]
@@ -227,29 +249,31 @@ class DebtorRepository extends BaseRepository {
         };
     }
 
-    async findByFilters({ businessId = null, userId = null, status, customerType, limit = 50, offset = 0 }) {
-        let sql = 'SELECT * FROM debtors WHERE 1=1';
+    async findByFilters({
+        businessId = null, userId = null, status, customerType, limit = 50, offset = 0,
+    }) {
+        let sql = `${DebtorRepository.SELECT_WITH_CUSTOMER} WHERE 1=1`;
         const params = [];
         let i = 1;
 
         if (businessId) {
-            sql += ` AND business_id = $${i++}`;
+            sql += ` AND d.business_id = $${i++}`;
             params.push(businessId);
         } else if (userId) {
-            sql += ` AND user_id = $${i++}`;
+            sql += ` AND d.user_id = $${i++}`;
             params.push(userId);
         }
 
         if (status) {
-            sql += ` AND status = $${i++}`;
+            sql += ` AND d.status = $${i++}`;
             params.push(status);
         }
         if (customerType) {
-            sql += ` AND customer_type = $${i++}`;
+            sql += ` AND d.customer_type = $${i++}`;
             params.push(customerType);
         }
 
-        sql += ` ORDER BY balance_remaining DESC LIMIT $${i++} OFFSET $${i++}`;
+        sql += ` ORDER BY d.balance_remaining DESC LIMIT $${i++} OFFSET $${i++}`;
         params.push(limit, offset);
 
         const result = await this._query(sql, params);
@@ -257,7 +281,7 @@ class DebtorRepository extends BaseRepository {
     }
 
     async countByFilters({ businessId = null, userId = null, status, customerType }) {
-        let sql = 'SELECT COUNT(*)::int as total FROM debtors WHERE 1=1';
+        let sql = 'SELECT COUNT(*)::int AS total FROM debtors WHERE 1=1';
         const params = [];
         let i = 1;
 

@@ -1,4 +1,6 @@
 // src/domain/entities/Invoice.js
+// v1.1.0-prod — Added customerName so the API response carries the
+//               resolved customer name (from InvoiceRepository JOIN).
 'use strict';
 
 const VALID_STATUSES = ['DRAFT', 'SENT', 'PAID', 'OVERDUE', 'CANCELLED'];
@@ -8,6 +10,7 @@ class Invoice {
         id = null,
         businessId,
         customerId = null,
+        customerName = null,          // NEW — resolved via JOIN in repository
         projectId = null,
         invoiceNumber = null,
         issueDate = new Date(),
@@ -30,6 +33,7 @@ class Invoice {
         this.id = id;
         this.businessId = businessId;
         this.customerId = customerId;
+        this.customerName = customerName;     // NEW
         this.projectId = projectId;
         this.invoiceNumber = invoiceNumber;
         this.issueDate = issueDate;
@@ -89,6 +93,7 @@ class Invoice {
             id: this.id,
             businessId: this.businessId,
             customerId: this.customerId,
+            customerName: this.customerName,   // NEW
             projectId: this.projectId,
             invoiceNumber: this.invoiceNumber,
             issueDate: this.issueDate,

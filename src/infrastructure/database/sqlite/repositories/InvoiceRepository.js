@@ -1,6 +1,7 @@
 // src/infrastructure/database/sqlite/repositories/InvoiceRepository.js
-// Postgres async. Multi-tenant. Explicit columns only (no key-derived SQL).
-// v1.1.0-prod — Added markAsSent, applyPayment.
+// v1.2.0-prod — Read methods LEFT JOIN customers so the API response
+//               includes customer_name for display.
+// v1.1.0 — markAsSent, applyPayment.
 
 'use strict';
 
@@ -11,6 +12,13 @@ class InvoiceRepository extends BaseRepository {
     constructor() {
         super('invoices');
     }
+
+    static SELECT_WITH_CUSTOMER =
+        `SELECT i.*, c.name AS joined_customer_name
+         FROM invoices i
+         LEFT JOIN customers c
+           ON c.id = i.customer_id
+          AND c.business_id = i.business_id`;
 
     async create(data) {
         const result = await this._query(
@@ -46,10 +54,10 @@ class InvoiceRepository extends BaseRepository {
     }
 
     async findById(id, businessId = null) {
-        let sql = 'SELECT * FROM invoices WHERE id = $1';
+        let sql = `${InvoiceRepository.SELECT_WITH_CUSTOMER} WHERE i.id = $1`;
         const params = [id];
         if (businessId !== null) {
-            sql += ' AND business_id = $2';
+            sql += ' AND i.business_id = $2';
             params.push(businessId);
         }
         const result = await this._query(sql, params);
@@ -58,37 +66,37 @@ class InvoiceRepository extends BaseRepository {
     }
 
     async findByBusinessId(businessId, options = {}) {
-        let sql = 'SELECT * FROM invoices WHERE business_id = $1';
+        let sql = `${InvoiceRepository.SELECT_WITH_CUSTOMER} WHERE i.business_id = $1`;
         const params = [businessId];
         let i = 2;
 
         if (options.status) {
-            sql += ` AND status = $${i++}`;
+            sql += ` AND i.status = $${i++}`;
             params.push(options.status);
         }
         if (options.customerId) {
-            sql += ` AND customer_id = $${i++}`;
+            sql += ` AND i.customer_id = $${i++}`;
             params.push(options.customerId);
         }
         if (options.projectId) {
-            sql += ` AND project_id = $${i++}`;
+            sql += ` AND i.project_id = $${i++}`;
             params.push(options.projectId);
         }
         if (options.fromDate) {
-            sql += ` AND issue_date >= $${i++}`;
+            sql += ` AND i.issue_date >= $${i++}`;
             params.push(toDateOnly(options.fromDate));
         }
         if (options.toDate) {
-            sql += ` AND issue_date <= $${i++}`;
+            sql += ` AND i.issue_date <= $${i++}`;
             params.push(toDateOnly(options.toDate));
         }
         if (options.search) {
-            sql += ` AND (invoice_number ILIKE $${i} OR notes ILIKE $${i})`;
+            sql += ` AND (i.invoice_number ILIKE $${i} OR i.notes ILIKE $${i})`;
             params.push(`%${options.search}%`);
             i++;
         }
 
-        sql += ' ORDER BY issue_date DESC, id DESC';
+        sql += ' ORDER BY i.issue_date DESC, i.id DESC';
 
         if (options.limit) {
             sql += ` LIMIT $${i++}`;
@@ -113,22 +121,18 @@ class InvoiceRepository extends BaseRepository {
 
     async findOverdue(businessId, asOf = new Date()) {
         const result = await this._query(
-            `SELECT * FROM invoices
-             WHERE business_id = $1
-               AND status IN ('SENT', 'OVERDUE')
-               AND due_date IS NOT NULL
-               AND due_date < $2
-               AND amount_paid < total
-             ORDER BY due_date ASC`,
+            `${InvoiceRepository.SELECT_WITH_CUSTOMER}
+             WHERE i.business_id = $1
+               AND i.status IN ('SENT', 'OVERDUE')
+               AND i.due_date IS NOT NULL
+               AND i.due_date < $2
+               AND i.amount_paid < i.total
+             ORDER BY i.due_date ASC`,
             [businessId, toDateOnly(asOf)]
         );
         return result.rows.map((r) => this._hydrate(r));
     }
 
-    /**
-     * Mark invoice as SENT. Only valid when current status is DRAFT.
-     * Returns the updated invoice, or null if not found / not in DRAFT.
-     */
     async markAsSent(invoiceId, businessId) {
         const result = await this._query(
             `UPDATE invoices
@@ -142,20 +146,12 @@ class InvoiceRepository extends BaseRepository {
         return this.findById(invoiceId, businessId);
     }
 
-    /**
-     * Apply a payment to an invoice. Increments amount_paid and
-     * flips status to PAID when fully settled. Never touches amount
-     * other than amount_paid — total is the source of truth.
-     *
-     * Returns the updated invoice, or null if not found / paid over.
-     */
     async applyPayment(invoiceId, businessId, amount) {
         const amt = round2(amount);
         if (amt <= 0) {
             throw new Error('Payment amount must be greater than zero');
         }
 
-        // Compute new amount_paid and status in SQL for atomicity.
         const result = await this._query(
             `UPDATE invoices
              SET amount_paid = amount_paid + $1,
@@ -285,16 +281,16 @@ class InvoiceRepository extends BaseRepository {
     async getSummary(businessId) {
         const result = await this._query(
             `SELECT
-                COUNT(*)::int                                              AS total_count,
-                COALESCE(SUM(total), 0)::numeric                           AS total_invoiced,
-                COALESCE(SUM(amount_paid), 0)::numeric                     AS total_paid,
-                COALESCE(SUM(total - amount_paid), 0)::numeric             AS total_outstanding,
+                COUNT(*)::int                                  AS total_count,
+                COALESCE(SUM(total), 0)::numeric               AS total_invoiced,
+                COALESCE(SUM(amount_paid), 0)::numeric         AS total_paid,
+                COALESCE(SUM(total - amount_paid), 0)::numeric AS total_outstanding,
                 COUNT(*) FILTER (
                     WHERE status IN ('SENT','OVERDUE')
                       AND due_date IS NOT NULL
                       AND due_date < CURRENT_DATE
                       AND amount_paid < total
-                )::int                                                     AS overdue_count
+                )::int                                         AS overdue_count
              FROM invoices
              WHERE business_id = $1`,
             [businessId]
@@ -330,6 +326,7 @@ class InvoiceRepository extends BaseRepository {
             id: row.id,
             businessId: row.business_id,
             customerId: row.customer_id,
+            customerName: row.joined_customer_name || null,   // NEW
             projectId: row.project_id,
             invoiceNumber: row.invoice_number,
             issueDate: row.issue_date,

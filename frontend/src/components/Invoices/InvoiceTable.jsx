@@ -1,4 +1,7 @@
 // frontend/src/components/Invoices/InvoiceTable.jsx
+// v1.1.0 — Client column reads customerName from API (falls back to
+//          customerId, then em-dash). Fixes "Client #17" showing instead
+//          of the real customer name.
 
 import { Eye, Edit, Trash2, FileText } from 'lucide-react';
 
@@ -68,6 +71,10 @@ const InvoiceTable = ({ invoices, onView, onEdit, onDelete }) => {
             {invoices.map((invoice) => {
               const statusClass = STATUS_STYLES[invoice.status] || STATUS_STYLES.DRAFT;
               const balance = Number(invoice.balance) || 0;
+              const clientLabel =
+                invoice.customerName ||
+                (invoice.customerId ? `Client #${invoice.customerId}` : null);
+
               return (
                 <tr
                   key={invoice.id}
@@ -77,8 +84,8 @@ const InvoiceTable = ({ invoices, onView, onEdit, onDelete }) => {
                     {invoice.invoiceNumber || '—'}
                   </td>
                   <td className="px-4 py-4 text-sm text-gray-700 dark:text-gray-300">
-                    {invoice.customerId ? (
-                      <span className="font-medium">Client #{invoice.customerId}</span>
+                    {clientLabel ? (
+                      <span className="font-medium">{clientLabel}</span>
                     ) : (
                       <span className="text-gray-400 dark:text-gray-500">—</span>
                     )}
