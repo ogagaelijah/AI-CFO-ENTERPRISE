@@ -1,5 +1,8 @@
 // frontend/src/services/api.js
-// v3.0.0-prod — Axios instance with 401 handler hook, telemetry, typed helpers.
+// v4.0.0-prod — Bearer auth support alongside cookies. Fixes cross-origin
+//               cookie blocks on staging/production. Token stored in
+//               localStorage; attached as Authorization header on every
+//               request. 401 clears token.
 
 import axios from 'axios';
 import { reportError, reportWarning } from './telemetry';
@@ -7,10 +10,39 @@ import { reportError, reportWarning } from './telemetry';
 const API_BASE_URL =
   import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
+const TOKEN_STORAGE_KEY = 'aicfo.auth.token';
+
+// ── Token storage helpers (safe against disabled localStorage / private mode)
+export const getStoredToken = () => {
+  try {
+    return localStorage.getItem(TOKEN_STORAGE_KEY) || null;
+  } catch {
+    return null;
+  }
+};
+
+export const setStoredToken = (token) => {
+  try {
+    if (token) localStorage.setItem(TOKEN_STORAGE_KEY, token);
+    else localStorage.removeItem(TOKEN_STORAGE_KEY);
+  } catch {
+    /* storage unavailable — non-fatal */
+  }
+};
+
+export const clearStoredToken = () => {
+  try {
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
+  } catch {
+    /* noop */
+  }
+};
+
+// ── Axios instance
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 30000,
-  withCredentials: true,
+  withCredentials: true,          // still send cookies when the browser allows
   headers: { 'Content-Type': 'application/json' },
 });
 
@@ -24,15 +56,26 @@ export const setUnauthorizedHandler = (fn) => {
 const makeRequestId = () =>
   `web-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
+// ── Request interceptor: attach Bearer token when present
 api.interceptors.request.use(
   (config) => {
     config.headers['X-Request-Id'] =
       config.headers['X-Request-Id'] || makeRequestId();
+
+    // Do not overwrite an explicit Authorization header
+    if (!config.headers.Authorization) {
+      const token = getStoredToken();
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+    }
+
     return config;
   },
   (error) => Promise.reject(error)
 );
 
+// ── Response interceptor
 api.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -46,18 +89,23 @@ api.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    // 401 — session expired
+    // 401 — session expired / invalid token
     if (status === 401) {
       const isAuthProbe =
         url?.includes('/auth/me') ||
         url?.includes('/auth/login') ||
         url?.includes('/auth/register');
 
-      if (!isAuthProbe && typeof onUnauthorized === 'function') {
-        try {
-          onUnauthorized();
-        } catch (e) {
-          reportError(e, { scope: 'api.onUnauthorized' });
+      // On a genuine 401 from a protected endpoint, wipe the stored token
+      // so we don't keep sending a dead bearer.
+      if (!isAuthProbe) {
+        clearStoredToken();
+        if (typeof onUnauthorized === 'function') {
+          try {
+            onUnauthorized();
+          } catch (e) {
+            reportError(e, { scope: 'api.onUnauthorized' });
+          }
         }
       }
       return Promise.reject(error);
@@ -90,8 +138,23 @@ api.interceptors.response.use(
   }
 );
 
-// ── Typed API groups
+// ── Cross-tab sync: when one tab logs out, all tabs drop the token.
+// The AuthContext listens to this and clears in-memory user state.
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    if (event.key === TOKEN_STORAGE_KEY && event.newValue === null) {
+      if (typeof onUnauthorized === 'function') {
+        try {
+          onUnauthorized();
+        } catch (e) {
+          reportError(e, { scope: 'api.storageSync' });
+        }
+      }
+    }
+  });
+}
 
+// ── Typed API groups
 export const authApi = {
   register: (data) => api.post('/auth/register', data),
   login: (data) => api.post('/auth/login', data),

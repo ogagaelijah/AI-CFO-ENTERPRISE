@@ -1,5 +1,7 @@
 // frontend/src/context/AuthContext.jsx
-// v3.0.0-prod — Plan caching, 5xx-vs-404 handling, in-flight dedup, 401 wiring.
+// v4.0.0-prod — Stores the JWT in localStorage after login/register,
+//               clears it on logout and 401. Works alongside cookies
+//               so browsers that block cross-site cookies still work.
 
 import {
   createContext,
@@ -13,6 +15,9 @@ import {
   authApi,
   subscriptionApi,
   setUnauthorizedHandler,
+  setStoredToken,
+  getStoredToken,
+  clearStoredToken,
 } from '../services/api';
 import { reportError, reportWarning } from '../services/telemetry';
 
@@ -53,7 +58,7 @@ const clearPlanCache = () => {
   }
 };
 
-// ── Fallback plan (Basic read-only)
+// ── Fallback plan
 const FALLBACK_PLAN = {
   id: 'basic',
   name: 'Basic',
@@ -76,9 +81,8 @@ export const AuthProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-  const planFetchRef = useRef(null); // in-flight dedup
+  const planFetchRef = useRef(null);
 
-  // ── Fetch plan from server, with cache + error classification
   const fetchPlan = useCallback(async ({ force = false } = {}) => {
     if (!force) {
       const cached = readPlanCache();
@@ -112,27 +116,22 @@ export const AuthProvider = ({ children }) => {
           return plan;
         }
 
-        // 200 but no plan → treat as fallback (read-only)
         writePlanCache(FALLBACK_PLAN);
         return FALLBACK_PLAN;
       } catch (err) {
         const status = err.response?.status;
 
-        // 404 → user has no subscription record. Legitimate fallback.
         if (status === 404) {
           writePlanCache(FALLBACK_PLAN);
           return FALLBACK_PLAN;
         }
 
-        // 401 → session invalid; bubble up so caller clears user
         if (status === 401) {
           throw err;
         }
 
-        // 5xx / network — do NOT downgrade a paying user to read-only.
         reportError(err, { scope: 'AuthContext.fetchPlan' });
 
-        // Prefer stale cache over wrong downgrade
         const stale = (() => {
           try {
             const raw = sessionStorage.getItem(PLAN_CACHE_KEY);
@@ -164,6 +163,7 @@ export const AuthProvider = ({ children }) => {
       setUser(null);
       setIsAuthenticated(false);
       clearPlanCache();
+      clearStoredToken();
     });
     return () => setUnauthorizedHandler(null);
   }, []);
@@ -189,9 +189,11 @@ export const AuthProvider = ({ children }) => {
           setIsAuthenticated(true);
         }
       } catch (err) {
-        // 401 here is expected when not logged in
         if (err?.response?.status !== 401) {
           reportError(err, { scope: 'AuthContext.bootstrap' });
+        } else {
+          // No valid session
+          clearStoredToken();
         }
       } finally {
         if (!cancelled) setIsLoading(false);
@@ -207,6 +209,12 @@ export const AuthProvider = ({ children }) => {
   const register = async (userData) => {
     const response = await authApi.register(userData);
 
+    // Store the JWT immediately so subsequent requests work
+    // even if the browser blocked the auth cookie.
+    if (response.data?.token) {
+      setStoredToken(response.data.token);
+    }
+
     if (response.data?.user) {
       const newUser = response.data.user;
 
@@ -214,7 +222,6 @@ export const AuthProvider = ({ children }) => {
         newUser.businessId = response.data.business.id;
       }
 
-      // Seed from register payload for instant UI
       if (response.data.trial) {
         newUser.planData = {
           id: response.data.trial.planId,
@@ -253,6 +260,11 @@ export const AuthProvider = ({ children }) => {
   const login = async (credentials) => {
     const response = await authApi.login(credentials);
 
+    // Store the JWT immediately so fetchPlan() below sends it.
+    if (response.data?.token) {
+      setStoredToken(response.data.token);
+    }
+
     if (response.data?.user) {
       const userData = response.data.user;
 
@@ -275,15 +287,13 @@ export const AuthProvider = ({ children }) => {
     } catch (err) {
       reportWarning('Logout request failed', { message: err?.message });
     } finally {
+      clearStoredToken();
       setUser(null);
       setIsAuthenticated(false);
       clearPlanCache();
     }
   };
 
-  /**
-   * Force-refresh plan state. Uses functional setUser to avoid stale closure.
-   */
   const refreshPlan = useCallback(async () => {
     const planData = await fetchPlan({ force: true });
     setUser((prev) => (prev ? { ...prev, planData } : prev));
