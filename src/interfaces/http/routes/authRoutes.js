@@ -1,7 +1,8 @@
 // src/interfaces/http/routes/authRoutes.js
-// v3.5.0-prod — Added password validation on register.
-//               bcrypt silently truncates at 72 bytes; reject longer.
-//               Reject whitespace-only. Reject short.
+// v3.6.0-prod — Added `token` to register + login JSON bodies so the
+//               frontend can use Bearer auth alongside cookies. This
+//               enables testers on browsers that block cross-site
+//               cookies to log in successfully.
 
 const express = require('express');
 const router = express.Router();
@@ -175,6 +176,7 @@ router.post('/register', async (req, res) => {
     return res.status(201).json({
       success: true,
       message: `Account created. You have ${trialDays} days of ${trialPlan.name} access.`,
+      token,                                    // ← NEW: returned to frontend for Bearer auth
       user: {
         id: user.id,
         fullName: user.fullName,
@@ -255,6 +257,7 @@ router.post('/login', async (req, res) => {
     return res.json({
       success: true,
       message: 'Login successful',
+      token,                                    // ← NEW: returned to frontend for Bearer auth
       user: {
         id: user.id,
         fullName: user.fullName,
@@ -279,7 +282,13 @@ router.post('/login', async (req, res) => {
 // ─────────────────────────────────────────────
 router.get('/me', async (req, res) => {
   try {
-    const token = req.cookies.token;
+    // Read token from cookie OR Authorization header — matches authMiddleware
+    const token =
+      req.cookies.token ||
+      (req.headers.authorization?.startsWith('Bearer ')
+        ? req.headers.authorization.slice(7)
+        : null);
+
     if (!token) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
     const decoded = jwt.verify(token, JWT_SECRET);
