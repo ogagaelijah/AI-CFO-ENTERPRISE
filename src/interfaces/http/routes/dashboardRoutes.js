@@ -1,7 +1,7 @@
 // src/interfaces/http/routes/dashboardRoutes.js
 // Aggregated dashboard endpoint — SSOT consumer
-// v2.4.0-prod — Adds `cash_in` / `cash_out` (today's cash movements).
-//               Cache version bumped v9 → v10.
+// v2.5.0-prod — Adds `students.total` KPI (Education).
+//               Cache version bumped v10 → v11.
 
 'use strict';
 
@@ -40,6 +40,7 @@ const ReportRepository = require('../../../infrastructure/database/sqlite/reposi
 const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository');
 const ProjectRepository = require('../../../infrastructure/database/sqlite/repositories/ProjectRepository');
 const InvoiceRepository = require('../../../infrastructure/database/sqlite/repositories/InvoiceRepository');
+const StudentRepository = require('../../../infrastructure/database/sqlite/repositories/StudentRepository');   // ← NEW
 
 // ===== Initialize Repositories =====
 const saleRepo = new SaleRepository();
@@ -53,6 +54,7 @@ const reportRepo = new ReportRepository();
 const paymentRepo = new PaymentRepository();
 const projectRepo = new ProjectRepository();
 const invoiceRepo = new InvoiceRepository();
+const studentRepo = new StudentRepository();   // ← NEW
 
 // ===== Initialize Report Services =====
 const profitLossService = new ProfitLossService({
@@ -201,8 +203,8 @@ router.get('/summary', async (req, res) => {
       });
     }
 
-    // v10: added cash_in / cash_out — discard v9 cache
-    const cacheKey = `aicfo:dashboard:${businessId}:daily:v10`;
+    // v11: added students.total — discard v10 cache
+    const cacheKey = `aicfo:dashboard:${businessId}:daily:v11`;
 
     const data = await cacheService.getOrSet(
       cacheKey,
@@ -261,6 +263,7 @@ async function fetchDashboardData({ userId, businessId }) {
     activeProjectsRaw,
     todayInvoicesRaw,
     cashFlowTodayRaw,
+    studentsActiveRaw,
   ] = await Promise.allSettled([
     dailyReportService.generate({ userId, businessId, date: todayStr }),
     analyticsProvider.generateAnalytics({
@@ -283,6 +286,7 @@ async function fetchDashboardData({ userId, businessId }) {
     projectRepo.countByBusinessId(businessId, { status: 'ACTIVE' }),
     invoiceRepo.countByBusinessId(businessId, { fromDate: todayStr, toDate: todayStr }),
     paymentRepo.getCashFlowForDate(businessId, todayStr),
+    studentRepo.countActive(businessId),
   ]);
 
   const daily = dailyResult.status === 'fulfilled' ? dailyResult.value : null;
@@ -308,6 +312,9 @@ async function fetchDashboardData({ userId, businessId }) {
   const cashFlowToday = cashFlowTodayRaw.status === 'fulfilled'
     ? cashFlowTodayRaw.value || { cashIn: 0, cashOut: 0 }
     : { cashIn: 0, cashOut: 0 };
+  const studentsActive = studentsActiveRaw.status === 'fulfilled'
+    ? Number(studentsActiveRaw.value) || 0
+    : 0;
 
   // ─────────────────────────────────────────────
   // Navigate analytics (SSOT)
@@ -478,6 +485,11 @@ async function fetchDashboardData({ userId, businessId }) {
       formatted: String(todayInvoices),
       label: 'Invoices Today',
     },
+    students: {
+      total: studentsActive,
+      formatted: String(studentsActive),
+      label: 'Total Students',
+    },
   };
 
   return {
@@ -499,8 +511,8 @@ async function fetchDashboardData({ userId, businessId }) {
       userId,
       businessId,
       generatedAt: new Date().toISOString(),
-      source: 'cashflow+daily+analytics+risk+repos+projects+invoices+cashinout',
-      version: '2.4.0',
+      source: 'cashflow+daily+analytics+risk+repos+projects+invoices+cashinout+students',
+      version: '2.5.0',
     },
   };
 }

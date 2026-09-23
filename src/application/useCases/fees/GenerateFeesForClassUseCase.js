@@ -1,6 +1,7 @@
 // src/application/useCases/fees/GenerateFeesForClassUseCase.js
-// Bulk: create one fee per ACTIVE student enrolled in a class for a term.
-// Skips students who already have a fee for that term.
+// v1.1.0-prod — Bulk generation now creates linked debtor rows
+//               when status='SENT' (reference_type='FEE'), matching
+//               the single-fee flow.
 
 const { withTransaction } = require('../../../infrastructure/database/sqlite/connection');
 
@@ -11,6 +12,7 @@ class GenerateFeesForClassUseCase {
         termRepository,
         classRepository,
         enrollmentRepository,
+        debtorRepository = null,
     }) {
         if (!feeRepository) throw new Error('feeRepository is required');
         if (!studentRepository) throw new Error('studentRepository is required');
@@ -22,10 +24,12 @@ class GenerateFeesForClassUseCase {
         this.termRepository = termRepository;
         this.classRepository = classRepository;
         this.enrollmentRepository = enrollmentRepository;
+        this.debtorRepository = debtorRepository;
     }
 
     async execute({
         businessId,
+        userId = null,
         classId,
         termId,
         issueDate = new Date(),
@@ -39,6 +43,11 @@ class GenerateFeesForClassUseCase {
         const validStatuses = ['DRAFT', 'SENT'];
         if (!validStatuses.includes(status)) {
             throw new Error(`Initial status must be DRAFT or SENT. Got: ${status}`);
+        }
+
+        // If SENT, we need debtorRepository to create linked rows.
+        if (status === 'SENT' && !this.debtorRepository) {
+            throw new Error('debtorRepository is required to create SENT fees');
         }
 
         const klass = await this.classRepository.findById(classId, businessId);
@@ -73,7 +82,7 @@ class GenerateFeesForClassUseCase {
             for (const enr of enrollments) {
                 const studentId = enr.studentId;
 
-                // Skip if a fee already exists for this student+term
+                // Skip if fee already exists for this student+term
                 const existing = await this.feeRepository.findByStudentAndTerm(
                     businessId, studentId, termId
                 );
@@ -100,6 +109,34 @@ class GenerateFeesForClassUseCase {
                     metadata: {},
                 });
                 const saved = await this.feeRepository.create(fee);
+
+                // Create the linked debtor row when SENT.
+                if (status === 'SENT' && this.debtorRepository) {
+                    const alreadyLinked = await this.debtorRepository.findByReference(
+                        businessId, 'FEE', saved.id
+                    );
+                    if (!alreadyLinked) {
+                        const studentName =
+                            saved.studentName ||
+                            `Student #${studentId}`;
+                        await this.debtorRepository.create({
+                            userId,
+                            businessId,
+                            customer_id: null,
+                            customer_name: studentName,
+                            customer_type: 'STUDENT',
+                            total_owed: amount,
+                            amount_paid: 0,
+                            balance_remaining: amount,
+                            status: 'ACTIVE',
+                            due_date: dueDate || null,
+                            reference_type: 'FEE',
+                            reference_id: saved.id,
+                            notes: `Fee ${saved.feeNumber} — ${studentName}`,
+                        });
+                    }
+                }
+
                 results.created.push(saved.toJSON());
             }
         });

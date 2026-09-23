@@ -1,7 +1,6 @@
 // src/interfaces/http/routes/feeRoutes.js
-// v1.1.0-prod — Wires debtorRepository into generate + update so SENT
-//               fees create linked debtor rows. Passes userId for
-//               debtor ownership attribution.
+// v1.2.0-prod — Wires debtorRepository + userId into the bulk generation
+//               path so SENT bulk fees create linked debtor rows.
 
 'use strict';
 
@@ -42,7 +41,7 @@ const generateFee = new GenerateFeeUseCase({
     studentRepository: studentRepo,
     termRepository: termRepo,
     classRepository: classRepo,
-    debtorRepository: debtorRepo,                 // ← ADDED
+    debtorRepository: debtorRepo,
 });
 const generateBulk = new GenerateFeesForClassUseCase({
     feeRepository: feeRepo,
@@ -50,13 +49,14 @@ const generateBulk = new GenerateFeesForClassUseCase({
     termRepository: termRepo,
     classRepository: classRepo,
     enrollmentRepository: enrollmentRepo,
+    debtorRepository: debtorRepo,               // ← ADDED
 });
 const getFee = new GetFeeUseCase({ feeRepository: feeRepo });
 const getFees = new GetFeesUseCase({ feeRepository: feeRepo });
 const updateFee = new UpdateFeeUseCase({
     feeRepository: feeRepo,
-    studentRepository: studentRepo,               // ← ADDED
-    debtorRepository: debtorRepo,                 // ← ADDED
+    studentRepository: studentRepo,
+    debtorRepository: debtorRepo,
 });
 const deleteFee = new DeleteFeeUseCase({
     feeRepository: feeRepo,
@@ -123,7 +123,7 @@ router.get('/:id', async (req, res) => {
 router.post('/', invalidateAfterWrite, async (req, res) => {
     try {
         const businessId = req.user.businessId;
-        const userId = req.user.id;             // ← ADDED
+        const userId = req.user.id;
         if (!businessId) {
             return res.status(400).json({ success: false, message: 'Business ID is required' });
         }
@@ -135,7 +135,7 @@ router.post('/', invalidateAfterWrite, async (req, res) => {
 
         const result = await generateFee.execute({
             businessId,
-            userId,                             // ← ADDED
+            userId,
             studentId,
             termId,
             classId: classId || null,
@@ -163,6 +163,7 @@ router.post('/', invalidateAfterWrite, async (req, res) => {
 router.post('/bulk', invalidateAfterWrite, async (req, res) => {
     try {
         const businessId = req.user.businessId;
+        const userId = req.user.id;             // ← ADDED
         if (!businessId) {
             return res.status(400).json({ success: false, message: 'Business ID is required' });
         }
@@ -171,6 +172,7 @@ router.post('/bulk', invalidateAfterWrite, async (req, res) => {
 
         const result = await generateBulk.execute({
             businessId,
+            userId,                             // ← ADDED
             classId,
             termId,
             issueDate: issueDate ? new Date(issueDate) : new Date(),
@@ -192,7 +194,7 @@ router.post('/bulk', invalidateAfterWrite, async (req, res) => {
 router.put('/:id', invalidateAfterWrite, async (req, res) => {
     try {
         const businessId = req.user.businessId;
-        const userId = req.user.id;             // ← ADDED
+        const userId = req.user.id;
         const { id } = req.params;
 
         const {
@@ -202,7 +204,7 @@ router.put('/:id', invalidateAfterWrite, async (req, res) => {
         const result = await updateFee.execute({
             feeId: parseInt(id, 10),
             businessId,
-            userId,                             // ← ADDED
+            userId,
             description,
             amount,
             issueDate: issueDate !== undefined ? (issueDate ? new Date(issueDate) : null) : undefined,
