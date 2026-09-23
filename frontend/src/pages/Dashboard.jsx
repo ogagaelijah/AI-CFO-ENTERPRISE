@@ -1,6 +1,5 @@
 // frontend/src/pages/Dashboard.jsx
-// v2.1.1-prod — Non-blocking load, plan-aware nav, banner always visible.
-//               Added min-w-0 to flex child so content respects viewport width.
+// v2.2.1-prod — Regex fix: handles '/' in industry names (NGO / Non-Profit).
 
 import { useState } from 'react';
 import { Home } from 'lucide-react';
@@ -30,11 +29,12 @@ const TRANSACTION_LABELS = new Set([
   'Tenants', 'Rent', 'Students', 'Classes',
   'Fees', 'Visits', 'Patients', 'Clients', 'Hours',
   'Raw Materials', 'Production', 'Materials',
+  'Donations', 'Pledges', 'Donors',
 ]);
 
 const normalizeIndustry = (industry) => {
   if (!industry) return 'RETAIL';
-  const upper = industry.toUpperCase().replace(/[-\s]+/g, '_');
+  const upper = industry.toUpperCase().replace(/[-\s/]+/g, '_');
   const map = {
     RETAIL: 'RETAIL',
     RETAIL_WHOLESALE: 'RETAIL',
@@ -45,6 +45,9 @@ const normalizeIndustry = (industry) => {
     REAL_ESTATE: 'REAL_ESTATE',
     EDUCATION: 'EDUCATION',
     LOGISTICS: 'LOGISTICS',
+    NGO: 'NGO',
+    NGO_NON_PROFIT: 'NGO',
+    NON_PROFIT: 'NGO',
   };
   return map[upper] || 'RETAIL';
 };

@@ -6,13 +6,15 @@ const { query, closePool } = require('../src/infrastructure/database/sqlite/conn
     const r = await query(
         `SELECT conname, pg_get_constraintdef(oid) AS def
          FROM pg_constraint
-         WHERE conname IN ($1, $2)`,
+         WHERE conname IN ($1, $2)
+         ORDER BY conname`,
         ['payments_reference_type_check', 'transactions_reference_type_check']
     );
-    console.log('\n=== REFERENCE_TYPE CONSTRAINTS ===');
+    console.log('\n=== REFERENCE_TYPE CONSTRAINTS ===\n');
     for (const row of r.rows) {
-        console.log(`\n${row.conname}:`);
+        console.log(`${row.conname}:`);
         console.log(row.def);
+        console.log('');
     }
     await closePool();
     process.exit(0);

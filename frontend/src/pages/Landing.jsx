@@ -1,4 +1,6 @@
 // frontend/src/pages/Landing.jsx
+// v1.1.0 — Updates industry count (8 → 9) and adds NGO / Non-Profit tile.
+
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
@@ -208,7 +210,7 @@ const Landing = () => {
               { icon: Users, title: 'Debtors & Creditors', desc: 'Manage who owes you and who you owe — never miss a payment.' },
               { icon: FileText, title: 'Reports & Analytics', desc: 'Daily, weekly, monthly, and yearly reports with profit margins.' },
               { icon: BarChart3, title: 'Forecasting & AI', desc: 'Predict future revenue and get AI-powered business recommendations.' },
-              { icon: Zap, title: '8 Industries Supported', desc: 'Retail, Manufacturing, Construction, Healthcare, and more.' },
+              { icon: Zap, title: '9 Industries Supported', desc: 'Retail, Manufacturing, Construction, Healthcare, Education, NGOs, and more.' },
             ].map((feature, index) => (
               <div key={index} className="card group fade-in" style={{ transitionDelay: `${index * 100}ms` }}>
                 <feature.icon className="w-10 h-10 text-primary-600 dark:text-gold-400 mb-4 group-hover:scale-110 transition-transform duration-300" />
@@ -223,14 +225,15 @@ const Landing = () => {
       {/* Industries */}
       <section id="industries" className="py-20 px-4 bg-gray-50 dark:bg-slate-900 transition-colors duration-300">
         <div className="max-w-6xl mx-auto text-center">
-          <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4 fade-in">Built for 8 Industries</h2>
+          <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4 fade-in">Built for 9 Industries</h2>
           <p className="text-gray-600 dark:text-gray-400 mb-12 fade-in">
             One platform that adapts to your industry's unique needs.
           </p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             {[
               'Retail / Wholesale', 'Manufacturing', 'Construction', 'Healthcare',
               'Consultancy', 'Real Estate', 'Education', 'Logistics',
+              'NGO / Non-Profit',
             ].map((industry, index) => (
               <div key={index} className="card bg-white dark:bg-slate-800 p-4 text-center fade-in" style={{ transitionDelay: `${index * 80}ms` }}>
                 <span className="text-gray-700 dark:text-gray-300 font-medium">{industry}</span>

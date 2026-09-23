@@ -1,4 +1,6 @@
 // frontend/src/App.jsx
+// v2.0.0 — Adds NGO routes: /pledges, /donations, /donors
+
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
@@ -33,7 +35,9 @@ import Students from './pages/Students';
 import Classes from './pages/Classes';
 import Enrollments from './pages/Enrollments';
 import Terms from './pages/Terms';
-import Fees from './pages/Fees';                                // ← ADDED
+import Fees from './pages/Fees';
+import Pledges from './pages/Pledges';                        // ← ADDED
+import Donations from './pages/Donations';                    // ← ADDED
 
 function App() {
   return (
@@ -121,10 +125,27 @@ function App() {
               }
             />
             <Route
-              path="/fees"                                        // ← ADDED
+              path="/fees"
               element={
                 <ProtectedRoute>
                   <Fees />
+                </ProtectedRoute>
+              }
+            />
+            {/* NGO routes */}
+            <Route
+              path="/pledges"                                    // ← ADDED
+              element={
+                <ProtectedRoute>
+                  <Pledges />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/donations"                                  // ← ADDED
+              element={
+                <ProtectedRoute>
+                  <Donations />
                 </ProtectedRoute>
               }
             />
@@ -218,6 +239,14 @@ function App() {
             />
             <Route
               path="/clients"
+              element={
+                <ProtectedRoute>
+                  <Customers />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/donors"                                     // ← ADDED
               element={
                 <ProtectedRoute>
                   <Customers />

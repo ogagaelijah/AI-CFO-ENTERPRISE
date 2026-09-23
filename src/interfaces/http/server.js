@@ -1,9 +1,11 @@
 // src/interfaces/http/server.js
-// v2.7.0-prod — Sentry v8+, structured logging, plan gating, PORT compatible (Render)
+// v2.8.0-prod — Sentry v8+, structured logging, plan gating, PORT compatible (Render)
 //               Adds Consultancy routes: /api/projects, /api/time-entries, /api/invoices
 //               Adds Education routes: /api/students, /api/classes, /api/enrollments, /api/terms, /api/fees
+//               Adds NGO routes: /api/pledges, /api/donations
 //               v2.6.0: cookie-config startup log, CORS allow-list, /api/debug/cookies
 //               v2.7.0: /api/fees mounted (Education)
+//               v2.8.0: /api/pledges, /api/donations mounted (NGO)
 
 const { initSentry, Sentry } = require('../../shared/utils/sentry');
 initSentry();
@@ -108,7 +110,9 @@ const studentRoutes = require('./routes/studentRoutes');
 const classRoutes = require('./routes/classRoutes');
 const enrollmentRoutes = require('./routes/enrollmentRoutes');
 const termRoutes = require('./routes/termRoutes');
-const feeRoutes = require('./routes/feeRoutes');                   // ← ADDED
+const feeRoutes = require('./routes/feeRoutes');
+const pledgeRoutes = require('./routes/pledgeRoutes');               // ← ADDED
+const donationRoutes = require('./routes/donationRoutes');           // ← ADDED
 
 app.use('/api/auth/login', strictLimiter);
 app.use('/api/auth/register', strictLimiter);
@@ -143,7 +147,11 @@ app.use('/api/students', standardLimiter, authMiddleware, planGuard({ feature: '
 app.use('/api/classes', standardLimiter, authMiddleware, planGuard({ feature: 'classes' }), classRoutes);
 app.use('/api/enrollments', standardLimiter, authMiddleware, planGuard({ feature: 'enrollments' }), enrollmentRoutes);
 app.use('/api/terms', standardLimiter, authMiddleware, planGuard({ feature: 'terms' }), termRoutes);
-app.use('/api/fees', standardLimiter, authMiddleware, planGuard({ feature: 'fees' }), feeRoutes);  // ← ADDED
+app.use('/api/fees', standardLimiter, authMiddleware, planGuard({ feature: 'fees' }), feeRoutes);
+
+// NGO modules — available on every tier (see plans.js INDUSTRY_FEATURES)
+app.use('/api/pledges', standardLimiter, authMiddleware, planGuard({ feature: 'pledges' }), pledgeRoutes);     // ← ADDED
+app.use('/api/donations', standardLimiter, authMiddleware, planGuard({ feature: 'donations' }), donationRoutes); // ← ADDED
 
 app.use('/api/reports', generousLimiter, authMiddleware, planGuard({ feature: 'reports_basic' }), reportRoutes);
 

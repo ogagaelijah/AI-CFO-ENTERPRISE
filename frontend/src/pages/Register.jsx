@@ -1,7 +1,5 @@
 // frontend/src/pages/Register.jsx
-// v1.1.0-prod — Navigate straight to /dashboard after register.
-//               The backend already set the auth cookie; a separate
-//               login step caused "Not authenticated" confusion.
+// v1.2.0-prod — Added 'NGO / Non-Profit' to industries list.
 
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -44,6 +42,7 @@ const Register = () => {
     'Real Estate',
     'Education',
     'Logistics',
+    'NGO / Non-Profit',                        // ← ADDED
   ];
 
   useEffect(() => {

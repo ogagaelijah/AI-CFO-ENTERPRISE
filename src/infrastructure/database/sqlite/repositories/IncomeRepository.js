@@ -1,5 +1,6 @@
 // src/infrastructure/database/sqlite/repositories/IncomeRepository.js
-// Postgres async. Same logic as SQLite.
+// v2.0.0-prod — Added reference_type / reference_id columns support.
+//               New findByReference method for reconciling source documents.
 
 const BaseRepository = require('./BaseRepository');
 
@@ -11,8 +12,9 @@ class IncomeRepository extends BaseRepository {
     async create(incomeData) {
         const result = await this._query(
             `INSERT INTO income (
-                user_id, business_id, source, amount, description, date
-            ) VALUES ($1, $2, $3, $4, $5, $6)
+                user_id, business_id, source, amount, description, date,
+                reference_type, reference_id
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING id`,
             [
                 incomeData.userId ?? incomeData.user_id ?? null,
@@ -21,6 +23,8 @@ class IncomeRepository extends BaseRepository {
                 incomeData.amount,
                 incomeData.description || null,
                 incomeData.date || new Date().toISOString().split('T')[0],
+                incomeData.referenceType || null,
+                incomeData.referenceId || null,
             ]
         );
         return this.findById(result.rows[0].id);
@@ -29,6 +33,18 @@ class IncomeRepository extends BaseRepository {
     async findById(id) {
         const result = await this._query('SELECT * FROM income WHERE id = $1', [id]);
         return result.rows[0] || null;
+    }
+
+    async findByReference(businessId, referenceType, referenceId) {
+        const result = await this._query(
+            `SELECT * FROM income
+             WHERE business_id = $1
+               AND reference_type = $2
+               AND reference_id = $3
+             ORDER BY date DESC`,
+            [businessId, referenceType, referenceId]
+        );
+        return result.rows;
     }
 
     async findByBusinessId(businessId, options = {}) {
@@ -179,6 +195,14 @@ class IncomeRepository extends BaseRepository {
         if (data.userId !== undefined || data.user_id !== undefined) {
             fields.push(`user_id = $${i++}`);
             values.push(data.userId ?? data.user_id);
+        }
+        if (data.referenceType !== undefined) {
+            fields.push(`reference_type = $${i++}`);
+            values.push(data.referenceType);
+        }
+        if (data.referenceId !== undefined) {
+            fields.push(`reference_id = $${i++}`);
+            values.push(data.referenceId);
         }
 
         fields.push('updated_at = NOW()');

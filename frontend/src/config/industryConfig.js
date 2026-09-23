@@ -1,6 +1,7 @@
 // src/config/industryConfig.js
-// v1.1.0-prod — Consultancy and Construction share the same structure
-//               via CONSULTANCY_LIKE. Only label/icon/colors differ.
+// v1.2.0-prod — Adds NGO / Non-Profit industry. Consultancy and
+//               Construction still share via CONSULTANCY_LIKE.
+
 import { 
   Store, Wrench, Building, Stethoscope, Briefcase, 
   Home as HomeIcon, GraduationCap, Truck as TruckIcon,
@@ -8,14 +9,9 @@ import {
   Package, Users, CreditCard, Building2, BarChart3,
   FileText, Calendar, Brain, Layers, Lightbulb, Settings,
   AlertTriangle, Briefcase as ProjectIcon, Clock, Wallet,
-  Home, UserCheck, Users2, Receipt
+  Home, UserCheck, Users2, Receipt, Heart
 } from 'lucide-react';
 
-// ─────────────────────────────────────────────
-// Shared config for project-based businesses
-// (Consultancy, Construction). Same sidebar, same stats,
-// same quick actions. Only cosmetic label/colors differ.
-// ─────────────────────────────────────────────
 const CONSULTANCY_LIKE = {
   stats: [
     { key: 'revenue',     label: 'Revenue Today',     icon: DollarSign,   color: 'primary' },
@@ -167,7 +163,6 @@ export const INDUSTRY_CONFIGS = {
     ],
   },
 
-  // ── Consultancy (project-based) ──
   'CONSULTANCY': {
     label: 'Consultancy',
     icon: Briefcase,
@@ -177,7 +172,6 @@ export const INDUSTRY_CONFIGS = {
     ...CONSULTANCY_LIKE,
   },
 
-  // ── Construction (project-based — same as Consultancy) ──
   'CONSTRUCTION': {
     label: 'Construction',
     icon: Building,
@@ -340,6 +334,55 @@ export const INDUSTRY_CONFIGS = {
     ],
   },
 
+  // ── NGO / Non-Profit ──
+  'NGO': {
+    label: 'NGO / Non-Profit',
+    icon: Heart,
+    iconColor: 'text-rose-600 dark:text-rose-400',
+    bgColor: 'bg-rose-50 dark:bg-rose-900/30',
+    borderColor: 'border-rose-200 dark:border-rose-800',
+    stats: [
+      { key: 'revenue',      label: 'Revenue Today',       icon: DollarSign,   color: 'primary' },
+      { key: 'donations',    label: 'Donations Today',     icon: Heart,        color: 'rose' },
+      { key: 'profit',       label: 'Profit Today',        icon: TrendingUp,   color: 'emerald' },
+      { key: 'expenses',     label: 'Expenses Today',      icon: TrendingDown, color: 'red' },
+      { key: 'donors',       label: 'Total Donors',        icon: Users,        color: 'indigo' },
+      { key: 'pledges',      label: 'Pledges Outstanding', icon: Receipt,      color: 'amber' },
+      { key: 'cash_in',      label: 'Cash Received Today', icon: Wallet,       color: 'emerald' },
+      { key: 'cash_out',     label: 'Cash Paid Today',     icon: Wallet,       color: 'red' },
+    ],
+    quickActions: [
+      { label: 'Record Donation', icon: Heart,     href: '/donations' },
+      { label: 'Add Donor',       icon: Users,     href: '/donors' },
+      { label: 'Record Pledge',   icon: Receipt,   href: '/pledges' },
+      { label: 'View Reports',    icon: FileText,  href: '/reports' },
+    ],
+    features: ['Donors', 'Donations', 'Pledges', 'Projects', 'Expenses', 'Reports'],
+    sidebar: [
+      { type: 'section', label: '━━━ TRANSACTIONS ━━━' },
+      { icon: Heart,        label: 'Donations', href: '/donations' },
+      { icon: Receipt,      label: 'Pledges',   href: '/pledges' },
+      { icon: Users,        label: 'Donors',    href: '/donors' },
+      { icon: ProjectIcon,  label: 'Projects',  href: '/projects' },
+      { icon: DollarSign,   label: 'Income',    href: '/income' },
+      { icon: TrendingDown, label: 'Expenses',  href: '/expenses' },
+      { icon: CreditCard,   label: 'Creditors', href: '/creditors' },
+      { icon: TruckIcon,    label: 'Suppliers', href: '/suppliers' },
+
+      { type: 'section', label: '━━━ INTELLIGENCE ━━━' },
+      { icon: BarChart3,     label: 'Analytics',  href: '/analytics' },
+      { icon: FileText,      label: 'Reports',    href: '/reports' },
+      { icon: Calendar,      label: 'Forecast',   href: '/forecast' },
+      { icon: AlertTriangle, label: 'Risk',       href: '/risk' },
+      { icon: Lightbulb,     label: 'Decisions',  href: '/decisions' },
+
+      { type: 'section', label: '━━━ ACCOUNT ━━━' },
+      { icon: Brain,    label: 'AI Assistant',  href: '/ai' },
+      { icon: Layers,   label: 'Subscription',  href: '/subscription' },
+      { icon: Settings, label: 'Settings',      href: '/settings' },
+    ],
+  },
+
   'LOGISTICS': {
     label: 'Logistics',
     icon: TruckIcon,
@@ -412,4 +455,5 @@ export const STAT_COLORS = {
   emerald: 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400',
   indigo: 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400',
   cyan: 'bg-cyan-50 dark:bg-cyan-900/30 text-cyan-600 dark:text-cyan-400',
+  rose: 'bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400',
 };

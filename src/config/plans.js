@@ -1,8 +1,9 @@
 // src/config/plans.js
 // Single Source of Truth for subscription plans, features, limits, pricing.
-// v4.3.0-prod
+// v4.4.0-prod
 //
 // v4.3.0 — Added `fees` to INDUSTRY_FEATURES (Education).
+// v4.4.0 — Added `pledges` and `donations` to INDUSTRY_FEATURES (NGO).
 
 const CORE_FEATURES = {
     sales: true,
@@ -27,7 +28,10 @@ const INDUSTRY_FEATURES = {
     classes: true,
     enrollments: true,
     terms: true,
-    fees: true,                       // ← ADDED
+    fees: true,
+    // NGO / Non-Profit
+    pledges: true,
+    donations: true,
     // Real Estate (next)
     // properties: true,
     // tenants: true,
