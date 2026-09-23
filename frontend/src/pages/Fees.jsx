@@ -1,9 +1,10 @@
 // frontend/src/pages/Fees.jsx
+// v1.1.0 — Adds "Generate Class Fees" bulk action.
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
-import { Plus, X, CheckCircle, AlertCircle } from 'lucide-react';
+import { Plus, X, CheckCircle, AlertCircle, Users } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import SummaryCards from '../components/Fees/SummaryCards';
 import FeeTable from '../components/Fees/FeeTable';
@@ -11,6 +12,7 @@ import RecordFeeModal from '../components/Fees/RecordFeeModal';
 import EditFeeModal from '../components/Fees/EditFeeModal';
 import FeeDetailModal from '../components/Fees/FeeDetailModal';
 import RecordFeePaymentModal from '../components/Fees/RecordFeePaymentModal';
+import GenerateClassFeesModal from '../components/Fees/GenerateClassFeesModal';
 import ConfirmModal from '../components/Fees/ConfirmModal';
 
 const Fees = () => {
@@ -31,6 +33,7 @@ const Fees = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showBulkModal, setShowBulkModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [selectedFee, setSelectedFee] = useState(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
@@ -103,6 +106,28 @@ const Fees = () => {
     } catch (error) {
       console.error('Error creating fee:', error);
       setError(error.response?.data?.message || 'Failed to create fee');
+    }
+  };
+
+  const handleBulkGenerate = async (data) => {
+    setError('');
+    setSuccess('');
+    try {
+      const response = await api.post('/fees/bulk', data);
+      if (response.data?.success) {
+        setShowBulkModal(false);
+        const { created = 0, skipped = 0 } = response.data;
+        setSuccess(
+          `✅ Generated ${created} fee(s)` +
+          (skipped ? `, skipped ${skipped} (already existed)` : '')
+        );
+        await fetchFees();
+      } else {
+        setError(response.data?.message || 'Failed to generate fees');
+      }
+    } catch (error) {
+      console.error('Error generating class fees:', error);
+      setError(error.response?.data?.message || 'Failed to generate fees');
     }
   };
 
@@ -218,17 +243,30 @@ const Fees = () => {
         title="Fees"
         subtitle="Student fees and billing"
         actions={
-          <button
-            onClick={() => {
-              setShowModal(true);
-              setError('');
-              setSuccess('');
-            }}
-            className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
-          >
-            <Plus className="w-5 h-5" />
-            <span>Create Fee</span>
-          </button>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => {
+                setShowBulkModal(true);
+                setError('');
+                setSuccess('');
+              }}
+              className="flex items-center space-x-2 px-4 py-2 border border-primary-600 text-primary-600 dark:text-gold-400 dark:border-gold-400 hover:bg-primary-50 dark:hover:bg-gold-900/20 rounded-lg transition"
+            >
+              <Users className="w-5 h-5" />
+              <span>Generate Class Fees</span>
+            </button>
+            <button
+              onClick={() => {
+                setShowModal(true);
+                setError('');
+                setSuccess('');
+              }}
+              className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
+            >
+              <Plus className="w-5 h-5" />
+              <span>Create Fee</span>
+            </button>
+          </div>
         }
       />
 
@@ -293,6 +331,14 @@ const Fees = () => {
         isOpen={showModal}
         onSubmit={handleCreate}
         onClose={() => setShowModal(false)}
+        error={error}
+        setError={setError}
+      />
+
+      <GenerateClassFeesModal
+        isOpen={showBulkModal}
+        onSubmit={handleBulkGenerate}
+        onClose={() => setShowBulkModal(false)}
         error={error}
         setError={setError}
       />
