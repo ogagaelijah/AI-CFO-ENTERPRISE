@@ -1,5 +1,5 @@
 // frontend/src/pages/Landing.jsx
-// v1.1.0 — Updates industry count (8 → 9) and adds NGO / Non-Profit tile.
+// v1.2.0 — Coming-soon badges on unbuilt industries.
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -28,6 +28,22 @@ const PLAN_FEATURES = [
   { key: 'multi_business', label: 'Multi-business' },
   { key: 'api_access', label: 'API access' },
   { key: 'white_label', label: 'White-label' },
+];
+
+// Kept in sync with Register.jsx.
+const READY_INDUSTRIES = [
+  'Retail / Wholesale',
+  'Construction',
+  'Consultancy',
+  'Education',
+  'NGO / Non-Profit',
+];
+
+const COMING_SOON_INDUSTRIES = [
+  'Manufacturing',
+  'Healthcare',
+  'Real Estate',
+  'Logistics',
 ];
 
 const Landing = () => {
@@ -106,7 +122,6 @@ const Landing = () => {
       <header className="fixed top-0 left-0 right-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md z-50 border-b border-gray-200 dark:border-slate-700 transition-colors duration-300">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            {/* Logo → home */}
             <Link to="/" className="flex items-center space-x-2">
               <span className="text-2xl font-bold text-primary-600 dark:text-gold-400">AI CFO</span>
               <span className="text-sm font-medium text-gray-600 dark:text-gray-400 hidden sm:inline">ENTERPRISE</span>
@@ -210,7 +225,7 @@ const Landing = () => {
               { icon: Users, title: 'Debtors & Creditors', desc: 'Manage who owes you and who you owe — never miss a payment.' },
               { icon: FileText, title: 'Reports & Analytics', desc: 'Daily, weekly, monthly, and yearly reports with profit margins.' },
               { icon: BarChart3, title: 'Forecasting & AI', desc: 'Predict future revenue and get AI-powered business recommendations.' },
-              { icon: Zap, title: '9 Industries Supported', desc: 'Retail, Manufacturing, Construction, Healthcare, Education, NGOs, and more.' },
+              { icon: Zap, title: '9 Industries, 5 Live Today', desc: 'Retail, Consultancy, Construction, Education, NGOs — with more on the way.' },
             ].map((feature, index) => (
               <div key={index} className="card group fade-in" style={{ transitionDelay: `${index * 100}ms` }}>
                 <feature.icon className="w-10 h-10 text-primary-600 dark:text-gold-400 mb-4 group-hover:scale-110 transition-transform duration-300" />
@@ -227,18 +242,35 @@ const Landing = () => {
         <div className="max-w-6xl mx-auto text-center">
           <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4 fade-in">Built for 9 Industries</h2>
           <p className="text-gray-600 dark:text-gray-400 mb-12 fade-in">
-            One platform that adapts to your industry's unique needs.
+            5 live today, more coming soon.
           </p>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-            {[
-              'Retail / Wholesale', 'Manufacturing', 'Construction', 'Healthcare',
-              'Consultancy', 'Real Estate', 'Education', 'Logistics',
-              'NGO / Non-Profit',
-            ].map((industry, index) => (
-              <div key={index} className="card bg-white dark:bg-slate-800 p-4 text-center fade-in" style={{ transitionDelay: `${index * 80}ms` }}>
-                <span className="text-gray-700 dark:text-gray-300 font-medium">{industry}</span>
-              </div>
-            ))}
+
+          {/* Ready now */}
+          <div className="mb-10">
+            <p className="text-xs font-semibold uppercase tracking-wider text-green-600 dark:text-green-400 mb-3 fade-in">
+              ✓ Available now
+            </p>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+              {READY_INDUSTRIES.map((industry, index) => (
+                <div key={industry} className="card bg-white dark:bg-slate-800 p-4 text-center fade-in" style={{ transitionDelay: `${index * 60}ms` }}>
+                  <span className="text-gray-700 dark:text-gray-300 font-medium">{industry}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Coming soon */}
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400 mb-3 fade-in">
+              ⏳ Coming soon
+            </p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {COMING_SOON_INDUSTRIES.map((industry, index) => (
+                <div key={industry} className="card bg-white/60 dark:bg-slate-800/60 p-4 text-center opacity-70 fade-in border-dashed" style={{ transitionDelay: `${index * 60}ms` }}>
+                  <span className="text-gray-500 dark:text-gray-500 font-medium">{industry}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </section>

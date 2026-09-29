@@ -1,5 +1,6 @@
 // frontend/src/pages/Register.jsx
-// v1.2.0-prod — Added 'NGO / Non-Profit' to industries list.
+// v1.3.0-prod — Split industries into ready vs coming soon.
+//               Coming-soon options render disabled with a tag.
 
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -11,6 +12,23 @@ import {
 } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
+// Industries users can currently sign up for.
+const READY_INDUSTRIES = [
+  'Retail / Wholesale',
+  'Construction',
+  'Consultancy',
+  'Education',
+  'NGO / Non-Profit',
+];
+
+// Industries that appear in the dropdown but are not yet selectable.
+const COMING_SOON_INDUSTRIES = [
+  'Manufacturing',
+  'Healthcare',
+  'Real Estate',
+  'Logistics',
+];
 
 const Register = () => {
   const { theme, toggleTheme } = useTheme();
@@ -32,18 +50,6 @@ const Register = () => {
     industry: '',
   });
   const [errors, setErrors] = useState({});
-
-  const industries = [
-    'Retail / Wholesale',
-    'Manufacturing',
-    'Construction',
-    'Healthcare',
-    'Consultancy',
-    'Real Estate',
-    'Education',
-    'Logistics',
-    'NGO / Non-Profit',                        // ← ADDED
-  ];
 
   useEffect(() => {
     if (!requestedPlanId) return;
@@ -219,7 +225,20 @@ const Register = () => {
                 <select id="industry" name="industry" value={formData.industry} onChange={handleChange}
                   className={`w-full px-4 py-3 rounded-lg border ${errors.industry ? 'border-red-500' : 'border-gray-300 dark:border-slate-600'} bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition outline-none appearance-none`}>
                   <option value="">Select your industry</option>
-                  {industries.map((industry) => (<option key={industry} value={industry}>{industry}</option>))}
+
+                  {/* Ready industries — selectable */}
+                  {READY_INDUSTRIES.map((industry) => (
+                    <option key={industry} value={industry}>
+                      {industry}
+                    </option>
+                  ))}
+
+                  {/* Coming-soon industries — disabled, appear below */}
+                  {COMING_SOON_INDUSTRIES.map((industry) => (
+                    <option key={industry} value={industry} disabled>
+                      {industry} — Coming soon
+                    </option>
+                  ))}
                 </select>
                 {errors.industry && <p className="mt-1 text-sm text-red-500">{errors.industry}</p>}
               </div>
