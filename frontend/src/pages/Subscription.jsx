@@ -1,10 +1,23 @@
 // frontend/src/pages/Subscription.jsx
-// v2.1.1-prod — pricing page with back button
+// v2.2.0-prod — Paystack migration; response shape updated
+//
+// v2.2.0 change — the backend /payment/initialize response shape changed when
+// we migrated from Flutterwave to Paystack:
+//
+//   old: { success, data: { link: "https://checkout.flutterwave.com/..." } }
+//   new: { success, data: { authorization_url: "https://checkout.paystack.com/...",
+//                           access_code, reference, amount, plan, billingCycle } }
+//
+// The old code read res.data.data.link and redirected. That field no longer
+// exists, so the upgrade button was silently broken. Now we delegate the
+// redirect to openCheckout() from the payment service — it reads
+// data.authorization_url and handles the shape change centrally.
 
 import { useState, useEffect } from 'react';
 import { Loader2, Crown } from 'lucide-react';
 
 import api, { subscriptionApi } from '../services/api';
+import { openCheckout } from '../services/paymentService';
 import { useAuth } from '../context/AuthContext';
 import { usePlan } from '../hooks/usePlan';
 import PlanCard from '../components/subscription/PlanCard';
@@ -62,12 +75,27 @@ const Subscription = () => {
         email: user.email,
       });
 
-      if (res.data?.success && res.data.data?.link) {
-        window.location.href = res.data.data.link;
-      } else {
-        setError('Failed to initialize payment');
+      if (!res.data?.success) {
+        setError(res.data?.message || 'Failed to initialize payment');
+        setPaying(null);
+        return;
+      }
+
+      // openCheckout reads authorization_url from the initialize response.
+      // Returns false if the URL is missing/invalid — we surface that as an
+      // error rather than silently navigating nowhere.
+      const redirected = openCheckout(res.data);
+
+      if (!redirected) {
+        reportError(new Error('openCheckout returned false — missing authorization_url'), {
+          scope: 'Subscription.initializePayment',
+          response: res.data,
+        });
+        setError('Payment provider returned an invalid checkout link. Please try again.');
         setPaying(null);
       }
+      // If redirected === true, the browser is navigating away. Do NOT clear
+      // `paying` — the spinner should stay visible until navigation completes.
     } catch (err) {
       reportError(err, { scope: 'Subscription.initializePayment' });
       setError(err.response?.data?.message || err.message || 'Payment initialization failed');
