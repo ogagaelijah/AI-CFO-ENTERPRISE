@@ -1,40 +1,44 @@
 // src/application/useCases/payment/HandlePaystackWebhookUseCase.js
-// v1.0.0-prod
+// v1.1.0-prod
 //
 // Orchestrator for incoming Paystack webhook events.
 //
-// Called by paystackWebhookRoutes.js (P-6) after the route has already:
-//   1. Mounted express.raw({ type: 'application/json' }) so req.body is a Buffer
-//   2. NOT parsed the body
+// v1.1.0 change — fixes a bug found in P-9.3 testing:
+//   A charge.success event with a metadata.businessId that does not exist in
+//   the businesses table previously caused the subscription activation to
+//   attempt an INSERT, which tripped a foreign key constraint. The FK error
+//   propagated out of _dispatch, was caught by execute(), and marked the
+//   event FAILED. The retry sweep would then retry five times and eventually
+//   dead-letter an event that could never succeed.
+//   Fix: _handleChargeSuccess now validates the business exists BEFORE calling
+//   ActivateSubscriptionUseCase. If the business is missing, the event is
+//   marked PROCESSED (nothing to retry) with a warning logged, and the row's
+//   business_id remains NULL (the FK allows NULL by design).
 //
-// This use case is responsible for:
-//   1. Verifying the signature (delegates to PaystackSignatureVerifier, P-3)
-//   2. Recording the event in paystack_webhook_events (idempotency by event.id)
-//   3. Dispatching by event type
-//   4. Calling ActivateSubscriptionUseCase on charge.success (P-4)
-//   5. Marking the event PROCESSED / FAILED
-//
-// Design contract with the route (P-6):
+// Contract with the route (paystackWebhookRoutes.js):
 //   - Returns { httpStatus, body } — the route sends this as-is
 //   - httpStatus is ALWAYS 200 for events that were recorded (even on failure),
-//     because Paystack retries on non-2xx and we want to control retries ourselves
-//   - httpStatus is 401 ONLY when signature verification fails — and in that
-//     case we do NOT write to the DB
+//     because Paystack retries on non-2xx and we control retries via our own
+//     FAILED-status sweep
+//   - httpStatus is 401 ONLY when signature verification fails — in that case
+//     we do NOT write to the DB
 //   - httpStatus is 400 ONLY for malformed payloads AFTER signature verification
-//     passed (shouldn't happen with real Paystack, but we fail safe)
+//     passed
 //
 // Never throws to the route. All errors are caught, logged, and returned as
-// structured responses so the route never crashes.
+// structured responses.
 
 const PaystackSignatureVerifier = require('../../services/payment/PaystackSignatureVerifier');
 const ActivateSubscriptionUseCase = require('../subscription/ActivateSubscriptionUseCase');
-const { query, withTransaction } = require('../../../infrastructure/database/sqlite/connection');
+const BusinessRepository = require('../../../infrastructure/database/sqlite/repositories/BusinessRepository');
+const { query } = require('../../../infrastructure/database/sqlite/connection');
 const logger = require('../../../shared/utils/logger');
 
 class HandlePaystackWebhookUseCase {
     constructor(opts = {}) {
         this.verifier = opts.verifier || new PaystackSignatureVerifier();
         this.activate = opts.activate || new ActivateSubscriptionUseCase();
+        this.businessRepo = opts.businessRepo || new BusinessRepository();
         this.logger = opts.logger || logger;
     }
 
@@ -56,7 +60,7 @@ class HandlePaystackWebhookUseCase {
             };
         }
 
-        // ── 2. Parse the raw body (we KNOW it's valid JSON now — signature passed)
+        // ── 2. Parse the raw body
         let event;
         try {
             event = JSON.parse(req.body.toString('utf8'));
@@ -65,36 +69,29 @@ class HandlePaystackWebhookUseCase {
                 { err: err.message, url: req.originalUrl },
                 'paystack webhook: JSON parse failed after valid signature'
             );
-            // Signature was valid but body is not valid JSON. Record nothing,
-            // return 400 so Paystack does NOT retry (this is a hard failure).
             return {
                 httpStatus: 400,
                 body: { status: 'error', message: 'Malformed payload' },
             };
         }
 
-        // ── 3. Extract minimal identity (before inserting)
+        // ── 3. Extract minimal identity
         const eventId = event?.data?.id ? `evt_${event.data.id}` : null;
         const eventType = event?.event || null;
         const paystackRef = event?.data?.reference || null;
 
-        // Paystack always sends data.id on charge events. If missing, we cannot
-        // idempotency-key it. Fail closed rather than risk double-activation.
         if (!eventId || !eventType) {
             this.logger.error(
                 { hasEventId: Boolean(eventId), eventType, url: req.originalUrl },
                 'paystack webhook: missing event.id or event type'
             );
             return {
-                httpStatus: 200, // Return 200 — do NOT make Paystack retry garbage
+                httpStatus: 200,
                 body: { status: 'error', message: 'Missing event identity' },
             };
         }
 
-        // ── 4. Idempotency: insert the event, ON CONFLICT DO NOTHING.
-        //    If a row already exists for this event_id, we know it's a duplicate.
-        //    We mark status='PROCESSING' immediately to claim it, in case two
-        //    webhook deliveries arrive simultaneously.
+        // ── 4. Idempotency: insert with ON CONFLICT DO NOTHING
         let eventRowId = null;
         let isDuplicate = false;
         try {
@@ -117,10 +114,6 @@ class HandlePaystackWebhookUseCase {
                 { err: err.message, eventId, eventType },
                 'paystack webhook: failed to record event'
             );
-            // DB is unhealthy. Return 200 so Paystack does NOT aggressively retry
-            // while we're down. The retry sweep (P-7) will not see this event
-            // because nothing was inserted — but the app is broken anyway, and
-            // screaming 500 just amplifies the outage.
             return {
                 httpStatus: 200,
                 body: { status: 'error', message: 'Recording failed' },
@@ -138,7 +131,7 @@ class HandlePaystackWebhookUseCase {
             };
         }
 
-        // ── 5. Dispatch by event type. Only charge.success activates.
+        // ── 5. Dispatch by event type
         try {
             const dispatchResult = await this._dispatch(eventType, event);
 
@@ -173,20 +166,16 @@ class HandlePaystackWebhookUseCase {
                 body: { status: 'success' },
             };
         } catch (err) {
-            // ── 7. Mark FAILED — the retry sweep (P-7) will pick this up
+            // ── 7. Mark FAILED — the retry sweep will pick this up
             try {
                 await query(
                     `UPDATE paystack_webhook_events
                      SET status = 'FAILED',
-                         error_message = $1,
-                         retry_count = retry_count
+                         error_message = $1
                      WHERE id = $2`,
                     [String(err.message || err).slice(0, 1000), eventRowId]
                 );
             } catch (updateErr) {
-                // If even the UPDATE fails, log and move on. We already returned
-                // 200 (below) so Paystack won't retry. The record stays PROCESSING
-                // and can be reconciled manually.
                 this.logger.error(
                     { err: updateErr.message, eventRowId },
                     'paystack webhook: failed to mark event FAILED'
@@ -198,7 +187,6 @@ class HandlePaystackWebhookUseCase {
                 'paystack webhook: dispatch failed'
             );
 
-            // Return 200 — Paystack should NOT retry. Our own sweep retries.
             return {
                 httpStatus: 200,
                 body: { status: 'success', message: 'Accepted for retry' },
@@ -218,9 +206,6 @@ class HandlePaystackWebhookUseCase {
                 return this._handleChargeSuccess(event);
 
             case 'charge.failed':
-                // Deliberately no-op. Recorded, marked PROCESSED. A failed charge
-                // should not change subscription state — the user's existing
-                // period (if any) remains until it expires naturally.
                 return {
                     businessId: this._extractBusinessId(event),
                     subscriptionId: null,
@@ -232,7 +217,6 @@ class HandlePaystackWebhookUseCase {
             case 'subscription.disable':
             case 'invoice.create':
             case 'invoice.payment_failed':
-                // Recorded for audit. No state change in this version.
                 return {
                     businessId: this._extractBusinessId(event),
                     subscriptionId: null,
@@ -262,8 +246,8 @@ class HandlePaystackWebhookUseCase {
         const planId = this._extractPlanId(event);
         const billingCycle = this._extractBillingCycle(event);
 
-        // If we cannot identify the business, we still record the event (done
-        // by caller) but we cannot activate. Log and skip.
+        // No business in metadata — cannot activate, but this is not a
+        // transient failure. Mark skipped, log a warning.
         if (!businessId) {
             this.logger.warn(
                 { reference: event?.data?.reference },
@@ -271,12 +255,28 @@ class HandlePaystackWebhookUseCase {
             );
             return { businessId: null, subscriptionId: null, activated: false, skipped: true };
         }
+
+        // No plan in metadata — same reasoning.
         if (!planId) {
             this.logger.warn(
                 { businessId, reference: event?.data?.reference },
                 'paystack webhook: charge.success with no plan in metadata'
             );
             return { businessId, subscriptionId: null, activated: false, skipped: true };
+        }
+
+        // v1.1.0 — validate the business exists BEFORE activation.
+        // If the business does not exist, activation would trip a foreign key
+        // constraint and mark the event FAILED, which then retries pointlessly
+        // and eventually dead-letters. Missing business is a permanent
+        // condition — log, skip, move on.
+        const businessExists = await this._businessExists(businessId);
+        if (!businessExists) {
+            this.logger.warn(
+                { businessId, reference: event?.data?.reference },
+                'paystack webhook: charge.success for nonexistent business — skipping activation'
+            );
+            return { businessId: null, subscriptionId: null, activated: false, skipped: true };
         }
 
         const result = await this.activate.execute({
@@ -296,10 +296,25 @@ class HandlePaystackWebhookUseCase {
     }
 
     /**
-     * Paystack forwards whatever we sent in the `metadata` field when we
-     * initialized the transaction via /transaction/initialize.
-     * We will send { businessId, plan, billingCycle } from P-6's /initialize.
-     *
+     * @private
+     */
+    async _businessExists(businessId) {
+        try {
+            const biz = await this.businessRepo.findById(businessId);
+            return biz !== null;
+        } catch (err) {
+            this.logger.error(
+                { err: err.message, businessId },
+                'paystack webhook: business existence check failed'
+            );
+            // Fail closed — if we cannot verify the business exists, do not
+            // attempt activation (avoids the FK trip we are fixing). The event
+            // is marked PROCESSED with a warning.
+            return false;
+        }
+    }
+
+    /**
      * @private
      */
     _extractBusinessId(event) {

@@ -1,40 +1,51 @@
-// src/interfaces/http/routes/paymentRoutes.js
-// v2.0.0-prod — SSOT-driven prices, monthly/yearly cycles
+﻿// src/interfaces/http/routes/paymentRoutes.js
+// v3.0.0-prod — Paystack integration. Flutterwave removed.
 
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
-const jwt = require('jsonwebtoken');
 
 const { authMiddleware } = require('../middleware/authMiddleware');
 const BusinessRepository = require('../../../infrastructure/database/sqlite/repositories/BusinessRepository');
-const SubscriptionRepository = require('../../../infrastructure/database/sqlite/repositories/SubscriptionRepository');
+const ActivateSubscriptionUseCase = require('../../../application/useCases/subscription/ActivateSubscriptionUseCase');
 const plans = require('../../../config/plans');
+const logger = require('../../../shared/utils/logger');
 
 const businessRepo = new BusinessRepository();
-const subscriptionRepo = new SubscriptionRepository();
+const activateSubscription = new ActivateSubscriptionUseCase();
 
-const FLW_SECRET = process.env.FLW_SECRET_KEY;
+const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
+const PAYSTACK_BASE = 'https://api.paystack.co';
 
-// ─────────────────────────────────────────────
-// POST /api/payment/initialize
-// Body: { plan: 'basic'|'pro'|'enterprise', billingCycle: 'monthly'|'yearly', email?, }
-// ─────────────────────────────────────────────
+function paystackClient() {
+    if (!PAYSTACK_SECRET) {
+        throw new Error('PAYSTACK_SECRET_KEY is not set');
+    }
+    return axios.create({
+        baseURL: PAYSTACK_BASE,
+        timeout: 20000,
+        headers: {
+            Authorization: `Bearer ${PAYSTACK_SECRET}`,
+            'Content-Type': 'application/json',
+        },
+    });
+}
+
 router.post('/initialize', authMiddleware, async (req, res) => {
     try {
-        const { plan, billingCycle = 'monthly', email } = req.body;
+        const { plan, billingCycle = 'monthly', email } = req.body || {};
         const userId = req.user.id;
         const userEmail = email || req.user.email;
-        const userName = req.user.fullName || 'User';
 
-        // ── Get business
-        const businesses = await businessRepo.findByUserId(userId);
-        const business = businesses && businesses.length > 0 ? businesses[0] : null;
+        if (!userEmail) {
+            return res.status(400).json({ success: false, message: 'Email is required' });
+        }
+
+        const business = await businessRepo.findByUserIdFirst(userId);
         if (!business) {
             return res.status(400).json({ success: false, message: 'Business not found' });
         }
 
-        // ── Validate plan + cycle against SSOT
         const publicPlanIds = plans.getPublicPlanIds();
         if (!publicPlanIds.includes(plan)) {
             return res.status(400).json({ success: false, message: 'Invalid plan selected' });
@@ -42,231 +53,146 @@ router.post('/initialize', authMiddleware, async (req, res) => {
         if (!['monthly', 'yearly'].includes(billingCycle)) {
             return res.status(400).json({ success: false, message: 'Invalid billing cycle' });
         }
-
         const amount = plans.getPricing(plan, billingCycle);
         if (!amount || amount <= 0) {
             return res.status(400).json({ success: false, message: 'Invalid plan pricing' });
         }
+        const planMeta = plans.getPlan(plan);
 
-        const planName = plans.getPlan(plan).name;
-        const cycleLabel = billingCycle === 'yearly' ? 'Annual' : 'Monthly';
+        const amountInKobo = Math.round(amount * 100);
+        const reference = `AICFO_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-        // ── Generate reference
-        const reference = `AICFO_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-
-        console.log('🔍 [payment/initialize]', {
-            plan, billingCycle, amount, userId, businessId: business.id, reference,
-        });
-
-        // ── Call Flutterwave
-        const response = await axios.post(
-            'https://api.flutterwave.com/v3/payments',
-            {
-                tx_ref: reference,
-                amount,
-                currency: plans.getPlan(plan).currency,
-                redirect_url: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/success`,
-                meta: {
-                    userId,
-                    businessId: business.id,
-                    plan,
-                    billingCycle,
-                },
-                customer: { email: userEmail, name: userName },
-                customizations: {
-                    title: 'AI CFO ENTERPRISE',
-                    description: `${planName} Plan (${cycleLabel})`,
-                    logo: 'https://your-logo-url.com/logo.png',
-                },
+        const payload = {
+            email: userEmail,
+            amount: amountInKobo,
+            currency: planMeta.currency,
+            reference,
+            callback_url: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/success`,
+            metadata: {
+                businessId: business.id,
+                userId,
+                plan,
+                billingCycle,
             },
-            {
-                headers: {
-                    Authorization: `Bearer ${FLW_SECRET}`,
-                    'Content-Type': 'application/json',
-                },
-            }
+        };
+
+        logger.info(
+            { plan, billingCycle, amount, userId, businessId: business.id, reference },
+            'paystack /initialize: requesting'
         );
 
-        if (response.data.status === 'success') {
-            return res.json({
-                success: true,
-                data: {
-                    link: response.data.data.link,
-                    reference,
-                    amount,
-                    plan,
-                    billingCycle,
-                },
+        const client = paystackClient();
+        const response = await client.post('/transaction/initialize', payload);
+
+        if (!response.data || response.data.status !== true) {
+            logger.error(
+                { paystackResponse: response.data, reference },
+                'paystack /initialize: non-success response'
+            );
+            return res.status(400).json({
+                success: false,
+                message: response.data?.message || 'Payment initialization failed',
             });
         }
 
-        return res.status(400).json({
-            success: false,
-            message: response.data.message || 'Payment initialization failed',
+        return res.json({
+            success: true,
+            data: {
+                authorization_url: response.data.data.authorization_url,
+                access_code: response.data.data.access_code,
+                reference: response.data.data.reference,
+                amount,
+                plan,
+                billingCycle,
+            },
         });
-    } catch (error) {
-        console.error('❌ Payment initialization error:', error.message);
+    } catch (err) {
+        logger.error({ err: err.message, stack: err.stack }, 'paystack /initialize: error');
         return res.status(500).json({
             success: false,
-            message: error.message || 'Payment initialization failed',
+            message: err.message || 'Payment initialization failed',
         });
     }
 });
 
-// ─────────────────────────────────────────────
-// GET /api/payment/verify/:reference
-// ─────────────────────────────────────────────
-router.get('/verify/:reference', async (req, res) => {
+router.get('/verify/:reference', authMiddleware, async (req, res) => {
     try {
         const { reference } = req.params;
+        if (!reference) {
+            return res.status(400).json({ success: false, message: 'Reference required' });
+        }
 
-        const response = await axios.get(
-            `https://api.flutterwave.com/v3/transactions/${reference}/verify`,
-            {
-                headers: {
-                    Authorization: `Bearer ${FLW_SECRET}`,
-                    'Content-Type': 'application/json',
-                },
-            }
-        );
+        const client = paystackClient();
+        const response = await client.get(`/transaction/verify/${encodeURIComponent(reference)}`);
 
-        if (response.data.status !== 'success' || response.data.data.status !== 'successful') {
+        if (!response.data || response.data.status !== true) {
             return res.status(400).json({
                 success: false,
-                message: 'Payment verification failed',
-                details: response.data,
+                message: response.data?.message || 'Payment verification failed',
             });
         }
 
-        const data = response.data.data;
-        const meta = data.meta || {};
-        const plan = meta.plan;
-        const billingCycle = meta.billingCycle || 'monthly';
-        let businessId = meta.businessId;
-        let userId = meta.userId;
-
-        // Fallbacks if meta missing
-        if (!businessId && userId) {
-            const businesses = await businessRepo.findByUserId(userId);
-            businessId = businesses?.[0]?.id || null;
+        const tx = response.data.data;
+        if (tx.status !== 'success') {
+            return res.status(400).json({
+                success: false,
+                message: `Transaction status is "${tx.status}"`,
+                data: { status: tx.status, reference },
+            });
         }
 
-        // Validate plan
-        if (!plan || !plans.getPlan(plan)) {
+        const meta = tx.metadata || {};
+        const planId = meta.plan;
+        const billingCycle = meta.billingCycle === 'yearly' ? 'yearly' : 'monthly';
+        let businessId = Number(meta.businessId);
+
+        if (!Number.isInteger(businessId) || businessId <= 0) {
+            const business = await businessRepo.findByUserIdFirst(req.user.id);
+            businessId = business?.id;
+        }
+
+        if (!businessId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Cannot determine business for this transaction',
+            });
+        }
+        if (!planId || !plans.getPlan(planId) || !plans.isPaidPlan(planId)) {
             return res.status(400).json({
                 success: false,
                 message: 'Invalid plan in payment metadata',
             });
         }
 
-        // Update or create subscription
-        if (businessId) {
-            const existing = subscriptionRepo.findActiveByBusinessId(businessId);
-
-            const now = new Date();
-            const endDate = new Date(now);
-            if (billingCycle === 'yearly') {
-                endDate.setFullYear(endDate.getFullYear() + 1);
-            } else {
-                endDate.setMonth(endDate.getMonth() + 1);
-            }
-
-            if (existing) {
-                subscriptionRepo.update(existing.id, {
-                    planId: plan,
-                    billingCycle,
-                    status: 'active',
-                    startDate: now,
-                    endDate,
-                    trialEndDate: null,
-                    features: plans.getFeatures(plan),
-                });
-            } else {
-                subscriptionRepo.create({
-                    businessId,
-                    planId: plan,
-                    billingCycle,
-                    status: 'active',
-                    startDate: now,
-                    endDate,
-                    features: plans.getFeatures(plan),
-                });
-            }
-        }
+        const result = await activateSubscription.execute({
+            businessId,
+            planId,
+            billingCycle,
+            paystackReference: reference,
+        });
 
         return res.json({
             success: true,
             message: 'Payment verified successfully',
-            data: { plan, billingCycle, amount: data.amount, reference, businessId },
+            data: {
+                plan: planId,
+                billingCycle,
+                amount: tx.amount / 100,
+                reference,
+                businessId,
+                activated: result.activated,
+                skipped: result.skipped,
+            },
         });
-    } catch (error) {
-        console.error('❌ Payment verification error:', error.message);
+    } catch (err) {
+        logger.error(
+            { err: err.message, stack: err.stack, reference: req.params.reference },
+            'paystack /verify: error'
+        );
         return res.status(500).json({
             success: false,
-            message: error.message || 'Payment verification failed',
+            message: err.message || 'Payment verification failed',
         });
-    }
-});
-
-// ─────────────────────────────────────────────
-// POST /api/payment/webhook  (PUBLIC — Flutterwave calls this)
-// ─────────────────────────────────────────────
-router.post('/webhook', async (req, res) => {
-    try {
-        const signature = req.headers['verif-hash'];
-        const secretHash = process.env.FLW_WEBHOOK_SECRET || FLW_SECRET;
-
-        if (signature !== secretHash) {
-            return res.status(401).json({ status: 'error', message: 'Invalid signature' });
-        }
-
-        const event = req.body;
-        if (event.event !== 'charge.completed') return res.sendStatus(200);
-
-        const data = event.data;
-        const meta = data.meta || {};
-        const plan = meta.plan;
-        const billingCycle = meta.billingCycle || 'monthly';
-        const businessId = meta.businessId;
-
-        if (data.status === 'successful' && businessId && plan && plans.getPlan(plan)) {
-            const existing = subscriptionRepo.findActiveByBusinessId(businessId);
-
-            const now = new Date();
-            const endDate = new Date(now);
-            if (billingCycle === 'yearly') {
-                endDate.setFullYear(endDate.getFullYear() + 1);
-            } else {
-                endDate.setMonth(endDate.getMonth() + 1);
-            }
-
-            if (existing) {
-                subscriptionRepo.update(existing.id, {
-                    planId: plan,
-                    billingCycle,
-                    status: 'active',
-                    startDate: now,
-                    endDate,
-                    trialEndDate: null,
-                    features: plans.getFeatures(plan),
-                });
-            } else {
-                subscriptionRepo.create({
-                    businessId,
-                    planId: plan,
-                    billingCycle,
-                    status: 'active',
-                    startDate: now,
-                    endDate,
-                    features: plans.getFeatures(plan),
-                });
-            }
-        }
-
-        return res.sendStatus(200);
-    } catch (error) {
-        console.error('❌ Webhook error:', error.message);
-        return res.sendStatus(500);
     }
 });
 
