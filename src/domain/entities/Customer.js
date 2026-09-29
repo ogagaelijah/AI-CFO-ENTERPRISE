@@ -1,4 +1,5 @@
 // src/domain/entities/Customer.js
+// v1.1.0-prod — Removed taxId. Added DONOR display type.
 
 class Customer {
     constructor({
@@ -8,8 +9,7 @@ class Customer {
         phone = null,
         email = null,
         address = null,
-        type = 'CUSTOMER', // CUSTOMER, PATIENT, CLIENT, TENANT, STUDENT
-        taxId = null,
+        type = 'CUSTOMER', // CUSTOMER, PATIENT, CLIENT, TENANT, STUDENT, DONOR
         notes = '',
         metadata = {},
         createdAt = new Date(),
@@ -22,7 +22,6 @@ class Customer {
         this.email = email;
         this.address = address;
         this.type = type;
-        this.taxId = taxId;
         this.notes = notes;
         this.metadata = metadata;
         this.createdAt = createdAt;
@@ -36,6 +35,7 @@ class Customer {
             CLIENT: 'Client',
             TENANT: 'Tenant',
             STUDENT: 'Student',
+            DONOR: 'Donor',
         };
         return types[this.type] || this.type;
     }
@@ -57,7 +57,6 @@ class Customer {
             email: this.email,
             address: this.address,
             type: this.type,
-            taxId: this.taxId,
             notes: this.notes,
             metadata: this.metadata,
             createdAt: this.createdAt,

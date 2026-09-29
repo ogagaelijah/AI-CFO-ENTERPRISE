@@ -1,17 +1,23 @@
 // frontend/src/components/Customers/SummaryCards.jsx
+// v1.1.0-prod — Accepts entityName prop to adapt card titles
+//               (e.g. "Total Donors" on the Donors page).
 
 import { Users, UserCheck } from 'lucide-react';
 
-const SummaryCards = ({ summary }) => {
+const SummaryCards = ({ summary, entityName = 'Customers' }) => {
+  const singular = entityName.endsWith('s')
+    ? entityName.slice(0, -1)
+    : entityName;
+
   const cards = [
     {
-      title: 'Total Customers',
+      title: `Total ${entityName}`,
       value: summary.total || 0,
       icon: Users,
       color: 'blue',
     },
     {
-      title: 'Active Customers',
+      title: `Active ${entityName}`,
       value: summary.active || 0,
       icon: UserCheck,
       color: 'green',

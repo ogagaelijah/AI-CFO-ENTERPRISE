@@ -1,4 +1,6 @@
 // src/interfaces/http/routes/customerRoutes.js
+// v1.1.0-prod — Removed taxId (dropped globally per migration 019).
+//               Cleaned up debug console.log noise.
 
 const express = require('express');
 const router = express.Router();
@@ -52,9 +54,6 @@ router.get('/', async (req, res) => {
         const businessId = req.user.businessId || req.query.businessId;
         const { limit = 50, offset = 0, search, type } = req.query;
 
-        console.log('🔍 [GET /api/customers] businessId:', businessId);
-        console.log('🔍 [GET /api/customers] limit:', limit, 'offset:', offset, 'search:', search, 'type:', type);
-
         if (!businessId) {
             return res.status(400).json({
                 success: false,
@@ -70,13 +69,10 @@ router.get('/', async (req, res) => {
             type: type || null,
         });
 
-        console.log('🔍 [GET /api/customers] result count:', result.customers?.length || 0);
-
         res.json(result);
 
     } catch (error) {
-        console.error('❌ Error fetching customers:', error);
-        console.error('❌ Error stack:', error.stack);
+        console.error('❌ Error fetching customers:', error.message);
         res.status(500).json({
             success: false,
             message: error.message || 'Failed to fetch customers',
@@ -92,9 +88,6 @@ router.get('/:id', async (req, res) => {
         const { id } = req.params;
         const businessId = req.user.businessId || req.query.businessId;
 
-        console.log('🔍 [GET /api/customers/:id] id:', id);
-        console.log('🔍 [GET /api/customers/:id] businessId:', businessId);
-
         if (!businessId) {
             return res.status(400).json({
                 success: false,
@@ -107,8 +100,6 @@ router.get('/:id', async (req, res) => {
             businessId: businessId,
         });
 
-        console.log('🔍 [GET /api/customers/:id] result success:', result.success);
-
         if (!result.success) {
             return res.status(404).json(result);
         }
@@ -116,8 +107,7 @@ router.get('/:id', async (req, res) => {
         res.json(result);
 
     } catch (error) {
-        console.error('❌ Error fetching customer:', error);
-        console.error('❌ Error stack:', error.stack);
+        console.error('❌ Error fetching customer:', error.message);
         res.status(500).json({
             success: false,
             message: error.message || 'Failed to fetch customer',
@@ -153,7 +143,7 @@ router.get('/:id/history', async (req, res) => {
         res.json(result);
 
     } catch (error) {
-        console.error('❌ Error fetching customer history:', error);
+        console.error('❌ Error fetching customer history:', error.message);
         res.status(500).json({
             success: false,
             message: error.message || 'Failed to fetch customer history',
@@ -191,7 +181,7 @@ router.post('/', invalidateAfterWrite, async (req, res) => {
         res.status(201).json(result);
 
     } catch (error) {
-        console.error('❌ Error creating customer:', error);
+        console.error('❌ Error creating customer:', error.message);
         res.status(500).json({
             success: false,
             message: error.message || 'Failed to create customer',
@@ -199,7 +189,8 @@ router.post('/', invalidateAfterWrite, async (req, res) => {
     }
 });
 
-// =============================================// PUT /api/customers/:id - Update customer
+// =============================================
+// PUT /api/customers/:id - Update customer
 // =============================================
 router.put('/:id', invalidateAfterWrite, async (req, res) => {
     try {
@@ -213,7 +204,7 @@ router.put('/:id', invalidateAfterWrite, async (req, res) => {
             });
         }
 
-        const { name, phone, email, address, type, taxId, notes, metadata } = req.body;
+        const { name, phone, email, address, type, notes, metadata } = req.body;
 
         const result = await updateCustomerUseCase.execute({
             id: parseInt(id),
@@ -223,7 +214,6 @@ router.put('/:id', invalidateAfterWrite, async (req, res) => {
             email,
             address,
             type,
-            taxId,
             notes,
             metadata,
         });
@@ -231,7 +221,7 @@ router.put('/:id', invalidateAfterWrite, async (req, res) => {
         res.json(result);
 
     } catch (error) {
-        console.error('❌ Error updating customer:', error);
+        console.error('❌ Error updating customer:', error.message);
         res.status(500).json({
             success: false,
             message: error.message || 'Failed to update customer',
@@ -262,7 +252,7 @@ router.delete('/:id', invalidateAfterWrite, async (req, res) => {
         res.json(result);
 
     } catch (error) {
-        console.error('❌ Error deleting customer:', error);
+        console.error('❌ Error deleting customer:', error.message);
         res.status(500).json({
             success: false,
             message: error.message || 'Failed to delete customer',

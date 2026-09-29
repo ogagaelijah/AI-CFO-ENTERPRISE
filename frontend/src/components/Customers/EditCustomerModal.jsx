@@ -1,4 +1,5 @@
 // frontend/src/components/Customers/EditCustomerModal.jsx
+// v1.1.0-prod — Removed Tax ID field. Added DONOR type.
 
 import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
@@ -10,7 +11,6 @@ const EditCustomerModal = ({ isOpen, customer, onSubmit, onClose, error, setErro
     email: '',
     address: '',
     type: 'CUSTOMER',
-    taxId: '',
     notes: '',
   });
   const [loading, setLoading] = useState(false);
@@ -23,7 +23,6 @@ const EditCustomerModal = ({ isOpen, customer, onSubmit, onClose, error, setErro
         email: customer.email || '',
         address: customer.address || '',
         type: customer.type || 'CUSTOMER',
-        taxId: customer.taxId || '',
         notes: customer.notes || '',
       });
     }
@@ -115,6 +114,7 @@ const EditCustomerModal = ({ isOpen, customer, onSubmit, onClose, error, setErro
                 <option value="CLIENT">Client</option>
                 <option value="TENANT">Tenant</option>
                 <option value="STUDENT">Student</option>
+                <option value="DONOR">Donor</option>
               </select>
             </div>
             <div>
@@ -150,18 +150,6 @@ const EditCustomerModal = ({ isOpen, customer, onSubmit, onClose, error, setErro
                 value={formData.address}
                 onChange={handleChange}
                 rows="2"
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Tax ID / TIN
-              </label>
-              <input
-                type="text"
-                name="taxId"
-                value={formData.taxId}
-                onChange={handleChange}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
             </div>

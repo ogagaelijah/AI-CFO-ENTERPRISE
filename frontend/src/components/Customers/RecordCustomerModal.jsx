@@ -1,20 +1,37 @@
 // frontend/src/components/Customers/RecordCustomerModal.jsx
+// v1.1.0-prod — Removed Tax ID field. Added DONOR type.
+//               Supports initialType prop (locks type when set).
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 
-const RecordCustomerModal = ({ isOpen, onSubmit, onClose, error, setError }) => {
+const RecordCustomerModal = ({ isOpen, onSubmit, onClose, error, setError, initialType = null }) => {
+  const defaultType = initialType || 'CUSTOMER';
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
     email: '',
     address: '',
-    type: 'CUSTOMER',
-    taxId: '',
+    type: defaultType,
     notes: '',
   });
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
+
+  // Reset when opened; respect initialType
+  useEffect(() => {
+    if (isOpen) {
+      setFormData({
+        name: '',
+        phone: '',
+        email: '',
+        address: '',
+        type: initialType || 'CUSTOMER',
+        notes: '',
+      });
+      setStep(1);
+    }
+  }, [isOpen, initialType]);
 
   if (!isOpen) return null;
 
@@ -50,8 +67,7 @@ const RecordCustomerModal = ({ isOpen, onSubmit, onClose, error, setError }) => 
         phone: '',
         email: '',
         address: '',
-        type: 'CUSTOMER',
-        taxId: '',
+        type: initialType || 'CUSTOMER',
         notes: '',
       });
       setStep(1);
@@ -68,8 +84,7 @@ const RecordCustomerModal = ({ isOpen, onSubmit, onClose, error, setError }) => 
       phone: '',
       email: '',
       address: '',
-      type: 'CUSTOMER',
-      taxId: '',
+      type: initialType || 'CUSTOMER',
       notes: '',
     });
     setStep(1);
@@ -104,14 +119,21 @@ const RecordCustomerModal = ({ isOpen, onSubmit, onClose, error, setError }) => 
                 name="type"
                 value={formData.type}
                 onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                disabled={!!initialType}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <option value="CUSTOMER">Customer</option>
                 <option value="PATIENT">Patient</option>
                 <option value="CLIENT">Client</option>
                 <option value="TENANT">Tenant</option>
                 <option value="STUDENT">Student</option>
+                <option value="DONOR">Donor</option>
               </select>
+              {initialType && (
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Locked to {initialType} for this page.
+                </p>
+              )}
             </div>
           </div>
         );
@@ -164,19 +186,6 @@ const RecordCustomerModal = ({ isOpen, onSubmit, onClose, error, setError }) => 
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Tax ID / TIN
-              </label>
-              <input
-                type="text"
-                name="taxId"
-                value={formData.taxId}
-                onChange={handleChange}
-                placeholder="Enter tax ID (optional)"
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Notes
               </label>
               <textarea
@@ -218,10 +227,6 @@ const RecordCustomerModal = ({ isOpen, onSubmit, onClose, error, setError }) => 
                   <span className="font-medium text-gray-700 dark:text-gray-300">Address:</span>{' '}
                   <span className="text-gray-900 dark:text-white">{formData.address || 'Not set'}</span>
                 </p>
-                <p>
-                  <span className="font-medium text-gray-700 dark:text-gray-300">Tax ID:</span>{' '}
-                  <span className="text-gray-900 dark:text-white">{formData.taxId || 'Not set'}</span>
-                </p>
                 {formData.notes && (
                   <p>
                     <span className="font-medium text-gray-700 dark:text-gray-300">Notes:</span>{' '}
@@ -251,6 +256,8 @@ const RecordCustomerModal = ({ isOpen, onSubmit, onClose, error, setError }) => 
     return `${step}/4`;
   };
 
+  const modalTitle = initialType === 'DONOR' ? 'Add Donor' : 'Add Customer';
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
@@ -258,7 +265,7 @@ const RecordCustomerModal = ({ isOpen, onSubmit, onClose, error, setError }) => 
         <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between z-10">
           <div>
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Add Customer
+              {modalTitle}
             </h2>
             <p className="text-sm text-gray-500 dark:text-gray-400">
               {getStepTitle()} ({getStepProgress()})
@@ -311,7 +318,7 @@ const RecordCustomerModal = ({ isOpen, onSubmit, onClose, error, setError }) => 
                   disabled={loading}
                   className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition disabled:opacity-50"
                 >
-                  {loading ? 'Creating...' : 'Create Customer'}
+                  {loading ? 'Creating...' : `Create ${initialType === 'DONOR' ? 'Donor' : 'Customer'}`}
                 </button>
               )}
             </div>

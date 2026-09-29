@@ -1,4 +1,5 @@
 // src/application/useCases/customers/UpdateCustomerUseCase.js
+// v1.1.0-prod — Removed taxId.
 
 class UpdateCustomerUseCase {
     constructor({ customerRepository }) {
@@ -13,7 +14,6 @@ class UpdateCustomerUseCase {
         email,
         address,
         type,
-        taxId,
         notes,
         metadata,
     }) {
@@ -59,7 +59,6 @@ class UpdateCustomerUseCase {
             email: email !== undefined ? email : existingCustomer.email,
             address: address !== undefined ? address : existingCustomer.address,
             type: type || existingCustomer.type,
-            taxId: taxId !== undefined ? taxId : existingCustomer.taxId,
             notes: notes !== undefined ? notes : existingCustomer.notes,
             metadata: metadata || existingCustomer.metadata,
         };

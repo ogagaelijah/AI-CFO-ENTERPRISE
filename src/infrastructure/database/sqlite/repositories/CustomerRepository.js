@@ -1,5 +1,6 @@
 // src/infrastructure/database/sqlite/repositories/CustomerRepository.js
-// Postgres async. Same logic as SQLite.
+// v2.0.0-prod — Removed tax_id (dropped globally per migration 019).
+//               Added DONOR to display type map.
 
 const BaseRepository = require('./BaseRepository');
 
@@ -12,7 +13,6 @@ class Customer {
         email = null,
         address = null,
         type = 'CUSTOMER',
-        taxId = null,
         notes = '',
         metadata = {},
         createdAt = new Date(),
@@ -25,7 +25,6 @@ class Customer {
         this.email = email;
         this.address = address;
         this.type = type;
-        this.taxId = taxId;
         this.notes = notes;
         this.metadata = metadata;
         this.createdAt = createdAt;
@@ -39,6 +38,7 @@ class Customer {
             CLIENT: 'Client',
             TENANT: 'Tenant',
             STUDENT: 'Student',
+            DONOR: 'Donor',
         };
         return types[this.type] || this.type;
     }
@@ -60,7 +60,6 @@ class Customer {
             email: this.email,
             address: this.address,
             type: this.type,
-            taxId: this.taxId,
             notes: this.notes,
             metadata: this.metadata,
             createdAt: this.createdAt,
@@ -77,8 +76,8 @@ class CustomerRepository extends BaseRepository {
     async create(customerData) {
         const result = await this._query(
             `INSERT INTO customers (
-                business_id, name, phone, email, address, type, tax_id, notes, metadata
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+                business_id, name, phone, email, address, type, notes, metadata
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
             [
                 customerData.businessId,
                 customerData.name,
@@ -86,7 +85,6 @@ class CustomerRepository extends BaseRepository {
                 customerData.email || null,
                 customerData.address || null,
                 customerData.type || 'CUSTOMER',
-                customerData.taxId || null,
                 customerData.notes || '',
                 JSON.stringify(customerData.metadata || {}),
             ]
@@ -177,7 +175,6 @@ class CustomerRepository extends BaseRepository {
         if (data.email !== undefined) { fields.push(`email = $${i++}`); values.push(data.email); }
         if (data.address !== undefined) { fields.push(`address = $${i++}`); values.push(data.address); }
         if (data.type !== undefined) { fields.push(`type = $${i++}`); values.push(data.type); }
-        if (data.taxId !== undefined) { fields.push(`tax_id = $${i++}`); values.push(data.taxId); }
         if (data.notes !== undefined) { fields.push(`notes = $${i++}`); values.push(data.notes); }
         if (data.metadata !== undefined) {
             fields.push(`metadata = $${i++}`);
@@ -255,7 +252,6 @@ class CustomerRepository extends BaseRepository {
             email: row.email,
             address: row.address,
             type: row.type,
-            taxId: row.tax_id,
             notes: row.notes,
             metadata: row.metadata ? (typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata) : {},
             createdAt: new Date(row.created_at),

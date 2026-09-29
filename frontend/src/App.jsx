@@ -1,5 +1,5 @@
 // frontend/src/App.jsx
-// v2.0.0 — Adds NGO routes: /pledges, /donations, /donors
+// v2.1.0 — /donors passes initialType="DONOR" to Customers.
 
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from './context/ThemeContext';
@@ -36,8 +36,8 @@ import Classes from './pages/Classes';
 import Enrollments from './pages/Enrollments';
 import Terms from './pages/Terms';
 import Fees from './pages/Fees';
-import Pledges from './pages/Pledges';                        // ← ADDED
-import Donations from './pages/Donations';                    // ← ADDED
+import Pledges from './pages/Pledges';
+import Donations from './pages/Donations';
 
 function App() {
   return (
@@ -132,9 +132,8 @@ function App() {
                 </ProtectedRoute>
               }
             />
-            {/* NGO routes */}
             <Route
-              path="/pledges"                                    // ← ADDED
+              path="/pledges"
               element={
                 <ProtectedRoute>
                   <Pledges />
@@ -142,7 +141,7 @@ function App() {
               }
             />
             <Route
-              path="/donations"                                  // ← ADDED
+              path="/donations"
               element={
                 <ProtectedRoute>
                   <Donations />
@@ -246,10 +245,10 @@ function App() {
               }
             />
             <Route
-              path="/donors"                                     // ← ADDED
+              path="/donors"
               element={
                 <ProtectedRoute>
-                  <Customers />
+                  <Customers initialType="DONOR" />
                 </ProtectedRoute>
               }
             />

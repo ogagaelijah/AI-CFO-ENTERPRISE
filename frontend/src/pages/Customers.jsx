@@ -1,4 +1,6 @@
 // frontend/src/pages/Customers.jsx
+// v1.1.0-prod — Accepts initialType prop. Filters by type when locked.
+//               Adapts titles, button text, and modal behavior.
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -12,15 +14,26 @@ import EditCustomerModal from '../components/Customers/EditCustomerModal';
 import CustomerDetailModal from '../components/Customers/CustomerDetailModal';
 import ConfirmModal from '../components/Customers/ConfirmModal';
 
-const Customers = () => {
+const TYPE_LABELS = {
+  CUSTOMER: { singular: 'Customer', plural: 'Customers' },
+  CLIENT:   { singular: 'Client',   plural: 'Clients' },
+  DONOR:    { singular: 'Donor',    plural: 'Donors' },
+  PATIENT:  { singular: 'Patient',  plural: 'Patients' },
+  TENANT:   { singular: 'Tenant',   plural: 'Tenants' },
+  STUDENT:  { singular: 'Student',  plural: 'Students' },
+};
+
+const Customers = ({ initialType = null }) => {
   const { user } = useAuth();
+  const labels = TYPE_LABELS[initialType] || TYPE_LABELS.CUSTOMER;
+
   const [customers, setCustomers] = useState([]);
   const [summary, setSummary] = useState({
     total: 0,
     active: 0,
   });
   const [isLoading, setIsLoading] = useState(true);
-  
+
   const [showModal, setShowModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -32,26 +45,27 @@ const Customers = () => {
 
   useEffect(() => {
     fetchCustomers();
-  }, []);
+  }, [initialType]);
 
   const fetchCustomers = async () => {
     try {
       setIsLoading(true);
       setError('');
-      const response = await api.get('/customers', {
-        params: {
-          businessId: user?.businessId || user?.id,
-          limit: 100,
-        },
-      });
-      
+      const params = {
+        businessId: user?.businessId || user?.id,
+        limit: 100,
+      };
+      if (initialType) params.type = initialType;
+
+      const response = await api.get('/customers', { params });
+
       if (response.data?.success) {
         const customersData = response.data.customers || [];
         setCustomers(customersData);
-        
+
         const total = customersData.length;
         const active = customersData.filter(c => c.metadata?.status !== 'INACTIVE').length;
-        
+
         setSummary({ total, active });
       }
     } catch (error) {
@@ -95,14 +109,14 @@ const Customers = () => {
 
       if (response.data?.success) {
         setShowModal(false);
-        setSuccess('✅ Customer created successfully!');
+        setSuccess(`✅ ${labels.singular} created successfully!`);
         await fetchCustomers();
       } else {
-        setError(response.data?.message || 'Failed to create customer');
+        setError(response.data?.message || `Failed to create ${labels.singular.toLowerCase()}`);
       }
     } catch (error) {
       console.error('Error creating customer:', error);
-      setError(error.response?.data?.message || 'Failed to create customer');
+      setError(error.response?.data?.message || `Failed to create ${labels.singular.toLowerCase()}`);
     }
   };
 
@@ -119,14 +133,14 @@ const Customers = () => {
       if (response.data?.success) {
         setShowEditModal(false);
         setSelectedCustomer(null);
-        setSuccess('✅ Customer updated successfully!');
+        setSuccess(`✅ ${labels.singular} updated successfully!`);
         await fetchCustomers();
       } else {
-        setError(response.data?.message || 'Failed to update customer');
+        setError(response.data?.message || `Failed to update ${labels.singular.toLowerCase()}`);
       }
     } catch (error) {
       console.error('Error updating customer:', error);
-      setError(error.response?.data?.message || 'Failed to update customer');
+      setError(error.response?.data?.message || `Failed to update ${labels.singular.toLowerCase()}`);
     }
   };
 
@@ -144,14 +158,14 @@ const Customers = () => {
       if (response.data?.success) {
         setShowConfirmModal(false);
         setSelectedCustomer(null);
-        setSuccess('✅ Customer deleted successfully!');
+        setSuccess(`✅ ${labels.singular} deleted successfully!`);
         await fetchCustomers();
       } else {
-        setError(response.data?.message || 'Failed to delete customer');
+        setError(response.data?.message || `Failed to delete ${labels.singular.toLowerCase()}`);
       }
     } catch (error) {
       console.error('Error deleting customer:', error);
-      setError(error.response?.data?.message || 'Failed to delete customer');
+      setError(error.response?.data?.message || `Failed to delete ${labels.singular.toLowerCase()}`);
     }
   };
 
@@ -160,7 +174,9 @@ const Customers = () => {
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading customers...</p>
+          <p className="mt-4 text-gray-600 dark:text-gray-400">
+            Loading {labels.plural.toLowerCase()}...
+          </p>
         </div>
       </div>
     );
@@ -169,8 +185,10 @@ const Customers = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Customers"
-        subtitle="Your customer records"
+        title={labels.plural}
+        subtitle={initialType
+          ? `Your ${labels.plural.toLowerCase()} records`
+          : 'Your customer records'}
         actions={
           <button
             onClick={() => {
@@ -181,7 +199,7 @@ const Customers = () => {
             className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
           >
             <Plus className="w-5 h-5" />
-            <span>Add Customer</span>
+            <span>Add {labels.singular}</span>
           </button>
         }
       />
@@ -205,10 +223,11 @@ const Customers = () => {
         </div>
       )}
 
-      <SummaryCards summary={summary} />
+      <SummaryCards summary={summary} entityName={labels.plural} />
 
       <CustomerTable
         customers={customers}
+        entityName={labels.singular.toLowerCase()}
         onView={fetchCustomerDetail}
         onEdit={(customer) => {
           setSelectedCustomer(customer);
@@ -222,6 +241,7 @@ const Customers = () => {
 
       <RecordCustomerModal
         isOpen={showModal}
+        initialType={initialType}
         onSubmit={handleCreate}
         onClose={() => setShowModal(false)}
         error={error}
@@ -244,6 +264,7 @@ const Customers = () => {
         isOpen={showDetailModal}
         customer={selectedCustomer}
         isLoading={isLoadingDetail}
+        entityName={labels.singular}
         onClose={() => {
           setShowDetailModal(false);
           setSelectedCustomer(null);

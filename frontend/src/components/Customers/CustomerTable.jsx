@@ -1,14 +1,18 @@
 // frontend/src/components/Customers/CustomerTable.jsx
+// v1.1.0-prod — Removed Tax ID column. Added DONOR badge.
+//               Accepts entityName prop for empty-state wording.
 
-import { Eye, Edit2, Trash2, CreditCard } from 'lucide-react';
+import { Eye, Edit2, Trash2 } from 'lucide-react';
 
-const CustomerTable = ({ customers, onView, onEdit, onDelete }) => {
+const CustomerTable = ({ customers, onView, onEdit, onDelete, entityName = 'customer' }) => {
   if (!customers || customers.length === 0) {
+    const plural = entityName === 'donor' ? 'donors' : 'customers';
+    const singular = entityName === 'donor' ? 'donor' : 'customer';
     return (
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-8 text-center">
-        <p className="text-gray-500 dark:text-gray-400">No customers found</p>
+        <p className="text-gray-500 dark:text-gray-400">No {plural} found</p>
         <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
-          Click "Add Customer" to create your first customer.
+          Click &ldquo;Add {singular.charAt(0).toUpperCase() + singular.slice(1)}&rdquo; to create your first {singular}.
         </p>
       </div>
     );
@@ -21,6 +25,7 @@ const CustomerTable = ({ customers, onView, onEdit, onDelete }) => {
       CLIENT: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400',
       TENANT: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400',
       STUDENT: 'bg-pink-100 dark:bg-pink-900/30 text-pink-700 dark:text-pink-400',
+      DONOR: 'bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400',
     };
     return types[type] || types.CUSTOMER;
   };
@@ -39,9 +44,6 @@ const CustomerTable = ({ customers, onView, onEdit, onDelete }) => {
               </th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-600 dark:text-gray-300">
                 Email
-              </th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-600 dark:text-gray-300">
-                Tax ID
               </th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-600 dark:text-gray-300">
                 Type
@@ -65,9 +67,6 @@ const CustomerTable = ({ customers, onView, onEdit, onDelete }) => {
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
                   {customer.email || '-'}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
-                  {customer.taxId || '-'}
                 </td>
                 <td className="px-4 py-3 text-sm">
                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${getTypeBadge(customer.type)}`}>

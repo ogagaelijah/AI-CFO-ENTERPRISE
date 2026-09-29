@@ -1,12 +1,21 @@
 // src/application/useCases/customers/CreateCustomerUseCase.js
+// v1.1.0-prod — Removed taxId. Added DONOR to valid types.
 
 class CreateCustomerUseCase {
     constructor({ customerRepository }) {
         this.customerRepository = customerRepository;
     }
 
-    async execute({ businessId, name, phone = null, email = null, address = null, type = 'CUSTOMER', taxId = null, notes = '', metadata = {} }) {
-        // ✅ Validate businessId
+    async execute({
+        businessId,
+        name,
+        phone = null,
+        email = null,
+        address = null,
+        type = 'CUSTOMER',
+        notes = '',
+        metadata = {},
+    }) {
         if (!businessId) {
             throw new Error('Business ID is required');
         }
@@ -15,7 +24,7 @@ class CreateCustomerUseCase {
             throw new Error('Customer name is required');
         }
 
-        const validTypes = ['CUSTOMER', 'PATIENT', 'CLIENT', 'TENANT', 'STUDENT'];
+        const validTypes = ['CUSTOMER', 'PATIENT', 'CLIENT', 'TENANT', 'STUDENT', 'DONOR'];
         if (!validTypes.includes(type)) {
             throw new Error(`Invalid type. Must be one of: ${validTypes.join(', ')}`);
         }
@@ -38,7 +47,6 @@ class CreateCustomerUseCase {
             email,
             address,
             type,
-            taxId,
             notes,
             metadata,
         });

@@ -1,11 +1,13 @@
 // frontend/src/components/Customers/CustomerDetailModal.jsx
+// v1.1.0-prod — Removed Tax ID display. Added DONOR badge.
+//               Accepts entityName prop for header wording.
 
 import { useState, useEffect } from 'react';
-import { X, Phone, Mail, MapPin, FileText, Calendar, CreditCard } from 'lucide-react';
+import { X, Phone, Mail, MapPin, FileText, Calendar } from 'lucide-react';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 
-const CustomerDetailModal = ({ isOpen, customer, isLoading, onClose }) => {
+const CustomerDetailModal = ({ isOpen, customer, isLoading, onClose, entityName = 'Customer' }) => {
   const { user } = useAuth();
   const [history, setHistory] = useState(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -20,16 +22,14 @@ const CustomerDetailModal = ({ isOpen, customer, isLoading, onClose }) => {
     if (!customer) return;
     try {
       setLoadingHistory(true);
-      console.log('🔍 Fetching history for customer ID:', customer.id);
       const response = await api.get(`/customers/${customer.id}/history`, {
         params: { businessId: user?.businessId || user?.id },
       });
-      console.log('🔍 History response:', response.data);
       if (response.data?.success) {
         setHistory(response.data);
       }
     } catch (error) {
-      console.error('❌ Error fetching customer history:', error);
+      console.error('❌ Error fetching customer history:', error.message);
     } finally {
       setLoadingHistory(false);
     }
@@ -58,6 +58,7 @@ const CustomerDetailModal = ({ isOpen, customer, isLoading, onClose }) => {
       CLIENT: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400',
       TENANT: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400',
       STUDENT: 'bg-pink-100 dark:bg-pink-900/30 text-pink-700 dark:text-pink-400',
+      DONOR: 'bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400',
     };
     return types[type] || types.CUSTOMER;
   };
@@ -68,7 +69,7 @@ const CustomerDetailModal = ({ isOpen, customer, isLoading, onClose }) => {
         {/* Header */}
         <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between z-10">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Customer Details
+            {entityName} Details
           </h2>
           <button
             onClick={onClose}
@@ -83,7 +84,7 @@ const CustomerDetailModal = ({ isOpen, customer, isLoading, onClose }) => {
           {/* Name & Type */}
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Customer</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{entityName}</p>
               <p className="text-lg font-semibold text-gray-900 dark:text-white">{customer.name}</p>
             </div>
             <span className={`px-2 py-1 rounded-full text-xs font-medium ${getTypeBadge(customer.type)}`}>
@@ -118,17 +119,6 @@ const CustomerDetailModal = ({ isOpen, customer, isLoading, onClose }) => {
               <div>
                 <p className="text-sm text-gray-500 dark:text-gray-400">Address</p>
                 <p className="text-gray-900 dark:text-white">{customer.address}</p>
-              </div>
-            </div>
-          )}
-
-          {/* Tax ID */}
-          {customer.taxId && (
-            <div className="flex items-start space-x-3">
-              <CreditCard className="w-5 h-5 text-gray-400 dark:text-gray-500 mt-0.5" />
-              <div>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Tax ID / TIN</p>
-                <p className="text-gray-900 dark:text-white">{customer.taxId}</p>
               </div>
             </div>
           )}
