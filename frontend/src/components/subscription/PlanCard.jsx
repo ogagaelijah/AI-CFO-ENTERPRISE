@@ -1,5 +1,7 @@
 // frontend/src/components/subscription/PlanCard.jsx
-// v1.1.0-prod — Plan card with accessibility improvements.
+// v1.2.0-prod — Distinguishes an active current plan from an expired one.
+//               Expired current plan shows an enabled "Renew" button so
+//               read-only users can resubscribe to the same tier.
 
 import { Check } from 'lucide-react';
 
@@ -55,13 +57,18 @@ const PlanCard = ({
   plan,
   billingCycle = 'monthly',
   currentPlanId = null,
+  isExpired = false,   // NEW — true when user's plan is current but no longer active
   onSelect,
 }) => {
   const pricing = plan.pricing || {};
   const isYearly = billingCycle === 'yearly';
   const amount = isYearly ? pricing.yearly : pricing.monthly;
   const isPopular = plan.id === 'pro';
+
   const isCurrent = plan.id === currentPlanId;
+  const isCurrentActive = isCurrent && !isExpired;   // truly live, disable button
+  const isCurrentExpired = isCurrent && isExpired;   // needs renewal, enable button
+
   const discount = pricing.yearlyDiscountPercent || 0;
   const savings = pricing.yearlySavings || 0;
 
@@ -69,6 +76,18 @@ const PlanCard = ({
     (k) => plan.features[k]
   );
   const limitKeys = Object.keys(plan.limits || {});
+
+  const buttonLabel = isCurrentActive
+    ? 'Current Plan'
+    : isCurrentExpired
+      ? `Renew ${plan.name}`
+      : `Choose ${plan.name}`;
+
+  const ariaLabel = isCurrentActive
+    ? `${plan.name} is your current plan`
+    : isCurrentExpired
+      ? `Renew your ${plan.name} plan`
+      : `Choose ${plan.name} plan`;
 
   return (
     <div
@@ -88,12 +107,21 @@ const PlanCard = ({
         </span>
       )}
 
-      {isCurrent && (
+      {isCurrentActive && (
         <span
           aria-label="Your current plan"
           className="absolute top-4 right-4 px-3 py-1 text-xs font-medium text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/30 rounded-full"
         >
           Current Plan
+        </span>
+      )}
+
+      {isCurrentExpired && (
+        <span
+          aria-label="Your plan has expired"
+          className="absolute top-4 right-4 px-3 py-1 text-xs font-medium text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/30 rounded-full"
+        >
+          Expired
         </span>
       )}
 
@@ -137,20 +165,20 @@ const PlanCard = ({
       <button
         type="button"
         onClick={() => onSelect?.(plan.id)}
-        disabled={isCurrent}
-        aria-current={isCurrent ? 'true' : undefined}
-        aria-label={
-          isCurrent ? `${plan.name} is your current plan` : `Choose ${plan.name} plan`
-        }
+        disabled={isCurrentActive}
+        aria-current={isCurrentActive ? 'true' : undefined}
+        aria-label={ariaLabel}
         className={`mt-6 w-full py-3 rounded-lg font-medium transition ${
-          isCurrent
+          isCurrentActive
             ? 'bg-gray-100 dark:bg-slate-700 text-gray-400 dark:text-slate-500 cursor-not-allowed'
-            : isPopular
-              ? 'bg-primary-600 hover:bg-primary-700 text-white shadow-md hover:shadow-lg'
-              : 'bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-slate-600'
+            : isCurrentExpired
+              ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-md hover:shadow-lg'
+              : isPopular
+                ? 'bg-primary-600 hover:bg-primary-700 text-white shadow-md hover:shadow-lg'
+                : 'bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-slate-600'
         }`}
       >
-        {isCurrent ? 'Current Plan' : `Choose ${plan.name}`}
+        {buttonLabel}
       </button>
 
       <div className="mt-6 pt-6 border-t border-gray-200 dark:border-slate-700 space-y-2">

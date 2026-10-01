@@ -1,17 +1,7 @@
 // frontend/src/pages/Subscription.jsx
-// v2.2.0-prod — Paystack migration; response shape updated
-//
-// v2.2.0 change — the backend /payment/initialize response shape changed when
-// we migrated from Flutterwave to Paystack:
-//
-//   old: { success, data: { link: "https://checkout.flutterwave.com/..." } }
-//   new: { success, data: { authorization_url: "https://checkout.paystack.com/...",
-//                           access_code, reference, amount, plan, billingCycle } }
-//
-// The old code read res.data.data.link and redirected. That field no longer
-// exists, so the upgrade button was silently broken. Now we delegate the
-// redirect to openCheckout() from the payment service — it reads
-// data.authorization_url and handles the shape change centrally.
+// v2.3.0-prod — Passes isExpired to PlanCard so read-only users can renew
+//               their own tier. Not a full rewrite — one new derived value
+//               plus prop pass-through.
 
 import { useState, useEffect } from 'react';
 import { Loader2, Crown } from 'lucide-react';
@@ -33,6 +23,11 @@ const Subscription = () => {
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState(null);
   const [error, setError] = useState('');
+
+  // A plan is "expired" when it's the user's current plan AND the account is
+  // in read-only state (trial ended, subscription lapsed, etc). In that case
+  // the button must stay clickable so the user can renew the same tier.
+  const isCurrentPlanExpired = isReadOnly;
 
   useEffect(() => {
     let cancelled = false;
@@ -170,6 +165,7 @@ const Subscription = () => {
                 plan={p}
                 billingCycle={billingCycle}
                 currentPlanId={currentPlanId}
+                isExpired={isCurrentPlanExpired}
                 onSelect={handleSelectPlan}
               />
               {paying === p.id && (
