@@ -1,7 +1,7 @@
 // frontend/src/context/AuthContext.jsx
-// v4.0.0-prod — Stores the JWT in localStorage after login/register,
-//               clears it on logout and 401. Works alongside cookies
-//               so browsers that block cross-site cookies still work.
+// v4.1.0-prod — Merges business.name into user.businessName so consumers
+//               (e.g. receipts) can access it without a second fetch.
+//               Everything else identical to v4.0.0.
 
 import {
   createContext,
@@ -74,6 +74,17 @@ const FALLBACK_PLAN = {
   daysRemaining: 0,
   trialEndDate: null,
   endDate: null,
+};
+
+// Merge business fields into a user object.
+// Only sets fields when present — never overwrites with undefined.
+const mergeBusinessFields = (userData, business) => {
+  if (!userData) return userData;
+  if (!business) return userData;
+  if (business.id) userData.businessId = business.id;
+  if (business.name) userData.businessName = business.name;
+  if (business.industry) userData.industry = business.industry;
+  return userData;
 };
 
 export const AuthProvider = ({ children }) => {
@@ -178,10 +189,10 @@ export const AuthProvider = ({ children }) => {
         if (cancelled) return;
 
         if (response.data?.user) {
-          const userData = response.data.user;
-          if (response.data.business?.id) {
-            userData.businessId = response.data.business.id;
-          }
+          const userData = mergeBusinessFields(
+            response.data.user,
+            response.data.business
+          );
           userData.planData = await fetchPlan();
           if (cancelled) return;
 
@@ -216,11 +227,10 @@ export const AuthProvider = ({ children }) => {
     }
 
     if (response.data?.user) {
-      const newUser = response.data.user;
-
-      if (response.data.business?.id) {
-        newUser.businessId = response.data.business.id;
-      }
+      const newUser = mergeBusinessFields(
+        response.data.user,
+        response.data.business
+      );
 
       if (response.data.trial) {
         newUser.planData = {
@@ -266,11 +276,10 @@ export const AuthProvider = ({ children }) => {
     }
 
     if (response.data?.user) {
-      const userData = response.data.user;
-
-      if (response.data.business?.id) {
-        userData.businessId = response.data.business.id;
-      }
+      const userData = mergeBusinessFields(
+        response.data.user,
+        response.data.business
+      );
 
       userData.planData = await fetchPlan({ force: true });
 

@@ -1,7 +1,14 @@
 // frontend/src/components/Sales/SaleDetailModal.jsx
-import { X } from 'lucide-react';
+// v1.1.0-prod — Added Print Receipt + Download PDF actions.
+//               Receipt shows customer-facing fields only (no COGS/profit).
 
-const SaleDetailModal = ({ isOpen, sale, isLoading, onClose }) => {
+import { X, Printer, Download } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { printSaleReceipt, downloadSaleReceiptPDF } from '../../utils/saleReceipt';
+
+const SaleDetailModal = ({ isOpen, sale, isLoading, onClose, businessInfo = null }) => {
+  const { user } = useAuth();
+
   if (!isOpen) return null;
 
   if (isLoading) {
@@ -19,16 +26,38 @@ const SaleDetailModal = ({ isOpen, sale, isLoading, onClose }) => {
   if (!sale) return null;
 
   const items = sale.items || [];
-  const statusColor = sale.payment_status === 'PAID' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
-                      sale.payment_status === 'PARTIAL' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
-                      'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
+  const statusColor =
+    sale.payment_status === 'PAID'
+      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+      : sale.payment_status === 'PARTIAL'
+        ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
+        : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
+
+  // Resolve business info: explicit prop wins, then auth user fields
+  const resolvedBusinessInfo = businessInfo || {
+    businessName: user?.businessName || user?.business_name || null,
+    businessAddress: user?.businessAddress || user?.business_address || null,
+    businessPhone: user?.businessPhone || user?.business_phone || null,
+    currency: '₦',
+  };
+
+  const handlePrint = () => {
+    printSaleReceipt(sale, resolvedBusinessInfo);
+  };
+
+  const handleDownloadPDF = () => {
+    downloadSaleReceiptPDF(sale, resolvedBusinessInfo);
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-slate-700 sticky top-0 bg-white dark:bg-slate-800 z-10">
           <h2 className="text-xl font-bold text-gray-900 dark:text-white">Sale Details</h2>
-          <button onClick={onClose} className="p-1 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition">
+          <button
+            onClick={onClose}
+            className="p-1 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition"
+          >
             <X className="w-6 h-6 text-gray-500 dark:text-gray-400" />
           </button>
         </div>
@@ -38,11 +67,15 @@ const SaleDetailModal = ({ isOpen, sale, isLoading, onClose }) => {
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
               <p className="text-gray-500 dark:text-gray-400">Customer</p>
-              <p className="font-medium text-gray-900 dark:text-white">{sale.customer_name || 'Walk-in'}</p>
+              <p className="font-medium text-gray-900 dark:text-white">
+                {sale.customer_name || 'Walk-in'}
+              </p>
             </div>
             <div>
               <p className="text-gray-500 dark:text-gray-400">Payment Status</p>
-              <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor}`}>{sale.payment_status}</span>
+              <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor}`}>
+                {sale.payment_status}
+              </span>
             </div>
             <div>
               <p className="text-gray-500 dark:text-gray-400">Date</p>
@@ -52,7 +85,9 @@ const SaleDetailModal = ({ isOpen, sale, isLoading, onClose }) => {
             </div>
             <div>
               <p className="text-gray-500 dark:text-gray-400">Invoice #</p>
-              <p className="font-medium text-gray-900 dark:text-white">{sale.invoice_no || `#${sale.id}`}</p>
+              <p className="font-medium text-gray-900 dark:text-white">
+                {sale.invoice_no || `#${sale.id}`}
+              </p>
             </div>
           </div>
 
@@ -73,7 +108,9 @@ const SaleDetailModal = ({ isOpen, sale, isLoading, onClose }) => {
               <tbody className="divide-y divide-gray-200 dark:divide-slate-700">
                 {items.length === 0 ? (
                   <tr>
-                    <td colSpan="7" className="px-3 py-4 text-center text-gray-500 dark:text-gray-400">No items</td>
+                    <td colSpan="7" className="px-3 py-4 text-center text-gray-500 dark:text-gray-400">
+                      No items
+                    </td>
                   </tr>
                 ) : (
                   items.map((item, idx) => {
@@ -87,11 +124,25 @@ const SaleDetailModal = ({ isOpen, sale, isLoading, onClose }) => {
                       <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-slate-700/50">
                         <td className="px-3 py-2 text-gray-900 dark:text-white">{item.name}</td>
                         <td className="px-3 py-2 text-center text-gray-600 dark:text-gray-400">{qty}</td>
-                        <td className="px-3 py-2 text-right text-gray-600 dark:text-gray-400">₦{cost.toLocaleString()}</td>
-                        <td className="px-3 py-2 text-right text-gray-600 dark:text-gray-400">₦{sell.toLocaleString()}</td>
-                        <td className="px-3 py-2 text-right font-medium text-gray-900 dark:text-white">₦{total.toLocaleString()}</td>
-                        <td className="px-3 py-2 text-right font-medium text-orange-600 dark:text-orange-400">₦{cogs.toLocaleString()}</td>
-                        <td className={`px-3 py-2 text-right font-medium ${profit >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                        <td className="px-3 py-2 text-right text-gray-600 dark:text-gray-400">
+                          ₦{cost.toLocaleString()}
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-600 dark:text-gray-400">
+                          ₦{sell.toLocaleString()}
+                        </td>
+                        <td className="px-3 py-2 text-right font-medium text-gray-900 dark:text-white">
+                          ₦{total.toLocaleString()}
+                        </td>
+                        <td className="px-3 py-2 text-right font-medium text-orange-600 dark:text-orange-400">
+                          ₦{cogs.toLocaleString()}
+                        </td>
+                        <td
+                          className={`px-3 py-2 text-right font-medium ${
+                            profit >= 0
+                              ? 'text-green-600 dark:text-green-400'
+                              : 'text-red-600 dark:text-red-400'
+                          }`}
+                        >
                           ₦{profit.toLocaleString()}
                         </td>
                       </tr>
@@ -101,10 +152,22 @@ const SaleDetailModal = ({ isOpen, sale, isLoading, onClose }) => {
               </tbody>
               <tfoot className="bg-gray-50 dark:bg-slate-700 font-bold">
                 <tr>
-                  <td colSpan="4" className="px-3 py-2 text-right text-gray-900 dark:text-white">Totals:</td>
-                  <td className="px-3 py-2 text-right text-blue-600 dark:text-blue-400">₦{(sale.total_price || 0).toLocaleString()}</td>
-                  <td className="px-3 py-2 text-right text-orange-600 dark:text-orange-400">₦{(sale.cogs || 0).toLocaleString()}</td>
-                  <td className={`px-3 py-2 text-right ${(sale.gross_profit || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                  <td colSpan="4" className="px-3 py-2 text-right text-gray-900 dark:text-white">
+                    Totals:
+                  </td>
+                  <td className="px-3 py-2 text-right text-blue-600 dark:text-blue-400">
+                    ₦{(sale.total_price || 0).toLocaleString()}
+                  </td>
+                  <td className="px-3 py-2 text-right text-orange-600 dark:text-orange-400">
+                    ₦{(sale.cogs || 0).toLocaleString()}
+                  </td>
+                  <td
+                    className={`px-3 py-2 text-right ${
+                      (sale.gross_profit || 0) >= 0
+                        ? 'text-green-600 dark:text-green-400'
+                        : 'text-red-600 dark:text-red-400'
+                    }`}
+                  >
                     ₦{(sale.gross_profit || 0).toLocaleString()}
                   </td>
                 </tr>
@@ -119,8 +182,26 @@ const SaleDetailModal = ({ isOpen, sale, isLoading, onClose }) => {
             </p>
           )}
 
-          <div className="flex justify-end pt-4 border-t border-gray-200 dark:border-slate-700">
+          {/* Footer actions */}
+          <div className="flex flex-col sm:flex-row sm:justify-end gap-2 pt-4 border-t border-gray-200 dark:border-slate-700">
             <button
+              type="button"
+              onClick={handleDownloadPDF}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg transition"
+            >
+              <Download className="w-4 h-4" />
+              Download PDF
+            </button>
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg transition shadow-sm"
+            >
+              <Printer className="w-4 h-4" />
+              Print Receipt
+            </button>
+            <button
+              type="button"
               onClick={onClose}
               className="px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg transition"
             >
