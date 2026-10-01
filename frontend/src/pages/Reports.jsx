@@ -1,9 +1,15 @@
 // frontend/src/pages/Reports.jsx
+// v1.2.0-prod — Keeps raw backend response in a separate state variable
+//               so exports get the shape exportService.js expects
+//               (revenue.sales, costs.purchases, transactions.sales, …).
+//               UI continues to consume the mapped shape.
+
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Calendar, RefreshCw } from 'lucide-react';
+import { Calendar, RefreshCw, FileDown, FileSpreadsheet, Loader2 } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import { reportApi } from '../services/reportService';
+import { exportToPDF, exportToExcel } from '../services/exportService';
 import {
   mapDailyReport,
   mapWeeklyReport,
@@ -41,8 +47,17 @@ const Reports = () => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [activeReport, setActiveReport] = useState('executive');
+
+  // Mapped shape — consumed by the UI ReportComponent.
   const [reportData, setReportData] = useState(null);
+
+  // Raw backend shape — consumed by exportToPDF / exportToExcel.
+  // exportService.js reads fields like revenue.sales, costs.purchases,
+  // transactions.sales, which exist only on the raw response.
+  const [rawReportData, setRawReportData] = useState(null);
+
   const [error, setError] = useState('');
+  const [exporting, setExporting] = useState(null); // 'pdf' | 'excel' | null
 
   const today = new Date().toISOString().split('T')[0];
   const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
@@ -64,7 +79,6 @@ const Reports = () => {
       setError('');
 
       const report = getCurrentReport();
-      const businessId = user?.businessId || user?.id;
       let response;
       let rawData;
 
@@ -109,18 +123,21 @@ const Reports = () => {
       if (response.data?.success && rawData) {
         const mappedData = report.mapper(rawData);
         setReportData(mappedData);
+        setRawReportData(rawData);       // ← store raw for exports
       } else {
         setError(response.data?.message || 'Failed to load report');
         setReportData(null);
+        setRawReportData(null);
       }
     } catch (error) {
       console.error('Error fetching report:', error);
       setError(error.response?.data?.message || 'Failed to load report');
       setReportData(null);
+      setRawReportData(null);
     } finally {
       setLoading(false);
     }
-  }, [activeReport, period, date, balanceSheetDate, user]);
+  }, [activeReport, period, date, balanceSheetDate]);
 
   useEffect(() => {
     fetchReport();
@@ -129,10 +146,40 @@ const Reports = () => {
   const handleReportChange = (reportId) => {
     setActiveReport(reportId);
     setReportData(null);
+    setRawReportData(null);
     setError('');
   };
 
+  const handleExportPDF = async () => {
+    if (!rawReportData || exporting) return;
+    try {
+      setExporting('pdf');
+      await new Promise((r) => setTimeout(r, 50)); // let the spinner paint
+      exportToPDF(rawReportData, activeReport);
+    } catch (err) {
+      console.error('Export PDF failed:', err);
+      setError('Failed to generate PDF. Please try again.');
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const handleExportExcel = async () => {
+    if (!rawReportData || exporting) return;
+    try {
+      setExporting('excel');
+      await new Promise((r) => setTimeout(r, 50));
+      exportToExcel(rawReportData, activeReport);
+    } catch (err) {
+      console.error('Export Excel failed:', err);
+      setError('Failed to generate Excel file. Please try again.');
+    } finally {
+      setExporting(null);
+    }
+  };
+
   const ReportComponent = getCurrentReport().component;
+  const canExport = Boolean(rawReportData) && !loading;
 
   const formatCurrency = (amount) => {
     const num = Number(amount);
@@ -166,13 +213,43 @@ const Reports = () => {
         title="Reports"
         subtitle="Financial statements and business reports"
         actions={
-          <button
-            onClick={fetchReport}
-            className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
-            title="Refresh"
-          >
-            <RefreshCw className="w-5 h-5" />
-          </button>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={handleExportPDF}
+              disabled={!canExport || exporting !== null}
+              className="flex items-center space-x-2 px-3 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+              title={canExport ? 'Export as PDF' : 'Generate a report first'}
+            >
+              {exporting === 'pdf' ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <FileDown className="w-4 h-4" />
+              )}
+              <span className="hidden sm:inline">Export PDF</span>
+            </button>
+
+            <button
+              onClick={handleExportExcel}
+              disabled={!canExport || exporting !== null}
+              className="flex items-center space-x-2 px-3 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+              title={canExport ? 'Export as Excel' : 'Generate a report first'}
+            >
+              {exporting === 'excel' ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <FileSpreadsheet className="w-4 h-4" />
+              )}
+              <span className="hidden sm:inline">Export Excel</span>
+            </button>
+
+            <button
+              onClick={fetchReport}
+              className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
+              title="Refresh"
+            >
+              <RefreshCw className="w-5 h-5" />
+            </button>
+          </div>
         }
       />
 
