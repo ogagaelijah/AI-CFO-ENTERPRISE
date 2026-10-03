@@ -1,6 +1,12 @@
 // src/interfaces/http/routes/customerRoutes.js
-// v1.1.0-prod — Removed taxId (dropped globally per migration 019).
-//               Cleaned up debug console.log noise.
+// v1.2.0-prod — 30s read cache on list endpoint. Removed taxId (migration 019).
+//
+// v1.2.0 changes:
+//   - GET / (list) now cached for 30s (+60s stale-while-revalidate).
+//     Key: aicfo:customers:{businessId}:{limit}:{offset}:{search}:{type}.
+//   - Single-customer, history, create, update, delete: unchanged.
+//   - Cache auto-invalidated on any successful write via
+//     invalidateAfterWrite (already mounted on POST/PUT/DELETE).
 
 const express = require('express');
 const router = express.Router();
@@ -13,11 +19,10 @@ const UpdateCustomerUseCase = require('../../../application/useCases/customers/U
 const DeleteCustomerUseCase = require('../../../application/useCases/customers/DeleteCustomerUseCase');
 const { authMiddleware } = require('../middleware/authMiddleware');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
+const { cacheService } = require('../../../infrastructure/services/cache/CacheService');
 
-// Initialize repository
 const customerRepo = new CustomerRepository();
 
-// Initialize use cases
 const getCustomersUseCase = new GetCustomersUseCase({
     customerRepository: customerRepo,
 });
@@ -46,6 +51,8 @@ const deleteCustomerUseCase = new DeleteCustomerUseCase({
 
 router.use(authMiddleware);
 
+const CUSTOMERS_CACHE_TTL_MS = 30_000;
+
 // =============================================
 // GET /api/customers - Get all customers
 // =============================================
@@ -61,16 +68,26 @@ router.get('/', async (req, res) => {
             });
         }
 
-        const result = await getCustomersUseCase.execute({
-            businessId,
-            limit: parseInt(limit),
-            offset: parseInt(offset),
-            search: search || null,
-            type: type || null,
-        });
+        const parsedLimit = parseInt(limit);
+        const parsedOffset = parseInt(offset);
+        const normalizedSearch = search || '';
+        const normalizedType = type || '';
 
-        res.json(result);
+        const cacheKey = `aicfo:customers:${businessId}:${parsedLimit}:${parsedOffset}:${normalizedSearch}:${normalizedType}`;
 
+        const payload = await cacheService.getOrSet(
+            cacheKey,
+            () => getCustomersUseCase.execute({
+                businessId,
+                limit: parsedLimit,
+                offset: parsedOffset,
+                search: normalizedSearch || null,
+                type: normalizedType || null,
+            }),
+            CUSTOMERS_CACHE_TTL_MS
+        );
+
+        res.json(payload);
     } catch (error) {
         console.error('❌ Error fetching customers:', error.message);
         res.status(500).json({
@@ -105,7 +122,6 @@ router.get('/:id', async (req, res) => {
         }
 
         res.json(result);
-
     } catch (error) {
         console.error('❌ Error fetching customer:', error.message);
         res.status(500).json({
@@ -141,7 +157,6 @@ router.get('/:id/history', async (req, res) => {
         }
 
         res.json(result);
-
     } catch (error) {
         console.error('❌ Error fetching customer history:', error.message);
         res.status(500).json({
@@ -179,7 +194,6 @@ router.post('/', invalidateAfterWrite, async (req, res) => {
         });
 
         res.status(201).json(result);
-
     } catch (error) {
         console.error('❌ Error creating customer:', error.message);
         res.status(500).json({
@@ -219,7 +233,6 @@ router.put('/:id', invalidateAfterWrite, async (req, res) => {
         });
 
         res.json(result);
-
     } catch (error) {
         console.error('❌ Error updating customer:', error.message);
         res.status(500).json({
@@ -250,7 +263,6 @@ router.delete('/:id', invalidateAfterWrite, async (req, res) => {
         });
 
         res.json(result);
-
     } catch (error) {
         console.error('❌ Error deleting customer:', error.message);
         res.status(500).json({

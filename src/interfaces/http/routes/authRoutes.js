@@ -1,8 +1,9 @@
 // src/interfaces/http/routes/authRoutes.js
-// v3.6.0-prod — Added `token` to register + login JSON bodies so the
-//               frontend can use Bearer auth alongside cookies. This
-//               enables testers on browsers that block cross-site
-//               cookies to log in successfully.
+// v3.7.1-prod — loginIpLimiter removed from /login (now runs at the server
+//               layer, BEFORE express.json(), so rejected floods short-
+//               circuit without body parsing). Only loginEmailLimiter
+//               remains on the route, because it needs the parsed body.
+//               Everything else unchanged from v3.7.0.
 
 const express = require('express');
 const router = express.Router();
@@ -16,6 +17,13 @@ const SubscriptionRepository = require('../../../infrastructure/database/sqlite/
 const SecurityEventService = require('../../../infrastructure/services/security/SecurityEventService');
 const { withTransaction } = require('../../../infrastructure/database/sqlite/connection');
 const plans = require('../../../config/plans');
+
+const {
+  loginEmailLimiter,
+  registerLimiter,
+  forgotPasswordLimiter,
+  strictLimiter,
+} = require('../middleware/rateLimiter');
 
 const userRepo = new UserRepository();
 const businessRepo = new BusinessRepository();
@@ -76,8 +84,9 @@ const clientUa = (req) => req.headers['user-agent'] || 'unknown';
 
 // ─────────────────────────────────────────────
 // POST /register
+// Limited to 5 per hour per IP (registerLimiter).
 // ─────────────────────────────────────────────
-router.post('/register', async (req, res) => {
+router.post('/register', registerLimiter, async (req, res) => {
   try {
     const { fullName, email, phone, password, businessName, industry } = req.body;
 
@@ -210,8 +219,12 @@ router.post('/register', async (req, res) => {
 
 // ─────────────────────────────────────────────
 // POST /login
+// IP limiter (20/15min per IP) runs at the SERVER layer, BEFORE
+// express.json(), so rejected floods short-circuit before body parsing.
+// Email limiter (10/15min per email) runs here, because it needs
+// req.body.email from the parsed body.
 // ─────────────────────────────────────────────
-router.post('/login', async (req, res) => {
+router.post('/login', loginEmailLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -328,6 +341,26 @@ router.post('/logout', (req, res) => {
     sameSite: isDev ? 'lax' : 'none',
   });
   return res.json({ success: true, message: 'Logged out successfully' });
+});
+
+// ─────────────────────────────────────────────
+// POST /forgot-password  (placeholder for Phase 4)
+// ─────────────────────────────────────────────
+router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
+  return res.status(501).json({
+    success: false,
+    message: 'Password reset is not yet enabled. Coming soon.',
+  });
+});
+
+// ─────────────────────────────────────────────
+// POST /reset-password (placeholder for Phase 4)
+// ─────────────────────────────────────────────
+router.post('/reset-password', strictLimiter, async (req, res) => {
+  return res.status(501).json({
+    success: false,
+    message: 'Password reset is not yet enabled. Coming soon.',
+  });
 });
 
 module.exports = router;

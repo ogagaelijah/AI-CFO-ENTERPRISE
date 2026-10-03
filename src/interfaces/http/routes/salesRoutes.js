@@ -1,5 +1,12 @@
 // src/interfaces/http/routes/salesRoutes.js
-// v2.0.0-prod — multi-tenant aware
+// v2.1.0-prod — multi-tenant aware + 30s read cache for GET /
+//
+// v2.1.0 changes:
+//   - GET / cached for 30s (+60s stale-while-revalidate) via
+//     cacheService.getOrSet. Key: aicfo:sales:{businessId}.
+//   - Cache auto-invalidated by invalidateAfterWrite on any successful
+//     POST/PUT/DELETE under this business.
+//   - Same response shape. No API contract change.
 
 const express = require('express');
 const router = express.Router();
@@ -11,6 +18,7 @@ const CustomerRepository = require('../../../infrastructure/database/sqlite/repo
 const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository');
 const { authMiddleware } = require('../middleware/authMiddleware');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
+const { cacheService } = require('../../../infrastructure/services/cache/CacheService');
 
 const saleRepo = new SaleRepository();
 const inventoryRepo = new InventoryRepository();
@@ -28,6 +36,8 @@ const recordSaleUseCase = new RecordSaleUseCase(
 
 router.use(authMiddleware);
 
+const SALES_CACHE_TTL_MS = 30_000;
+
 // =============================================
 // GET /api/sales
 // =============================================
@@ -38,15 +48,24 @@ router.get('/', async (req, res) => {
             return res.status(400).json({ success: false, message: 'Business context missing' });
         }
 
-        const sales = await saleRepo.findByBusinessId(businessId);
+        const cacheKey = `aicfo:sales:${businessId}`;
 
-        res.json({
-            success: true,
-            data: {
-                sales: sales || [],
-                count: sales?.length || 0,
+        const payload = await cacheService.getOrSet(
+            cacheKey,
+            async () => {
+                const sales = await saleRepo.findByBusinessId(businessId);
+                return {
+                    success: true,
+                    data: {
+                        sales: sales || [],
+                        count: sales?.length || 0,
+                    },
+                };
             },
-        });
+            SALES_CACHE_TTL_MS
+        );
+
+        res.json(payload);
     } catch (error) {
         console.error('[salesRoutes] GET error:', error.message);
         res.status(500).json({

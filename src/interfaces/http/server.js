@@ -1,17 +1,23 @@
 // src/interfaces/http/server.js
-// v2.10.0-prod — Sentry v8+, structured logging, plan gating, PORT compatible (Render)
+// v2.14.0-prod — Sentry v8+, structured logging, plan gating, PORT compatible (Render)
 //               Adds Consultancy routes: /api/projects, /api/time-entries, /api/invoices
 //               Adds Education routes: /api/students, /api/classes, /api/enrollments, /api/terms, /api/fees
 //               Adds NGO routes: /api/pledges, /api/donations
 //               v2.6.0: cookie-config startup log, CORS allow-list, /api/debug/cookies
 //               v2.7.0: /api/fees mounted (Education)
 //               v2.8.0: /api/pledges, /api/donations mounted (NGO)
-//               v2.9.0: Paystack webhook mounted BEFORE express.json() (raw body
-//                       for HMAC-SHA512 signature verification). Path is scoped
-//                       to /api/payment/webhook — no other route affected.
-//               v2.10.0: Paystack webhook retry sweep scheduled on startup.
-//                        Runs every 60s, retries FAILED events, up to 5 attempts.
-//                        Kill-switch: PAYSTACK_RETRY_SWEEP_DISABLED=true.
+//               v2.9.0: Paystack webhook mounted BEFORE express.json()
+//               v2.10.0: Paystack webhook retry sweep scheduled on startup
+//               v2.11.0: Auth rate limiters moved into authRoutes.js
+//               v2.12.0: loginIpLimiter mounted BEFORE express.json()
+//               v2.13.0: loginIpLimiter mounted BEFORE pino-http as well, so
+//                        IP-rate-limited floods don't produce one log line
+//                        per rejected request. At 500 req/s, this is the
+//                        difference between ~30k log writes per minute and
+//                        ~30k fast rejections with ~8 log lines.
+//               v2.14.0: warmPool() on startup to remove first-request
+//                        cold-start penalty to Supabase. /api/health now
+//                        reports DB pool stats for observability.
 
 const { initSentry, Sentry } = require('../../shared/utils/sentry');
 initSentry();
@@ -24,11 +30,16 @@ require('dotenv').config();
 
 const logger = require('../../shared/utils/logger');
 
+const {
+  warmPool,
+  poolStats,
+} = require('../../infrastructure/database/sqlite/connection');
+
 const app = express();
 const PORT = process.env.PORT || process.env.HTTP_PORT || 5000;
 
 const {
-  strictLimiter,
+  loginIpLimiter,
   standardLimiter,
   generousLimiter,
 } = require('./middleware/rateLimiter');
@@ -36,7 +47,7 @@ const {
 const { authMiddleware } = require('./middleware/authMiddleware');
 const { planGuard } = require('./middleware/planGuard');
 
-// ── CORS: allow-list from FRONTEND_URL (comma-separated for multiple origins)
+// ── CORS: allow-list from FRONTEND_URL
 const ALLOWED_ORIGINS = (process.env.FRONTEND_URL || 'http://localhost:5173')
   .split(',')
   .map((s) => s.trim())
@@ -54,16 +65,18 @@ app.use(cors({
   credentials: true,
 }));
 
-// ── Paystack webhook MUST be mounted BEFORE express.json() so its body
-//    arrives as a raw Buffer for HMAC-SHA512 signature verification.
-//    Path is scoped to /api/payment/webhook — no other route is affected.
+// ── loginIpLimiter mounted FIRST (after CORS, before pino-http).
+//    Rejected login floods never reach the logger or the body parser.
+//    Email limiter still runs inside authRoutes.js where req.body exists.
+app.use('/api/auth/login', loginIpLimiter);
+
+// ── Paystack webhook MUST be mounted BEFORE express.json() for raw body
 const paystackWebhookRoutes = require('./routes/paystackWebhookRoutes');
 app.use('/api/payment/webhook', paystackWebhookRoutes);
 
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 
-// ── Cookie config log (helps diagnose "Not authenticated" on staging)
 logger.info({
   nodeEnv: process.env.NODE_ENV || '(unset)',
   frontendUrl: process.env.FRONTEND_URL || '(unset)',
@@ -124,21 +137,15 @@ const classRoutes = require('./routes/classRoutes');
 const enrollmentRoutes = require('./routes/enrollmentRoutes');
 const termRoutes = require('./routes/termRoutes');
 const feeRoutes = require('./routes/feeRoutes');
-const pledgeRoutes = require('./routes/pledgeRoutes');               // ← ADDED
-const donationRoutes = require('./routes/donationRoutes');           // ← ADDED
+const pledgeRoutes = require('./routes/pledgeRoutes');
+const donationRoutes = require('./routes/donationRoutes');
 
-app.use('/api/auth/login', strictLimiter);
-app.use('/api/auth/register', strictLimiter);
-app.use('/api/auth/forgot-password', strictLimiter);
-app.use('/api/auth/reset-password', strictLimiter);
-
+// ── Auth routes carry loginEmailLimiter + registerLimiter + forgot + reset.
+//    (loginIpLimiter already ran at the server layer above.)
 app.use('/api/auth', authRoutes);
 
 app.use('/api/subscription', standardLimiter, subscriptionRoutes);
 app.use('/api/payment', standardLimiter, paymentRoutes);
-// Note: /api/payment/webhook/* is mounted earlier (above express.json) and does
-// NOT pass through this mount or standardLimiter. Signature verification needs
-// the raw body, and standardLimiter would throttle legitimate Paystack retries.
 
 app.use('/api/users', standardLimiter, authMiddleware, userRoutes);
 app.use('/api/business', standardLimiter, authMiddleware, businessRoutes);
@@ -153,21 +160,18 @@ app.use('/api/creditors', standardLimiter, authMiddleware, planGuard({ feature: 
 app.use('/api/suppliers', standardLimiter, authMiddleware, planGuard({ feature: 'suppliers' }), supplierRoutes);
 app.use('/api/customers', standardLimiter, authMiddleware, planGuard({ feature: 'customers' }), customerRoutes);
 
-// Consultancy modules — available on every tier (see plans.js INDUSTRY_FEATURES)
 app.use('/api/projects', standardLimiter, authMiddleware, planGuard({ feature: 'projects' }), projectRoutes);
 app.use('/api/time-entries', standardLimiter, authMiddleware, planGuard({ feature: 'time_entries' }), timeEntryRoutes);
 app.use('/api/invoices', standardLimiter, authMiddleware, planGuard({ feature: 'invoices' }), invoiceRoutes);
 
-// Education modules — available on every tier (see plans.js INDUSTRY_FEATURES)
 app.use('/api/students', standardLimiter, authMiddleware, planGuard({ feature: 'students' }), studentRoutes);
 app.use('/api/classes', standardLimiter, authMiddleware, planGuard({ feature: 'classes' }), classRoutes);
 app.use('/api/enrollments', standardLimiter, authMiddleware, planGuard({ feature: 'enrollments' }), enrollmentRoutes);
 app.use('/api/terms', standardLimiter, authMiddleware, planGuard({ feature: 'terms' }), termRoutes);
 app.use('/api/fees', standardLimiter, authMiddleware, planGuard({ feature: 'fees' }), feeRoutes);
 
-// NGO modules — available on every tier (see plans.js INDUSTRY_FEATURES)
-app.use('/api/pledges', standardLimiter, authMiddleware, planGuard({ feature: 'pledges' }), pledgeRoutes);     // ← ADDED
-app.use('/api/donations', standardLimiter, authMiddleware, planGuard({ feature: 'donations' }), donationRoutes); // ← ADDED
+app.use('/api/pledges', standardLimiter, authMiddleware, planGuard({ feature: 'pledges' }), pledgeRoutes);
+app.use('/api/donations', standardLimiter, authMiddleware, planGuard({ feature: 'donations' }), donationRoutes);
 
 app.use('/api/reports', generousLimiter, authMiddleware, planGuard({ feature: 'reports_basic' }), reportRoutes);
 
@@ -185,10 +189,10 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     message: 'AI CFO ENTERPRISE API is running',
+    db: poolStats(),
   });
 });
 
-// ── Debug endpoint: shows what cookies the browser actually sends.
 app.get('/api/debug/cookies', (req, res) => {
   res.json({
     receivedCookies: Object.keys(req.cookies || {}),
@@ -225,18 +229,19 @@ app.use((err, req, res, _next) => {
 
 const server = app.listen(PORT, () => {
   logger.info({ port: PORT }, 'http: server started');
-  logger.info('rate limiting: strict=auth, standard=writes, generous=reads');
+  logger.info('rate limiting: auth-ip=pre-log, auth-email=in-route, standard=writes, generous=reads');
   logger.info('plan gating: active (authMiddleware → planGuard)');
   logger.info(
     process.env.SENTRY_DSN ? 'sentry: enabled' : 'sentry: disabled (no SENTRY_DSN)'
   );
 
-  // ── Paystack webhook retry sweep ──────────────────────────────────────
-  // HandlePaystackWebhookUseCase returns 200 even on dispatch failure so
-  // Paystack stops retrying. This sweep is our retry mechanism for those
-  // FAILED events. Runs every 60s; each sweep claims a bounded batch and
-  // uses FOR UPDATE SKIP LOCKED, so overlapping runs are safe.
-  // Disabled when PAYSTACK_RETRY_SWEEP_DISABLED=true (useful for tests).
+  // ── Warm the DB pool so the first real request doesn't pay
+  //    TCP + TLS + auth handshake to Supabase. Non-blocking:
+  //    a warm-up failure does not prevent the server from serving.
+  warmPool().catch((err) => {
+    logger.error({ err: err.message }, 'db: warmPool failed');
+  });
+
   if (process.env.PAYSTACK_RETRY_SWEEP_DISABLED !== 'true') {
     const PaystackWebhookRetryService = require('../../application/services/payment/PaystackWebhookRetryService');
     const retryService = new PaystackWebhookRetryService();
