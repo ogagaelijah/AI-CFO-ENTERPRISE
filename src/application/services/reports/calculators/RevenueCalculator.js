@@ -1,6 +1,15 @@
 // src/application/services/reports/calculators/RevenueCalculator.js
-// v2.0.0-prod — totalRevenue now means combined revenue (sales + other income).
-//               Consumers that need sales-only should read `salesRevenue`.
+// v2.1.0-prod — Fixed repository method call.
+//
+// v2.1.0 changes:
+//   - Previous version checked for a non-existent method
+//     `findByBusinessIdAndDateRange` and fell through to a fallback that
+//     passed (userId, startDate, endDate, businessId) into a repository
+//     method whose real signature is (businessId, startDate, endDate).
+//     That mismatch caused sales queries to filter by business_id = userId,
+//     which returned zero rows. Reports showed Product Sales = ₦0.
+//   - Now uses SaleRepository.findByDateRange(businessId, startDate, endDate)
+//     directly. This is the correct method.
 
 /**
  * RevenueCalculator - Single source of truth for revenue calculations
@@ -9,9 +18,6 @@
  * - salesRevenue  : sum of sales.total_price (operating top-line)
  * - otherRevenue  : sum of income.amount (non-operating)
  * - totalRevenue  : salesRevenue + otherRevenue (combined top-line)
- *
- * Raw arrays (sales, incomes) are also returned for consumers that need
- * to build breakdowns or aggregate by product/customer.
  */
 class RevenueCalculator {
     constructor({ saleRepository, incomeRepository = null }) {
@@ -24,45 +30,29 @@ class RevenueCalculator {
         return isNaN(num) ? 0 : num;
     }
 
-    /**
-     * Calculate revenue for a date range.
-     *
-     * @param {Object} params
-     * @param {string|number} params.userId
-     * @param {string|number} params.businessId
-     * @param {string} params.startDate - YYYY-MM-DD
-     * @param {string} params.endDate   - YYYY-MM-DD
-     * @param {string} [params.groupBy] - 'product' | 'customer' | null
-     */
     async calculate({ userId, businessId, startDate, endDate, groupBy = null }) {
+        if (!businessId) {
+            throw new Error('RevenueCalculator: businessId is required');
+        }
+        if (!startDate || !endDate) {
+            throw new Error('RevenueCalculator: startDate and endDate are required');
+        }
+
         let sales = [];
-
         try {
-            if (businessId && typeof this.saleRepository.findByBusinessIdAndDateRange === 'function') {
-                sales = await this.saleRepository.findByBusinessIdAndDateRange(
-                    businessId,
-                    startDate,
-                    endDate
-                );
-            } else {
-                sales = await this.saleRepository.findByDateRange(
-                    userId,
-                    startDate,
-                    endDate,
-                    businessId
-                );
-            }
-
+            sales = await this.saleRepository.findByDateRange(
+                businessId,
+                startDate,
+                endDate
+            );
             sales = Array.isArray(sales) ? sales : [];
         } catch (error) {
             console.warn('⚠️ RevenueCalculator: Could not fetch sales:', error.message);
             sales = [];
         }
 
-        // Fetch income (non-operating revenue) — business-scoped.
-        // Failures propagate; we never silently return zero income.
         let incomes = [];
-        if (this.incomeRepository && businessId) {
+        if (this.incomeRepository) {
             const incomesRaw = await this.incomeRepository.findByDateRange(
                 businessId,
                 startDate,
@@ -83,7 +73,6 @@ class RevenueCalculator {
             0
         );
 
-        // Combined top-line. This is the canonical "revenue" value for the period.
         const totalRevenue = salesRevenue + otherRevenue;
 
         const salesCount = sales.length;
@@ -110,8 +99,8 @@ class RevenueCalculator {
             totalUnits,
             averageSaleValue,
             breakdown,
-            sales,       // raw sales array
-            incomes,     // raw income array
+            sales,
+            incomes,
         };
     }
 
