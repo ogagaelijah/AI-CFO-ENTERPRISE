@@ -1,4 +1,20 @@
 // frontend/src/components/Reports/ExecutiveReport.jsx
+// v1.1.0-prod — Removed Business Trends and Business Forecast sections.
+//
+// These belong to the Forecast Engine, not the Report Engine (SSOT).
+// The Forecast page at /forecast already renders them properly from
+// the /api/forecast endpoint. The Report Engine's Executive Report
+// is report-only: financial statements, KPIs, profitability, cash flow.
+//
+// v1.1.0 changes:
+//   - Business Trends section removed (was always 0 — Report Engine does
+//     not compute trends; that's the Analytics layer's job, surfaced
+//     via /api/forecast and /api/analytics).
+//   - Business Forecast section removed (was always 0 — Forecast Engine
+//     owns this; surfaced via /api/forecast).
+//   - Added a footer link pointing users to the Forecast page.
+
+import { Link } from 'react-router-dom';
 
 const ExecutiveReport = ({ data, formatCurrency, formatPercentage }) => {
   if (!data) {
@@ -14,8 +30,6 @@ const ExecutiveReport = ({ data, formatCurrency, formatPercentage }) => {
     generatedAt,
     businessOverview,
     kpiSummary,
-    businessTrends,
-    forecast,
     profitability,
     cashFlow,
     risks,
@@ -25,11 +39,8 @@ const ExecutiveReport = ({ data, formatCurrency, formatPercentage }) => {
     period,
   } = data;
 
-  // Safeguards
   const safeOverview = businessOverview || { revenue: 0, netProfit: 0, businessHealth: 'Neutral', businessScore: 0 };
   const safeKpi = kpiSummary || { grossMargin: 0, netMargin: 0, cashPosition: 0 };
-  const safeTrends = businessTrends || { today: 0, thisWeek: 0, thisMonth: 0 };
-  const safeForecast = forecast || { next7Days: 0, next30Days: 0, tomorrow: 0, confidence: 0 };
   const safeProfitability = profitability || { grossProfit: 0, netProfit: 0 };
   const safeCashFlow = cashFlow || { openingCash: 0, closingCash: 0, cashPosition: 0, netCashFlow: 0 };
 
@@ -134,7 +145,7 @@ const ExecutiveReport = ({ data, formatCurrency, formatPercentage }) => {
           <div>
             <p className="text-xs text-gray-500 dark:text-gray-400">Period</p>
             <p className="text-sm font-medium text-gray-900 dark:text-white">
-              {period?.start && period?.end 
+              {period?.start && period?.end
                 ? `${new Date(period.start).toLocaleDateString()} - ${new Date(period.end).toLocaleDateString()}`
                 : 'N/A'}
             </p>
@@ -143,64 +154,8 @@ const ExecutiveReport = ({ data, formatCurrency, formatPercentage }) => {
         </div>
       </div>
 
-      {/* Business Trends */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-3">Business Trends</h3>
-        <div className="grid grid-cols-3 gap-4">
-          <div>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Today</p>
-            <p className={`text-xl font-bold ${safeTrends.today >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-              {safeTrends.today >= 0 ? '↑' : '↓'} {Math.abs(safeTrends.today || 0).toFixed(2)}%
-            </p>
-            <p className="text-xs text-gray-400 dark:text-gray-500">Change vs previous day</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-500 dark:text-gray-400">This Week</p>
-            <p className={`text-xl font-bold ${safeTrends.thisWeek >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-              {safeTrends.thisWeek >= 0 ? '↑' : '↓'} {Math.abs(safeTrends.thisWeek || 0).toFixed(2)}%
-            </p>
-            <p className="text-xs text-gray-400 dark:text-gray-500">Change vs previous week</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-500 dark:text-gray-400">This Month</p>
-            <p className={`text-xl font-bold ${safeTrends.thisMonth >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-              {safeTrends.thisMonth >= 0 ? '↑' : '↓'} {Math.abs(safeTrends.thisMonth || 0).toFixed(2)}%
-            </p>
-            <p className="text-xs text-gray-400 dark:text-gray-500">Change vs previous month</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Business Forecast */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-3">Business Forecast</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Next 7 Days Revenue</p>
-            <p className="text-xl font-bold text-blue-600 dark:text-blue-400">{formatCurrency(safeForecast.next7Days)}</p>
-            <p className="text-xs text-gray-400 dark:text-gray-500">Projected revenue for next 7 days</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Next 30 Days Revenue</p>
-            <p className="text-xl font-bold text-indigo-600 dark:text-indigo-400">{formatCurrency(safeForecast.next30Days)}</p>
-            <p className="text-xs text-gray-400 dark:text-gray-500">Projected revenue for next 30 days</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Tomorrow Revenue</p>
-            <p className="text-xl font-bold text-cyan-600 dark:text-cyan-400">{formatCurrency(safeForecast.tomorrow)}</p>
-            <p className="text-xs text-gray-400 dark:text-gray-500">Projected revenue for tomorrow</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Revenue Forecast Confidence</p>
-            <p className="text-xl font-bold text-purple-600 dark:text-purple-400">{formatPercentage(safeForecast.confidence)}</p>
-            <p className="text-xs text-gray-400 dark:text-gray-500">Confidence level in forecast accuracy</p>
-          </div>
-        </div>
-      </div>
-
       {/* Profitability & Cash Flow */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Profitability */}
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
           <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-3">Profitability</h3>
           <div className="space-y-3">
@@ -219,7 +174,6 @@ const ExecutiveReport = ({ data, formatCurrency, formatPercentage }) => {
           </div>
         </div>
 
-        {/* Cash Flow */}
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
           <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-3">Cash Flow</h3>
           <div className="space-y-3">
@@ -232,13 +186,6 @@ const ExecutiveReport = ({ data, formatCurrency, formatPercentage }) => {
               <p className="text-xs text-gray-500 dark:text-gray-400">Closing Cash</p>
               <p className="text-xl font-bold text-gray-900 dark:text-white">{formatCurrency(safeCashFlow.closingCash)}</p>
               <p className="text-xs text-gray-400 dark:text-gray-500">Cash at end of period</p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Cash Position</p>
-              <p className={`text-xl font-bold ${safeCashFlow.cashPosition >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                {safeCashFlow.cashPosition >= 0 ? '+' : ''}{formatCurrency(safeCashFlow.cashPosition)}
-              </p>
-              <p className="text-xs text-gray-400 dark:text-gray-500">Net cash inflow/(outflow)</p>
             </div>
             <div>
               <p className="text-xs text-gray-500 dark:text-gray-400">Net Cash Flow</p>
@@ -257,7 +204,7 @@ const ExecutiveReport = ({ data, formatCurrency, formatPercentage }) => {
           <h3 className="text-sm font-semibold text-red-600 dark:text-red-400 uppercase tracking-wider mb-3">⚠️ Risks</h3>
           <div className="space-y-3">
             {risks.map((risk, idx) => {
-              const severityColor = risk.severity === 'Critical' ? 'text-red-600 dark:text-red-400' 
+              const severityColor = risk.severity === 'Critical' ? 'text-red-600 dark:text-red-400'
                 : risk.severity === 'High' ? 'text-orange-600 dark:text-orange-400'
                 : risk.severity === 'Medium' ? 'text-yellow-600 dark:text-yellow-400'
                 : 'text-gray-500 dark:text-gray-400';
@@ -352,6 +299,16 @@ const ExecutiveReport = ({ data, formatCurrency, formatPercentage }) => {
           </div>
         </div>
       )}
+
+      {/* See Forecast page for projections */}
+      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 text-center">
+        <p className="text-sm text-blue-700 dark:text-blue-300">
+          Looking for revenue forecasts and business trends?{' '}
+          <Link to="/forecast" className="font-medium underline hover:no-underline">
+            Open the Forecast page →
+          </Link>
+        </p>
+      </div>
     </div>
   );
 };
