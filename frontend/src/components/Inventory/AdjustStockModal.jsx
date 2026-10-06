@@ -1,8 +1,14 @@
 // frontend/src/components/Inventory/AdjustStockModal.jsx
+// v1.1.0-prod — Adds read-only guard: banner + disabled confirm.
+
 import { useState } from 'react';
 import { X } from 'lucide-react';
+import { useWriteGuard } from '../../hooks/useWriteGuard';
+import ReadOnlyBanner from '../common/ReadOnlyBanner';
 
 const AdjustStockModal = ({ isOpen, item, onClose, onSubmit }) => {
+  const { canWrite, guardMessage } = useWriteGuard();
+
   const [adjustType, setAdjustType] = useState('add');
   const [quantity, setQuantity] = useState(1);
   const [error, setError] = useState('');
@@ -31,6 +37,7 @@ const AdjustStockModal = ({ isOpen, item, onClose, onSubmit }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!canWrite) return;
     setLoading(true);
     setError('');
     try {
@@ -75,6 +82,8 @@ const AdjustStockModal = ({ isOpen, item, onClose, onSubmit }) => {
           </div>
 
           <div className="p-6 space-y-4">
+            <ReadOnlyBanner />
+
             <p className="text-sm text-gray-600 dark:text-gray-400">Current Quantity: <span className="font-bold">{item.quantity || 0} units</span></p>
 
             {error && (
@@ -147,6 +156,8 @@ const AdjustStockModal = ({ isOpen, item, onClose, onSubmit }) => {
         </div>
 
         <div className="p-6 space-y-4">
+          <ReadOnlyBanner />
+
           <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 space-y-2">
             <p className="text-sm text-gray-600 dark:text-gray-400">Confirm stock adjustment:</p>
             <div className="space-y-1 text-sm">
@@ -168,8 +179,13 @@ const AdjustStockModal = ({ isOpen, item, onClose, onSubmit }) => {
             <button
               type="button"
               onClick={handleSubmit}
-              disabled={loading}
-              className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition disabled:opacity-50"
+              disabled={loading || !canWrite}
+              title={guardMessage}
+              className={`flex-1 px-4 py-2 rounded-lg transition ${
+                loading || !canWrite
+                  ? 'bg-gray-300 dark:bg-slate-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                  : 'bg-green-600 hover:bg-green-700 text-white'
+              }`}
             >
               {loading ? 'Adjusting...' : 'Confirm Adjustment'}
             </button>

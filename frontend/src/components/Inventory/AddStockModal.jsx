@@ -1,8 +1,14 @@
 // frontend/src/components/Inventory/AddStockModal.jsx
+// v1.1.0-prod — Adds read-only guard: banner + disabled final submit.
+
 import { useState } from 'react';
 import { X } from 'lucide-react';
+import { useWriteGuard } from '../../hooks/useWriteGuard';
+import ReadOnlyBanner from '../common/ReadOnlyBanner';
 
 const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
+  const { canWrite, guardMessage } = useWriteGuard();
+
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     itemName: '',
@@ -39,6 +45,7 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!canWrite) return;
     if (!formData.sellingPrice || formData.sellingPrice < 0) {
       setError('Selling price cannot be negative');
       return;
@@ -180,6 +187,8 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
         </div>
 
         <form onSubmit={handleSubmit} className="p-6">
+          <ReadOnlyBanner className="mb-4" />
+
           {error && (
             <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-700 dark:text-red-400 text-sm">
               {error}
@@ -211,8 +220,13 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
               ) : (
                 <button
                   type="submit"
-                  disabled={loading}
-                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition disabled:opacity-50"
+                  disabled={loading || !canWrite}
+                  title={guardMessage}
+                  className={`px-4 py-2 text-sm font-medium rounded-lg transition ${
+                    loading || !canWrite
+                      ? 'bg-gray-300 dark:bg-slate-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                      : 'bg-green-600 hover:bg-green-700 text-white'
+                  }`}
                 >
                   {loading ? 'Adding...' : 'Add Stock'}
                 </button>

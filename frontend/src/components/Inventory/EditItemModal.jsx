@@ -1,8 +1,14 @@
 // frontend/src/components/Inventory/EditItemModal.jsx
+// v1.1.0-prod — Adds read-only guard: banner + disabled submit.
+
 import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
+import { useWriteGuard } from '../../hooks/useWriteGuard';
+import ReadOnlyBanner from '../common/ReadOnlyBanner';
 
 const EditItemModal = ({ isOpen, item, onClose, onSubmit }) => {
+  const { canWrite, guardMessage } = useWriteGuard();
+
   const [formData, setFormData] = useState({
     costPrice: 0,
     sellingPrice: 0,
@@ -30,6 +36,7 @@ const EditItemModal = ({ isOpen, item, onClose, onSubmit }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!canWrite) return;
     if (formData.costPrice < 0 || formData.sellingPrice < 0 || formData.reorderLevel < 0) {
       setError('Values cannot be negative');
       return;
@@ -64,6 +71,8 @@ const EditItemModal = ({ isOpen, item, onClose, onSubmit }) => {
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <ReadOnlyBanner />
+
           {error && (
             <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-700 dark:text-red-400 text-sm">
               {error}
@@ -132,8 +141,13 @@ const EditItemModal = ({ isOpen, item, onClose, onSubmit }) => {
             </button>
             <button
               type="submit"
-              disabled={loading}
-              className="flex-1 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition disabled:opacity-50"
+              disabled={loading || !canWrite}
+              title={guardMessage}
+              className={`flex-1 px-4 py-2 rounded-lg transition ${
+                loading || !canWrite
+                  ? 'bg-gray-300 dark:bg-slate-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                  : 'bg-primary-600 hover:bg-primary-700 text-white'
+              }`}
             >
               {loading ? 'Updating...' : 'Update Item'}
             </button>
