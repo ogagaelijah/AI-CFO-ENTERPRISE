@@ -1,16 +1,26 @@
 // frontend/src/components/Purchases/PartialPaymentModal.jsx
+// v1.1.0-prod — Adds read-only guard: banner + disabled continue.
+
 import { X } from 'lucide-react';
+import { useWriteGuard } from '../../hooks/useWriteGuard';
+import ReadOnlyBanner from '../common/ReadOnlyBanner';
 
 const PartialPaymentModal = ({ isOpen, data, amount, setAmount, onConfirm, onCancel, error, setError }) => {
+  const { canWrite, guardMessage } = useWriteGuard();
+
   if (!isOpen) return null;
 
-  // Calculate total cost
   const calculateTotal = () => {
     if (!data?.items) return 0;
     return data.items.reduce((sum, item) => sum + (item.quantity * item.unitCost), 0);
   };
 
   const totalCost = calculateTotal();
+
+  const handleConfirm = () => {
+    if (!canWrite) return;
+    onConfirm();
+  };
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
@@ -26,6 +36,8 @@ const PartialPaymentModal = ({ isOpen, data, amount, setAmount, onConfirm, onCan
         </div>
 
         <div className="p-4 space-y-4">
+          <ReadOnlyBanner />
+
           <div className="p-3 bg-gray-50 dark:bg-slate-700 rounded-lg">
             {data?.supplierName && (
               <p className="text-sm text-gray-600 dark:text-gray-300">
@@ -88,8 +100,14 @@ const PartialPaymentModal = ({ isOpen, data, amount, setAmount, onConfirm, onCan
             </button>
             <button
               type="button"
-              onClick={onConfirm}
-              className="flex-1 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
+              onClick={handleConfirm}
+              disabled={!canWrite}
+              title={guardMessage}
+              className={`flex-1 px-4 py-2 rounded-lg transition ${
+                canWrite
+                  ? 'bg-primary-600 hover:bg-primary-700 text-white'
+                  : 'bg-gray-300 dark:bg-slate-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+              }`}
             >
               Continue
             </button>

@@ -1,8 +1,14 @@
 // frontend/src/components/Purchases/RecordPurchaseModal.jsx
+// v1.1.0-prod — Adds read-only guard: banner + disabled submit.
+
 import { useState } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
+import { useWriteGuard } from '../../hooks/useWriteGuard';
+import ReadOnlyBanner from '../common/ReadOnlyBanner';
 
 const RecordPurchaseModal = ({ isOpen, form, setForm, onSubmit, onClose, error }) => {
+  const { canWrite, guardMessage } = useWriteGuard();
+
   if (!isOpen) return null;
 
   const handleAddItem = () => {
@@ -25,7 +31,12 @@ const RecordPurchaseModal = ({ isOpen, form, setForm, onSubmit, onClose, error }
     setForm({ ...form, items: newItems });
   };
 
-  // Initialize with one item if empty
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!canWrite) return;
+    onSubmit(e);
+  };
+
   if (!form.items || form.items.length === 0) {
     setForm({ ...form, items: [{ name: '', quantity: 1, unitCost: 0 }] });
     return null;
@@ -53,7 +64,9 @@ const RecordPurchaseModal = ({ isOpen, form, setForm, onSubmit, onClose, error }
           </button>
         </div>
 
-        <form onSubmit={onSubmit} className="p-4 space-y-4">
+        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          <ReadOnlyBanner />
+
           {error && (
             <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-3 py-2 rounded-lg text-sm">
               {error}
@@ -129,7 +142,6 @@ const RecordPurchaseModal = ({ isOpen, form, setForm, onSubmit, onClose, error }
             </div>
           </div>
 
-          {/* ✅ Multi-Item Section - NO SELL PRICE */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -242,7 +254,13 @@ const RecordPurchaseModal = ({ isOpen, form, setForm, onSubmit, onClose, error }
             </button>
             <button
               type="submit"
-              className="flex-1 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
+              disabled={!canWrite}
+              title={guardMessage}
+              className={`flex-1 px-4 py-2 rounded-lg transition ${
+                canWrite
+                  ? 'bg-primary-600 hover:bg-primary-700 text-white'
+                  : 'bg-gray-300 dark:bg-slate-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+              }`}
             >
               Record Purchase
             </button>
