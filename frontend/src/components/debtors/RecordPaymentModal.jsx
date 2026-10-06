@@ -1,9 +1,15 @@
 // frontend/src/components/debtors/RecordPaymentModal.jsx
+// v1.1.0-prod — Adds read-only guard: banner + disabled actions.
+
 import { useState } from 'react';
 import { X, AlertCircle, CheckCircle, CreditCard, ArrowRight, Loader2 } from 'lucide-react';
 import api from '../../services/api';
+import { useWriteGuard } from '../../hooks/useWriteGuard';
+import ReadOnlyBanner from '../common/ReadOnlyBanner';
 
 const RecordPaymentModal = ({ isOpen, onClose, onSuccess, debtor }) => {
+  const { canWrite, guardMessage } = useWriteGuard();
+
   const [amount, setAmount] = useState(0);
   const [notes, setNotes] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -15,6 +21,7 @@ const RecordPaymentModal = ({ isOpen, onClose, onSuccess, debtor }) => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (!canWrite) return;
     setError('');
 
     if (!amount || amount <= 0) {
@@ -31,7 +38,7 @@ const RecordPaymentModal = ({ isOpen, onClose, onSuccess, debtor }) => {
   };
 
   const handleConfirmPayment = async () => {
-    if (isLoading) return; // 🔒 hard guard
+    if (isLoading || !canWrite) return;
 
     setError('');
     setSuccess('');
@@ -62,7 +69,7 @@ const RecordPaymentModal = ({ isOpen, onClose, onSuccess, debtor }) => {
   };
 
   const handleClose = () => {
-    if (isLoading) return; // 🔒 prevent close mid-flight
+    if (isLoading) return;
     setShowConfirmation(false);
     setAmount(0);
     setNotes('');
@@ -92,6 +99,8 @@ const RecordPaymentModal = ({ isOpen, onClose, onSuccess, debtor }) => {
         </div>
 
         <div className="p-4">
+          <ReadOnlyBanner className="mb-4" />
+
           {!showConfirmation ? (
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && (
@@ -159,8 +168,13 @@ const RecordPaymentModal = ({ isOpen, onClose, onSuccess, debtor }) => {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
-                  disabled={isLoading}
+                  disabled={isLoading || !canWrite}
+                  title={guardMessage}
+                  className={`flex-1 px-4 py-2 rounded-lg transition flex items-center justify-center space-x-2 ${
+                    isLoading || !canWrite
+                      ? 'bg-gray-300 dark:bg-slate-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                      : 'bg-green-600 hover:bg-green-700 text-white'
+                  }`}
                 >
                   <span>Record Payment</span>
                   <ArrowRight className="w-4 h-4" />
@@ -225,8 +239,13 @@ const RecordPaymentModal = ({ isOpen, onClose, onSuccess, debtor }) => {
                 <button
                   type="button"
                   onClick={handleConfirmPayment}
-                  className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
-                  disabled={isLoading}
+                  disabled={isLoading || !canWrite}
+                  title={guardMessage}
+                  className={`flex-1 px-4 py-2 rounded-lg transition flex items-center justify-center space-x-2 ${
+                    isLoading || !canWrite
+                      ? 'bg-gray-300 dark:bg-slate-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                      : 'bg-green-600 hover:bg-green-700 text-white'
+                  }`}
                 >
                   {isLoading ? (
                     <>

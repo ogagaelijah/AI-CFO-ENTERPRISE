@@ -1,9 +1,15 @@
 // frontend/src/components/debtors/AddDebtorModal.jsx
+// v1.1.0-prod — Adds read-only guard: banner + disabled submit.
+
 import { useState } from 'react';
 import { X, AlertCircle, CheckCircle } from 'lucide-react';
 import api from '../../services/api';
+import { useWriteGuard } from '../../hooks/useWriteGuard';
+import ReadOnlyBanner from '../common/ReadOnlyBanner';
 
 const AddDebtorModal = ({ isOpen, onClose, onSuccess }) => {
+  const { canWrite, guardMessage } = useWriteGuard();
+
   const [formData, setFormData] = useState({
     customerName: '',
     phone: '',
@@ -25,11 +31,11 @@ const AddDebtorModal = ({ isOpen, onClose, onSuccess }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!canWrite) return;
     setError('');
     setSuccess('');
     setIsLoading(true);
 
-    // Validate
     if (!formData.customerName.trim()) {
       setError('Customer name is required');
       setIsLoading(false);
@@ -78,7 +84,6 @@ const AddDebtorModal = ({ isOpen, onClose, onSuccess }) => {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-        {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-slate-700 sticky top-0 bg-white dark:bg-slate-800 z-10">
           <h2 className="text-xl font-bold text-gray-900 dark:text-white">Add Debtor</h2>
           <button
@@ -90,9 +95,9 @@ const AddDebtorModal = ({ isOpen, onClose, onSuccess }) => {
           </button>
         </div>
 
-        {/* Body */}
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
-          {/* Error/Success */}
+          <ReadOnlyBanner />
+
           {error && (
             <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-3 py-2 rounded-lg flex items-center space-x-2 text-sm">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -106,7 +111,6 @@ const AddDebtorModal = ({ isOpen, onClose, onSuccess }) => {
             </div>
           )}
 
-          {/* Customer Name */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Customer Name <span className="text-red-500">*</span>
@@ -123,7 +127,6 @@ const AddDebtorModal = ({ isOpen, onClose, onSuccess }) => {
             />
           </div>
 
-          {/* Phone */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Phone Number <span className="text-gray-400 text-xs">(Optional)</span>
@@ -139,7 +142,6 @@ const AddDebtorModal = ({ isOpen, onClose, onSuccess }) => {
             />
           </div>
 
-          {/* Amount Owed */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Amount Owed (₦) <span className="text-red-500">*</span>
@@ -158,7 +160,6 @@ const AddDebtorModal = ({ isOpen, onClose, onSuccess }) => {
             />
           </div>
 
-          {/* Due Date */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Due Date <span className="text-gray-400 text-xs">(Optional)</span>
@@ -173,7 +174,6 @@ const AddDebtorModal = ({ isOpen, onClose, onSuccess }) => {
             />
           </div>
 
-          {/* Notes */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Notes <span className="text-gray-400 text-xs">(Optional)</span>
@@ -189,7 +189,6 @@ const AddDebtorModal = ({ isOpen, onClose, onSuccess }) => {
             />
           </div>
 
-          {/* Actions */}
           <div className="flex space-x-3 pt-4 border-t border-gray-200 dark:border-slate-700">
             <button
               type="button"
@@ -201,8 +200,13 @@ const AddDebtorModal = ({ isOpen, onClose, onSuccess }) => {
             </button>
             <button
               type="submit"
-              className="flex-1 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={isLoading}
+              disabled={isLoading || !canWrite}
+              title={guardMessage}
+              className={`flex-1 px-4 py-2 rounded-lg transition ${
+                isLoading || !canWrite
+                  ? 'bg-gray-300 dark:bg-slate-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                  : 'bg-primary-600 hover:bg-primary-700 text-white'
+              }`}
             >
               {isLoading ? 'Adding...' : 'Add Debtor'}
             </button>

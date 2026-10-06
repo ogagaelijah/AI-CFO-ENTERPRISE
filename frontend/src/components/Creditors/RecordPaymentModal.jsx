@@ -1,8 +1,20 @@
 // frontend/src/components/Creditors/RecordPaymentModal.jsx
+// v1.1.0-prod — Adds read-only guard: banner + disabled submit.
+
 import { X } from 'lucide-react';
+import { useWriteGuard } from '../../hooks/useWriteGuard';
+import ReadOnlyBanner from '../common/ReadOnlyBanner';
 
 const RecordPaymentModal = ({ isOpen, creditor, form, setForm, onSubmit, onClose, error }) => {
+  const { canWrite, guardMessage } = useWriteGuard();
+
   if (!isOpen) return null;
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!canWrite) return;
+    onSubmit(e);
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -19,6 +31,8 @@ const RecordPaymentModal = ({ isOpen, creditor, form, setForm, onSubmit, onClose
         </div>
 
         <div className="p-4">
+          <ReadOnlyBanner className="mb-4" />
+
           <div className="mb-4 p-3 bg-gray-50 dark:bg-slate-700 rounded-lg">
             <p className="text-sm text-gray-600 dark:text-gray-300">
               <span className="font-medium">Supplier:</span> {creditor?.supplier_name || 'N/A'}
@@ -29,7 +43,7 @@ const RecordPaymentModal = ({ isOpen, creditor, form, setForm, onSubmit, onClose
             </p>
           </div>
 
-          <form onSubmit={onSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
               <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-3 py-2 rounded-lg text-sm">
                 {error}
@@ -78,7 +92,13 @@ const RecordPaymentModal = ({ isOpen, creditor, form, setForm, onSubmit, onClose
               </button>
               <button
                 type="submit"
-                className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition"
+                disabled={!canWrite}
+                title={guardMessage}
+                className={`flex-1 px-4 py-2 rounded-lg transition ${
+                  canWrite
+                    ? 'bg-green-600 hover:bg-green-700 text-white'
+                    : 'bg-gray-300 dark:bg-slate-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                }`}
               >
                 Record Payment
               </button>
