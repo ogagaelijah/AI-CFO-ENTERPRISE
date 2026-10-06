@@ -1,9 +1,14 @@
 // frontend/src/components/Income/EditIncomeModal.jsx
+// v1.1.0-prod — Adds read-only guard: banner + disabled submit.
 
 import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
+import { useWriteGuard } from '../../hooks/useWriteGuard';
+import ReadOnlyBanner from '../common/ReadOnlyBanner';
 
 const EditIncomeModal = ({ isOpen, income, onSubmit, onClose, error, setError }) => {
+  const { canWrite, guardMessage } = useWriteGuard();
+
   const [form, setForm] = useState({
     source: 'OTHER',
     amount: 0,
@@ -26,6 +31,7 @@ const EditIncomeModal = ({ isOpen, income, onSubmit, onClose, error, setError })
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (!canWrite) return;
     onSubmit(form);
   };
 
@@ -43,6 +49,8 @@ const EditIncomeModal = ({ isOpen, income, onSubmit, onClose, error, setError })
         </div>
 
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          <ReadOnlyBanner />
+
           {error && (
             <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-3 py-2 rounded-lg text-sm">
               {error}
@@ -120,7 +128,13 @@ const EditIncomeModal = ({ isOpen, income, onSubmit, onClose, error, setError })
             </button>
             <button
               type="submit"
-              className="flex-1 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
+              disabled={!canWrite}
+              title={guardMessage}
+              className={`flex-1 px-4 py-2 rounded-lg transition ${
+                canWrite
+                  ? 'bg-primary-600 hover:bg-primary-700 text-white'
+                  : 'bg-gray-300 dark:bg-slate-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+              }`}
             >
               Update Income
             </button>
