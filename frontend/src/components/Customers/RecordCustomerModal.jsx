@@ -1,11 +1,14 @@
 // frontend/src/components/Customers/RecordCustomerModal.jsx
-// v1.1.0-prod — Removed Tax ID field. Added DONOR type.
-//               Supports initialType prop (locks type when set).
+// v1.2.0-prod — Adds read-only guard: banner + disabled final submit.
 
 import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
+import { useWriteGuard } from '../../hooks/useWriteGuard';
+import ReadOnlyBanner from '../common/ReadOnlyBanner';
 
 const RecordCustomerModal = ({ isOpen, onSubmit, onClose, error, setError, initialType = null }) => {
+  const { canWrite, guardMessage } = useWriteGuard();
+
   const defaultType = initialType || 'CUSTOMER';
   const [formData, setFormData] = useState({
     name: '',
@@ -18,7 +21,6 @@ const RecordCustomerModal = ({ isOpen, onSubmit, onClose, error, setError, initi
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
 
-  // Reset when opened; respect initialType
   useEffect(() => {
     if (isOpen) {
       setFormData({
@@ -57,6 +59,7 @@ const RecordCustomerModal = ({ isOpen, onSubmit, onClose, error, setError, initi
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!canWrite) return;
     setLoading(true);
     setError('');
 
@@ -252,16 +255,13 @@ const RecordCustomerModal = ({ isOpen, onSubmit, onClose, error, setError, initi
     }
   };
 
-  const getStepProgress = () => {
-    return `${step}/4`;
-  };
+  const getStepProgress = () => `${step}/4`;
 
   const modalTitle = initialType === 'DONOR' ? 'Add Donor' : 'Add Customer';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-        {/* Header */}
         <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between z-10">
           <div>
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
@@ -279,8 +279,9 @@ const RecordCustomerModal = ({ isOpen, onSubmit, onClose, error, setError, initi
           </button>
         </div>
 
-        {/* Body */}
         <form onSubmit={handleSubmit} className="p-6">
+          <ReadOnlyBanner className="mb-4" />
+
           {error && (
             <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-700 dark:text-red-400 text-sm">
               {error}
@@ -289,7 +290,6 @@ const RecordCustomerModal = ({ isOpen, onSubmit, onClose, error, setError, initi
 
           {renderStep()}
 
-          {/* Footer */}
           <div className="flex justify-between mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
             <button
               type="button"
@@ -315,8 +315,13 @@ const RecordCustomerModal = ({ isOpen, onSubmit, onClose, error, setError, initi
               ) : (
                 <button
                   type="submit"
-                  disabled={loading}
-                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition disabled:opacity-50"
+                  disabled={loading || !canWrite}
+                  title={guardMessage}
+                  className={`px-4 py-2 text-sm font-medium rounded-lg transition ${
+                    loading || !canWrite
+                      ? 'bg-gray-300 dark:bg-slate-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                      : 'bg-green-600 hover:bg-green-700 text-white'
+                  }`}
                 >
                   {loading ? 'Creating...' : `Create ${initialType === 'DONOR' ? 'Donor' : 'Customer'}`}
                 </button>
