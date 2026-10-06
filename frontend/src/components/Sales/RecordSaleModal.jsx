@@ -1,9 +1,16 @@
 // frontend/src/components/Sales/RecordSaleModal.jsx
+// v1.1.0-prod — Adds read-only guard. Submit button disables and shows
+//               an "upgrade to continue" banner when the plan is read-only.
+
 import { useState, useEffect } from 'react';
 import { X, Plus, Trash2, AlertTriangle } from 'lucide-react';
 import api from '../../services/api';
+import { useWriteGuard } from '../../hooks/useWriteGuard';
+import ReadOnlyBanner from '../common/ReadOnlyBanner';
 
 const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) => {
+  const { canWrite, guardMessage } = useWriteGuard();
+
   const [formData, setFormData] = useState({
     customerName: '',
     customerPhone: '',
@@ -17,7 +24,6 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
   const [isLoadingInventory, setIsLoadingInventory] = useState(false);
   const [showInventoryWarning, setShowInventoryWarning] = useState(false);
 
-  // Fetch inventory items when modal opens
   useEffect(() => {
     if (isOpen) {
       fetchInventoryItems();
@@ -42,8 +48,7 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
 
   const findInventoryItem = (itemName) => {
     if (!itemName || !itemName.trim()) return null;
-    // Case-insensitive search
-    return inventoryItems.find(item => 
+    return inventoryItems.find(item =>
       item.item_name.toLowerCase() === itemName.trim().toLowerCase()
     );
   };
@@ -51,8 +56,7 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
   const handleItemNameChange = (index, value) => {
     const newItems = [...formData.items];
     newItems[index].name = value;
-    
-    // Find inventory item (case-insensitive)
+
     const inventoryItem = findInventoryItem(value);
     if (inventoryItem && !formData.skipInventory) {
       newItems[index].costPrice = inventoryItem.cost_price || 0;
@@ -65,7 +69,7 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
       newItems[index].inventoryId = null;
       newItems[index].stock = 0;
     }
-    
+
     setFormData({ ...formData, items: newItems });
     setShowInventoryWarning(false);
   };
@@ -87,16 +91,14 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
   const updateItem = (index, field, value) => {
     const newItems = [...formData.items];
     newItems[index][field] = field === 'name' ? value : parseFloat(value) || 0;
-    
-    // If changing quantity or selling price, update totals
+
     if (field === 'quantity' || field === 'sellingPrice') {
       const item = newItems[index];
       const costPrice = item.costPrice || 0;
       const sellPrice = item.sellingPrice || 0;
       const qty = item.quantity || 0;
-      // Don't auto-calculate sell price from inventory - user sets it
     }
-    
+
     setFormData({ ...formData, items: newItems });
   };
 
@@ -119,22 +121,20 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (!canWrite) return;
     setError('');
 
-    // Validate customer name
     if (!formData.customerName.trim()) {
       setError('Customer name is required');
       return;
     }
 
-    // Validate items
     const validItems = formData.items.filter(item => item.name.trim());
     if (validItems.length === 0) {
       setError('At least one item with a name is required');
       return;
     }
 
-    // Validate each item
     for (const item of validItems) {
       if (item.quantity <= 0) {
         setError(`Quantity for "${item.name}" must be greater than 0`);
@@ -148,7 +148,6 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
 
     const { totalCost, totalRevenue, totalProfit } = calculateTotals();
 
-    // Check inventory stock if not skipped
     if (!formData.skipInventory) {
       for (const item of validItems) {
         const inventoryItem = findInventoryItem(item.name);
@@ -188,6 +187,8 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
         </div>
 
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          <ReadOnlyBanner />
+
           {/* Customer Section */}
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -244,7 +245,6 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
             </div>
           </div>
 
-          {/* Inventory Warning */}
           {showInventoryWarning && (
             <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 text-yellow-700 dark:text-yellow-400 px-4 py-3 rounded-lg flex items-center space-x-2">
               <AlertTriangle className="w-5 h-5 flex-shrink-0" />
@@ -252,7 +252,6 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
             </div>
           )}
 
-          {/* Skip Inventory Toggle */}
           <div className="flex items-center space-x-2">
             <input
               type="checkbox"
@@ -261,7 +260,6 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
               onChange={(e) => {
                 setFormData({ ...formData, skipInventory: e.target.checked });
                 if (e.target.checked) {
-                  // Clear inventory data when skipping
                   const newItems = formData.items.map(item => ({
                     ...item,
                     costPrice: 0,
@@ -270,7 +268,6 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
                   }));
                   setFormData({ ...formData, skipInventory: true, items: newItems });
                 } else {
-                  // Re-populate inventory data
                   const newItems = formData.items.map(item => {
                     const inv = findInventoryItem(item.name);
                     return {
@@ -290,7 +287,6 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
             </label>
           </div>
 
-          {/* Items Section */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Items *</label>
@@ -303,7 +299,6 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
               </button>
             </div>
 
-            {/* Header Row */}
             <div className="grid grid-cols-12 gap-2 mb-1 text-xs text-gray-500 dark:text-gray-400">
               <div className="col-span-4">Item Name</div>
               <div className="col-span-2 text-center">Qty</div>
@@ -386,7 +381,6 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
               );
             })}
 
-            {/* Totals */}
             <div className="mt-3 p-3 bg-gray-50 dark:bg-slate-700 rounded-lg grid grid-cols-3 gap-4 text-sm">
               <div>
                 <p className="text-gray-500 dark:text-gray-400">Total Cost</p>
@@ -405,7 +399,6 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
             </div>
           </div>
 
-          {/* Notes */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Notes (Optional)
@@ -419,7 +412,6 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
             />
           </div>
 
-          {/* Actions */}
           <div className="flex space-x-3 pt-4 border-t border-gray-200 dark:border-slate-700">
             <button
               type="button"
@@ -430,7 +422,13 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
             </button>
             <button
               type="submit"
-              className="flex-1 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
+              disabled={!canWrite}
+              title={guardMessage}
+              className={`flex-1 px-4 py-2 rounded-lg transition ${
+                canWrite
+                  ? 'bg-primary-600 hover:bg-primary-700 text-white'
+                  : 'bg-gray-300 dark:bg-slate-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+              }`}
             >
               Review Sale
             </button>
