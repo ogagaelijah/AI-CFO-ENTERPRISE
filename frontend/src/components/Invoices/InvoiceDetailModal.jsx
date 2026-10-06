@@ -1,6 +1,13 @@
 // frontend/src/components/Invoices/InvoiceDetailModal.jsx
+// v1.1.0-prod — Adds Print + Download PDF actions.
+//               Fetches customer name on modal open when customer_id exists
+//               so the printed invoice shows the real client name.
 
-import { X, CreditCard, Send } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { X, CreditCard, Send, Printer, Download } from 'lucide-react';
+import api from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
+import { printInvoice, downloadInvoicePDF } from '../../utils/invoiceReceipt';
 
 const STATUS_STYLES = {
   DRAFT:     'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700',
@@ -34,6 +41,57 @@ const InvoiceDetailModal = ({
   onRecordPayment,
   onMarkAsSent,
 }) => {
+  const { user } = useAuth();
+  const [customerName, setCustomerName] = useState(null);
+  const [projectName, setProjectName] = useState(null);
+
+  // Fetch customer + project names when the modal opens, if IDs exist.
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadNames = async () => {
+      if (!invoice || !isOpen) return;
+
+      const businessId = user?.businessId || user?.business?.id;
+
+      if (invoice.customerId) {
+        try {
+          const res = await api.get(`/customers/${invoice.customerId}`, {
+            params: { businessId },
+          });
+          if (!cancelled && res.data?.success) {
+            const c = res.data.customer || res.data.data;
+            setCustomerName(c?.name || c?.fullName || null);
+          }
+        } catch {
+          /* silent — falls back to Client # */
+        }
+      }
+
+      if (invoice.projectId) {
+        try {
+          const res = await api.get(`/projects/${invoice.projectId}`, {
+            params: { businessId },
+          });
+          if (!cancelled && res.data?.success) {
+            const p = res.data.project || res.data.data;
+            setProjectName(p?.name || p?.title || null);
+          }
+        } catch {
+          /* silent — project name optional */
+        }
+      }
+    };
+
+    if (isOpen && invoice) {
+      setCustomerName(null);
+      setProjectName(null);
+      loadNames();
+    }
+
+    return () => { cancelled = true; };
+  }, [isOpen, invoice, user?.businessId, user?.business?.id]);
+
   if (!isOpen) return null;
 
   const status = invoice?.status;
@@ -44,6 +102,42 @@ const InvoiceDetailModal = ({
     (status === 'SENT' || status === 'OVERDUE') && balance > 0;
 
   const showActions = !isLoading && invoice && (canMarkAsSent || canRecordPayment);
+
+  // Build the invoice object with resolved names for print/PDF.
+  const printableInvoice = invoice
+    ? {
+        ...invoice,
+        customer_name: customerName || (invoice.customerId ? `Client #${invoice.customerId}` : '—'),
+        project_name: projectName || null,
+      }
+    : null;
+
+  const resolvedBusinessInfo = {
+    businessName:
+      user?.business?.name ||
+      user?.businessName ||
+      user?.business_name ||
+      'AI CFO ENTERPRISE',
+    businessAddress:
+      user?.business?.address ||
+      user?.businessAddress ||
+      user?.business_address ||
+      null,
+    businessPhone:
+      user?.business?.phone ||
+      user?.businessPhone ||
+      user?.business_phone ||
+      null,
+    currency: '₦',
+  };
+
+  const handlePrint = () => {
+    if (printableInvoice) printInvoice(printableInvoice, resolvedBusinessInfo);
+  };
+
+  const handleDownloadPDF = () => {
+    if (printableInvoice) downloadInvoicePDF(printableInvoice, resolvedBusinessInfo);
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -70,7 +164,7 @@ const InvoiceDetailModal = ({
               <div className="mb-4">
                 <div className="flex items-center justify-between gap-3 mb-2">
                   <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
-                    {invoice.invoiceNumber || '—'}
+                    {invoice.invoiceNumber || invoice.invoice_number || '—'}
                   </h3>
                   <span
                     className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold border ${STATUS_STYLES[invoice.status] || STATUS_STYLES.DRAFT}`}
@@ -80,10 +174,22 @@ const InvoiceDetailModal = ({
                 </div>
               </div>
 
-              <Row label="Client" value={invoice.customerId ? `Client #${invoice.customerId}` : '—'} />
-              <Row label="Project" value={invoice.projectId ? `Project #${invoice.projectId}` : '—'} />
-              <Row label="Issue Date" value={formatDate(invoice.issueDate)} />
-              <Row label="Due Date" value={formatDate(invoice.dueDate)} />
+              <Row
+                label="Client"
+                value={
+                  customerName ||
+                  (invoice.customerId ? `Client #${invoice.customerId}` : '—')
+                }
+              />
+              <Row
+                label="Project"
+                value={
+                  projectName ||
+                  (invoice.projectId ? `Project #${invoice.projectId}` : '—')
+                }
+              />
+              <Row label="Issue Date" value={formatDate(invoice.issueDate || invoice.issue_date)} />
+              <Row label="Due Date" value={formatDate(invoice.dueDate || invoice.due_date)} />
 
               <div className="my-4 border-t border-gray-200 dark:border-gray-700" />
 
@@ -94,7 +200,7 @@ const InvoiceDetailModal = ({
                 value={formatCurrency(invoice.total)}
                 valueClass="font-semibold"
               />
-              <Row label="Amount Paid" value={formatCurrency(invoice.amountPaid)} />
+              <Row label="Amount Paid" value={formatCurrency(invoice.amountPaid ?? invoice.amount_paid)} />
               <Row
                 label="Balance"
                 value={formatCurrency(invoice.balance)}
@@ -113,14 +219,30 @@ const InvoiceDetailModal = ({
               )}
 
               <div className="my-4 border-t border-gray-200 dark:border-gray-700" />
-              <Row label="Created" value={formatDate(invoice.createdAt)} />
-              <Row label="Updated" value={formatDate(invoice.updatedAt)} />
+              <Row label="Created" value={formatDate(invoice.createdAt || invoice.created_at)} />
+              <Row label="Updated" value={formatDate(invoice.updatedAt || invoice.updated_at)} />
             </>
           )}
         </div>
 
-        {showActions && (
+        {!isLoading && invoice && (
           <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+            <button
+              type="button"
+              onClick={handleDownloadPDF}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg transition"
+            >
+              <Download className="w-4 h-4" />
+              <span>Download PDF</span>
+            </button>
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition shadow-sm"
+            >
+              <Printer className="w-4 h-4" />
+              <span>Print Invoice</span>
+            </button>
             {canMarkAsSent && (
               <button
                 onClick={() => onMarkAsSent && onMarkAsSent(invoice)}

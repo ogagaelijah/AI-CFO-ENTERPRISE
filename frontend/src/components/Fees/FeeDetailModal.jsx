@@ -1,6 +1,11 @@
 // frontend/src/components/Fees/FeeDetailModal.jsx
+// v1.1.0-prod — Adds Print + Download PDF actions.
+//               Fee object already carries studentName, admissionNumber,
+//               className, termName — no extra fetches needed.
 
-import { X, CreditCard, Send } from 'lucide-react';
+import { X, CreditCard, Send, Printer, Download } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { printFee, downloadFeePDF } from '../../utils/feeReceipt';
 
 const formatCurrency = (n) => `₦${Math.round(Number(n) || 0).toLocaleString()}`;
 
@@ -20,11 +25,40 @@ const STATUS_STYLES = {
 };
 
 const FeeDetailModal = ({ isOpen, fee, isLoading, onClose, onRecordPayment, onMarkAsSent }) => {
+  const { user } = useAuth();
+
   if (!isOpen || !fee) return null;
 
   const statusClass = STATUS_STYLES[fee.status] || STATUS_STYLES.DRAFT;
   const canPay = fee.status !== 'PAID' && fee.status !== 'DRAFT' && fee.status !== 'CANCELLED';
   const canSend = fee.status === 'DRAFT';
+
+  const resolvedBusinessInfo = {
+    businessName:
+      user?.business?.name ||
+      user?.businessName ||
+      user?.business_name ||
+      'AI CFO ENTERPRISE',
+    businessAddress:
+      user?.business?.address ||
+      user?.businessAddress ||
+      user?.business_address ||
+      null,
+    businessPhone:
+      user?.business?.phone ||
+      user?.businessPhone ||
+      user?.business_phone ||
+      null,
+    currency: '₦',
+  };
+
+  const handlePrint = () => {
+    printFee(fee, resolvedBusinessInfo);
+  };
+
+  const handleDownloadPDF = () => {
+    downloadFeePDF(fee, resolvedBusinessInfo);
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -76,7 +110,23 @@ const FeeDetailModal = ({ isOpen, fee, isLoading, onClose, onRecordPayment, onMa
               </div>
             )}
 
-            <div className="flex items-center justify-end space-x-3 pt-2 border-t border-gray-200 dark:border-gray-700">
+            <div className="flex flex-wrap items-center justify-end gap-3 pt-2 border-t border-gray-200 dark:border-gray-700">
+              <button
+                type="button"
+                onClick={handleDownloadPDF}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg transition"
+              >
+                <Download className="w-4 h-4" />
+                <span>Download PDF</span>
+              </button>
+              <button
+                type="button"
+                onClick={handlePrint}
+                className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition shadow-sm"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Print Fee</span>
+              </button>
               {canSend && (
                 <button
                   onClick={() => onMarkAsSent(fee)}
