@@ -1,4 +1,8 @@
 // src/config/industries.js
+// v1.1.0-prod — Renames Consultancy display label to "Consultancy / Services"
+//               so service-based firms can self-identify. Internal id
+//               CONSULTANCY unchanged. Telegram bot keyboard picks up the
+//               new label automatically.
 
 console.log('✅ Loading industries...');
 
@@ -6,7 +10,7 @@ const INDUSTRIES = {
     RETAIL: {
         id: 'RETAIL',
         name: 'Retail / Wholesale',
-        icon: '🏪',
+        icon: '🛒',
         description: 'Buying and selling products',
         features: { inventory: true, debtors: true, creditors: true },
         categories: {
@@ -57,8 +61,8 @@ const INDUSTRIES = {
     },
     CONSULTANCY: {
         id: 'CONSULTANCY',
-        name: 'Consultancy',
-        icon: '👔',
+        name: 'Consultancy / Services',
+        icon: '💼',
         description: 'Professional services and consulting',
         features: { services: true, projects: true, debtors: true, creditors: false },
         categories: {

@@ -1,6 +1,7 @@
 // frontend/src/pages/Register.jsx
-// v1.3.0-prod — Split industries into ready vs coming soon.
-//               Coming-soon options render disabled with a tag.
+// v1.3.1-prod — Renames "Consultancy" to "Consultancy / Services" so
+//               service-based firms can self-identify. Internal value
+//               sent to backend unchanged for now (uses display label).
 
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -17,7 +18,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 const READY_INDUSTRIES = [
   'Retail / Wholesale',
   'Construction',
-  'Consultancy',
+  'Consultancy / Services',
   'Education',
   'NGO / Non-Profit',
 ];

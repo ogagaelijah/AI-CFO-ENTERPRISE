@@ -1,5 +1,7 @@
 // frontend/src/pages/Landing.jsx
-// v1.2.0 — Coming-soon badges on unbuilt industries.
+// v1.2.1 — Renames "Consultancy" to "Consultancy / Services" in the
+//           live industries list and the feature card description.
+//           Matches Register.jsx and industryConfig.js.
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -34,7 +36,7 @@ const PLAN_FEATURES = [
 const READY_INDUSTRIES = [
   'Retail / Wholesale',
   'Construction',
-  'Consultancy',
+  'Consultancy / Services',
   'Education',
   'NGO / Non-Profit',
 ];
@@ -225,7 +227,7 @@ const Landing = () => {
               { icon: Users, title: 'Debtors & Creditors', desc: 'Manage who owes you and who you owe — never miss a payment.' },
               { icon: FileText, title: 'Reports & Analytics', desc: 'Daily, weekly, monthly, and yearly reports with profit margins.' },
               { icon: BarChart3, title: 'Forecasting & AI', desc: 'Predict future revenue and get AI-powered business recommendations.' },
-              { icon: Zap, title: '9 Industries, 5 Live Today', desc: 'Retail, Consultancy, Construction, Education, NGOs — with more on the way.' },
+              { icon: Zap, title: '9 Industries, 5 Live Today', desc: 'Retail, Consultancy / Services, Construction, Education, NGOs — with more on the way.' },
             ].map((feature, index) => (
               <div key={index} className="card group fade-in" style={{ transitionDelay: `${index * 100}ms` }}>
                 <feature.icon className="w-10 h-10 text-primary-600 dark:text-gold-400 mb-4 group-hover:scale-110 transition-transform duration-300" />
