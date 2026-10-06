@@ -1,7 +1,10 @@
 // frontend/src/components/Terms/EditTermModal.jsx
+// v1.1.0-prod — Adds read-only guard: banner + disabled submit.
 
 import { useState, useEffect } from 'react';
 import { X, AlertCircle } from 'lucide-react';
+import { useWriteGuard } from '../../hooks/useWriteGuard';
+import ReadOnlyBanner from '../common/ReadOnlyBanner';
 
 const STATUS_OPTIONS = ['ACTIVE', 'COMPLETED'];
 
@@ -13,6 +16,8 @@ const toDateInput = (v) => {
 };
 
 const EditTermModal = ({ isOpen, term, onSubmit, onClose, error, setError }) => {
+  const { canWrite, guardMessage } = useWriteGuard();
+
   const [form, setForm] = useState({
     name: '',
     session: '',
@@ -45,6 +50,7 @@ const EditTermModal = ({ isOpen, term, onSubmit, onClose, error, setError }) => 
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!canWrite) return;
     setLocalError('');
 
     if (!form.name.trim()) {
@@ -94,6 +100,8 @@ const EditTermModal = ({ isOpen, term, onSubmit, onClose, error, setError }) => 
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <ReadOnlyBanner />
+
           {displayError && (
             <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-3 py-2 rounded flex items-center space-x-2 text-sm">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -187,8 +195,13 @@ const EditTermModal = ({ isOpen, term, onSubmit, onClose, error, setError }) => 
             </button>
             <button
               type="submit"
-              disabled={isSubmitting}
-              className="px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white rounded-lg transition"
+              disabled={isSubmitting || !canWrite}
+              title={guardMessage}
+              className={`px-4 py-2 rounded-lg transition ${
+                isSubmitting || !canWrite
+                  ? 'bg-gray-300 dark:bg-slate-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                  : 'bg-primary-600 hover:bg-primary-700 text-white'
+              }`}
             >
               {isSubmitting ? 'Saving...' : 'Save Changes'}
             </button>
