@@ -1,8 +1,11 @@
 // frontend/src/components/Invoices/EditInvoiceModal.jsx
+// v1.1.0-prod — Adds read-only guard: banner + disabled submit.
 
 import { useState, useEffect } from 'react';
 import { X, AlertCircle, Lock } from 'lucide-react';
 import api from '../../services/api';
+import { useWriteGuard } from '../../hooks/useWriteGuard';
+import ReadOnlyBanner from '../common/ReadOnlyBanner';
 
 const STATUS_OPTIONS = ['DRAFT', 'SENT', 'PAID', 'OVERDUE', 'CANCELLED'];
 
@@ -14,6 +17,8 @@ const toDateInput = (v) => {
 };
 
 const EditInvoiceModal = ({ isOpen, invoice, onSubmit, onClose, error, setError }) => {
+  const { canWrite, guardMessage } = useWriteGuard();
+
   const [form, setForm] = useState({
     customerId: '',
     projectId: '',
@@ -58,12 +63,9 @@ const EditInvoiceModal = ({ isOpen, invoice, onSubmit, onClose, error, setError 
 
   if (!isOpen || !invoice) return null;
 
-  // Locking rules — mirror the backend's UpdateInvoiceUseCase validations.
   const hasPayments = Number(invoice.amountPaid) > 0;
   const isPaid = invoice.status === 'PAID';
 
-  // If PAID: only notes editable.
-  // If has payments (but not PAID): amounts are locked.
   const amountsLocked = hasPayments || isPaid;
   const nonNotesLocked = isPaid;
 
@@ -79,9 +81,9 @@ const EditInvoiceModal = ({ isOpen, invoice, onSubmit, onClose, error, setError 
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!canWrite) return;
     setLocalError('');
 
-    // PAID invoices: only notes may be sent.
     if (isPaid) {
       setIsSubmitting(true);
       try {
@@ -110,7 +112,6 @@ const EditInvoiceModal = ({ isOpen, invoice, onSubmit, onClose, error, setError 
       notes: form.notes.trim(),
     };
 
-    // Only send amounts if they're not locked.
     if (!amountsLocked) {
       payload.subtotal = subtotalNum;
       payload.tax = taxNum;
@@ -147,6 +148,8 @@ const EditInvoiceModal = ({ isOpen, invoice, onSubmit, onClose, error, setError 
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <ReadOnlyBanner />
+
           {isPaid && (
             <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-400 px-3 py-2 rounded text-sm flex items-center gap-2">
               <Lock className="w-4 h-4 flex-shrink-0" />
@@ -305,8 +308,13 @@ const EditInvoiceModal = ({ isOpen, invoice, onSubmit, onClose, error, setError 
             </button>
             <button
               type="submit"
-              disabled={isSubmitting}
-              className="px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white rounded-lg transition"
+              disabled={isSubmitting || !canWrite}
+              title={guardMessage}
+              className={`px-4 py-2 rounded-lg transition ${
+                isSubmitting || !canWrite
+                  ? 'bg-gray-300 dark:bg-slate-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                  : 'bg-primary-600 hover:bg-primary-700 text-white'
+              }`}
             >
               {isSubmitting ? 'Saving...' : 'Save Changes'}
             </button>
