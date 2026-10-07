@@ -1,10 +1,11 @@
 // frontend/src/App.jsx
-// v2.1.0 — /donors passes initialType="DONOR" to Customers.
+// v2.2.0 — Mounts <ChatWidget /> globally inside BrowserRouter.
 
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
+import ChatWidget from './components/Landing/ChatWidget';
 import Landing from './pages/Landing';
 import Register from './pages/Register';
 import Login from './pages/Login';
@@ -322,6 +323,9 @@ function App() {
             {/* Fallback Route */}
             <Route path="*" element={<Landing />} />
           </Routes>
+
+          {/* Global chat widget — visible on every page */}
+          <ChatWidget />
         </BrowserRouter>
       </AuthProvider>
     </ThemeProvider>

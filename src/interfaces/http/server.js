@@ -1,4 +1,5 @@
 // src/interfaces/http/server.js
+// v2.15.0-prod — Adds /api/chat (DeepSeek-backed FAQ assistant).
 // v2.14.0-prod — Sentry v8+, structured logging, plan gating, PORT compatible (Render)
 //               Adds Consultancy routes: /api/projects, /api/time-entries, /api/invoices
 //               Adds Education routes: /api/students, /api/classes, /api/enrollments, /api/terms, /api/fees
@@ -139,10 +140,14 @@ const termRoutes = require('./routes/termRoutes');
 const feeRoutes = require('./routes/feeRoutes');
 const pledgeRoutes = require('./routes/pledgeRoutes');
 const donationRoutes = require('./routes/donationRoutes');
+const chatRoutes = require('./routes/chatRoutes');
 
 // ── Auth routes carry loginEmailLimiter + registerLimiter + forgot + reset.
 //    (loginIpLimiter already ran at the server layer above.)
 app.use('/api/auth', authRoutes);
+
+// ── Public chat (no auth — marketing-site widget)
+app.use('/api/chat', chatRoutes);
 
 app.use('/api/subscription', standardLimiter, subscriptionRoutes);
 app.use('/api/payment', standardLimiter, paymentRoutes);
@@ -233,6 +238,9 @@ const server = app.listen(PORT, () => {
   logger.info('plan gating: active (authMiddleware → planGuard)');
   logger.info(
     process.env.SENTRY_DSN ? 'sentry: enabled' : 'sentry: disabled (no SENTRY_DSN)'
+  );
+  logger.info(
+    process.env.DEEPSEEK_API_KEY ? 'chat: enabled' : 'chat: disabled (no DEEPSEEK_API_KEY)'
   );
 
   // ── Warm the DB pool so the first real request doesn't pay

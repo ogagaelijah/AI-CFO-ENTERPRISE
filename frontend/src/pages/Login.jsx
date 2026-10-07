@@ -1,4 +1,5 @@
 // frontend/src/pages/Login.jsx
+// v1.0.1 — no functional change from v1.0.0; file included for completeness.
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';

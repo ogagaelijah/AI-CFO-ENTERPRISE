@@ -1,4 +1,6 @@
 // frontend/src/pages/Landing.jsx
+// v1.3.0 — Adds <ProblemStatement /> and <FAQSection /> to the landing page.
+//           Adds "FAQ" nav link (desktop + mobile).
 // v1.2.1 — Renames "Consultancy" to "Consultancy / Services" in the
 //           live industries list and the feature card description.
 //           Matches Register.jsx and industryConfig.js.
@@ -10,6 +12,8 @@ import {
   Moon, Sun, TrendingUp, Package, Users, FileText, BarChart3, Zap,
   ChevronRight, Check, Menu, X, Loader2,
 } from 'lucide-react';
+import ProblemStatement from '../components/Landing/ProblemStatement';
+import FAQSection from '../components/Landing/FAQSection';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -133,6 +137,7 @@ const Landing = () => {
               <a href="#features" className="text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-gold-400 transition">Features</a>
               <a href="#industries" className="text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-gold-400 transition">Industries</a>
               <a href="#pricing" className="text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-gold-400 transition">Pricing</a>
+              <a href="#faq" className="text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-gold-400 transition">FAQ</a>
             </nav>
 
             <div className="hidden md:flex items-center space-x-4">
@@ -176,6 +181,7 @@ const Landing = () => {
               <a href="#features" className="block text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-gold-400 transition py-2" onClick={closeMenu}>Features</a>
               <a href="#industries" className="block text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-gold-400 transition py-2" onClick={closeMenu}>Industries</a>
               <a href="#pricing" className="block text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-gold-400 transition py-2" onClick={closeMenu}>Pricing</a>
+              <a href="#faq" className="block text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-gold-400 transition py-2" onClick={closeMenu}>FAQ</a>
               <hr className="border-gray-200 dark:border-slate-700" />
               <Link to="/login" className="block text-primary-600 dark:text-gold-400 font-medium py-2" onClick={closeMenu}>Log in</Link>
               <Link to="/register" className="block text-center text-white bg-primary-600 dark:bg-gold-500 dark:text-slate-900 rounded-lg px-4 py-3 font-medium" onClick={closeMenu}>
@@ -213,6 +219,9 @@ const Landing = () => {
           </p>
         </div>
       </section>
+
+      {/* Problem Statement — NEW */}
+      <ProblemStatement />
 
       {/* Features */}
       <section id="features" className="py-20 px-4 bg-white dark:bg-slate-800 transition-colors duration-300">
@@ -396,6 +405,9 @@ const Landing = () => {
         </div>
       </section>
 
+      {/* FAQ — NEW */}
+      <FAQSection />
+
       {/* Footer */}
       <footer className="py-12 px-4 bg-gray-900 dark:bg-slate-950 transition-colors duration-300">
         <div className="max-w-6xl mx-auto text-center">
@@ -406,6 +418,7 @@ const Landing = () => {
           <div className="flex flex-wrap justify-center gap-6 text-sm text-gray-400">
             <a href="#features" className="hover:text-white transition">Features</a>
             <a href="#pricing" className="hover:text-white transition">Pricing</a>
+            <a href="#faq" className="hover:text-white transition">FAQ</a>
             <a href="mailto:support@aicfotechnologies.com" className="hover:text-white transition">Contact</a>
           </div>
           <div className="mt-6 text-sm text-gray-500">
