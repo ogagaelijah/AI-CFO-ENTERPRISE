@@ -15,11 +15,8 @@ pnpm-lock.yaml
 # ENVIRONMENT VARIABLES (Sensitive Data)
 # =============================================
 .env
-.env.local
-.env.*.local
-.env.production
-.env.development
-.env.test
+.env.*
+!.env.examples
 
 # =============================================
 # DATABASE FILES

@@ -1,13 +1,42 @@
 // scripts/migrate.js
+// v3.1.0-prod — Fresh-DB safe bootstrap. No longer pre-creates the migrations
+//               table at startup; instead ensures it exists after each migration
+//               so 001_schema.sql's own CREATE TABLE doesn't collide.
+//               Supports --staging flag to target .env.staging.
 // v3.0.0-prod — PostgreSQL migration runner.
 // Runs .sql files in src/infrastructure/database/sqlite/migrations/ in order.
 
 const fs = require('fs');
 const path = require('path');
-require('dotenv').config();
+const envFile = process.argv.includes('--staging') ? '.env.staging' : '.env';
+require('dotenv').config({ path: envFile });
 const { getPool, closePool } = require('../src/infrastructure/database/sqlite/connection');
 
 const MIGRATION_TABLE = 'migrations';
+
+async function ensureMigrationsTable(client) {
+    await client.query(`
+        CREATE TABLE IF NOT EXISTS ${MIGRATION_TABLE} (
+            id              SERIAL PRIMARY KEY,
+            migration_name  TEXT UNIQUE NOT NULL,
+            ran_at          TIMESTAMPTZ DEFAULT NOW()
+        )
+    `);
+}
+
+async function loadAppliedMigrations(client) {
+    // Check if table exists first — fresh DB won't have it.
+    const { rows } = await client.query(
+        `SELECT table_name FROM information_schema.tables
+          WHERE table_schema = 'public' AND table_name = $1`,
+        [MIGRATION_TABLE]
+    );
+    if (rows.length === 0) return [];
+    const { rows: runRows } = await client.query(
+        `SELECT migration_name FROM ${MIGRATION_TABLE} ORDER BY id`
+    );
+    return runRows.map(r => r.migration_name);
+}
 
 async function main() {
     const pool = getPool();
@@ -16,23 +45,9 @@ async function main() {
     try {
         console.log('🔄 Starting migrations...');
 
-        // Ensure migrations table exists
-        await client.query(`
-            CREATE TABLE IF NOT EXISTS ${MIGRATION_TABLE} (
-                id              SERIAL PRIMARY KEY,
-                migration_name  TEXT UNIQUE NOT NULL,
-                ran_at          TIMESTAMPTZ DEFAULT NOW()
-            )
-        `);
-        console.log('✅ Migrations table ready');
+        const runMigrations = await loadAppliedMigrations(client);
+        console.log(`📚 Already applied: ${runMigrations.length}`);
 
-        // Load already-run migrations
-        const { rows: runRows } = await client.query(
-            `SELECT migration_name FROM ${MIGRATION_TABLE} ORDER BY id`
-        );
-        const runMigrations = runRows.map(r => r.migration_name);
-
-        // Load migration files
         const migrationsDir = path.join(
             __dirname,
             '../src/infrastructure/database/sqlite/migrations'
@@ -63,8 +78,12 @@ async function main() {
             await client.query('BEGIN');
             try {
                 await client.query(sql);
+                // Ensure the tracking table exists (001_schema.sql may have
+                // created it, or we create it here for migrations that don't).
+                await ensureMigrationsTable(client);
                 await client.query(
-                    `INSERT INTO ${MIGRATION_TABLE} (migration_name) VALUES ($1)`,
+                    `INSERT INTO ${MIGRATION_TABLE} (migration_name) VALUES ($1)
+                     ON CONFLICT (migration_name) DO NOTHING`,
                     [file]
                 );
                 await client.query('COMMIT');
