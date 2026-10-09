@@ -1,9 +1,8 @@
 // src/interfaces/http/routes/authRoutes.js
-// v3.7.1-prod — loginIpLimiter removed from /login (now runs at the server
-//               layer, BEFORE express.json(), so rejected floods short-
-//               circuit without body parsing). Only loginEmailLimiter
-//               remains on the route, because it needs the parsed body.
-//               Everything else unchanged from v3.7.0.
+// v3.9.0-prod — Friendly duplicate-phone error, phone normalization,
+//               Postgres 23505 translation in /register catch.
+// v3.8.0-prod — Email verification + password reset wired to Resend.
+// v3.7.1-prod — loginIpLimiter removed from /login (runs at server layer).
 
 const express = require('express');
 const router = express.Router();
@@ -18,6 +17,13 @@ const SecurityEventService = require('../../../infrastructure/services/security/
 const { withTransaction } = require('../../../infrastructure/database/sqlite/connection');
 const plans = require('../../../config/plans');
 
+const VerifyEmailUseCase = require('../../../application/useCases/auth/VerifyEmailUseCase');
+const ForgotPasswordUseCase = require('../../../application/useCases/auth/ForgotPasswordUseCase');
+const ResetPasswordUseCase = require('../../../application/useCases/auth/ResetPasswordUseCase');
+
+const emailService = require('../../../infrastructure/services/email/ResendService');
+const logger = require('../../../shared/utils/logger');
+
 const {
   loginEmailLimiter,
   registerLimiter,
@@ -29,6 +35,10 @@ const userRepo = new UserRepository();
 const businessRepo = new BusinessRepository();
 const subscriptionRepo = new SubscriptionRepository();
 const securityEvents = new SecurityEventService();
+
+const verifyEmailUseCase = new VerifyEmailUseCase({ userRepository: userRepo });
+const forgotPasswordUseCase = new ForgotPasswordUseCase(userRepo, { emailService });
+const resetPasswordUseCase = new ResetPasswordUseCase(userRepo);
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 const JWT_EXPIRES_IN = '7d';
@@ -60,6 +70,33 @@ const validatePassword = (password) => {
   return null;
 };
 
+/**
+ * Normalize Nigerian phone numbers to canonical 11-digit form: 0XXXXXXXXXX.
+ * Accepts (in any order): spaces, dashes, parentheses, leading + or 234 prefix.
+ * Returns null if the input is not a plausible Nigerian phone number.
+ *
+ * Examples that all normalize to "07033621133":
+ *   "07033621133"
+ *   "0703 362 1133"
+ *   "+2347033621133"
+ *   "+234 703 362 1133"
+ *   "234-703-362-1133"
+ */
+const normalizePhone = (input) => {
+  if (!input || typeof input !== 'string') return null;
+  // Strip everything except digits and a leading +
+  let s = input.trim().replace(/[^\d+]/g, '');
+  // Drop leading +
+  if (s.startsWith('+')) s = s.slice(1);
+  // Convert 234XXXXXXXXXX → 0XXXXXXXXXX
+  if (s.startsWith('234') && s.length === 13) {
+    s = '0' + s.slice(3);
+  }
+  // Validate: 11 digits starting with 0
+  if (!/^0\d{10}$/.test(s)) return null;
+  return s;
+};
+
 const signToken = (user, business) =>
   jwt.sign(
     {
@@ -85,6 +122,7 @@ const clientUa = (req) => req.headers['user-agent'] || 'unknown';
 // ─────────────────────────────────────────────
 // POST /register
 // Limited to 5 per hour per IP (registerLimiter).
+// Creates user + business + trial subscription, sends verification email.
 // ─────────────────────────────────────────────
 router.post('/register', registerLimiter, async (req, res) => {
   try {
@@ -97,6 +135,19 @@ router.post('/register', registerLimiter, async (req, res) => {
     const pwError = validatePassword(password);
     if (pwError) {
       return res.status(400).json({ success: false, message: pwError });
+    }
+
+    // Normalize phone if provided
+    let normalizedPhone = null;
+    if (phone && String(phone).trim().length > 0) {
+      normalizedPhone = normalizePhone(phone);
+      if (!normalizedPhone) {
+        return res.status(400).json({
+          success: false,
+          code: 'INVALID_PHONE',
+          message: 'Please enter a valid Nigerian phone number (e.g. 07033621133).',
+        });
+      }
     }
 
     const emailExists = await userRepo.emailExists(email);
@@ -113,6 +164,23 @@ router.post('/register', registerLimiter, async (req, res) => {
       });
     }
 
+    if (normalizedPhone) {
+      const phoneExists = await userRepo.phoneExists(normalizedPhone);
+      if (phoneExists) {
+        securityEvents.log({
+          eventType: 'REGISTER_DUPLICATE_PHONE',
+          phone: normalizedPhone,
+          ipAddress: clientIp(req),
+          userAgent: clientUa(req),
+        });
+        return res.status(409).json({
+          success: false,
+          code: 'PHONE_TAKEN',
+          message: 'This phone number is already registered. Please use a different one or log in.',
+        });
+      }
+    }
+
     const passwordHash = await bcrypt.hash(password, 10);
     const uniqueTelegramId = `web_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
 
@@ -125,7 +193,7 @@ router.post('/register', registerLimiter, async (req, res) => {
         const u = await userRepo.create({
           telegramId: uniqueTelegramId,
           email,
-          phoneNumber: phone || null,
+          phoneNumber: normalizedPhone,
           fullName,
           passwordHash,
           emailVerified: false,
@@ -168,6 +236,20 @@ router.post('/register', registerLimiter, async (req, res) => {
         };
       });
 
+    // Send verification email. Never block registration on email failure.
+    try {
+      await emailService.sendVerification({
+        to: user.email,
+        fullName: user.fullName,
+        token: rawVerifyToken,
+      });
+    } catch (emailErr) {
+      logger.error(
+        { err: emailErr.message, userId: user.id, email: user.email },
+        'register: verification email send failed'
+      );
+    }
+
     securityEvents.log({
       eventType: 'REGISTER_SUCCESS',
       userId: user.id,
@@ -180,11 +262,9 @@ router.post('/register', registerLimiter, async (req, res) => {
     const token = signToken(user, business);
     res.cookie('token', token, COOKIE_OPTIONS);
 
-    const verifyUrl = `/verify-email?token=${rawVerifyToken}`;
-
     return res.status(201).json({
       success: true,
-      message: `Account created. You have ${trialDays} days of ${trialPlan.name} access.`,
+      message: `Account created. Check your email to verify your account. You have ${trialDays} days of ${trialPlan.name} access.`,
       token,
       user: {
         id: user.id,
@@ -206,10 +286,37 @@ router.post('/register', registerLimiter, async (req, res) => {
         days: trialDays,
         endDate: trialEndDate,
       },
-      ...(!isDev && { verifyUrl }),
     });
   } catch (error) {
     console.error('Register error:', error);
+
+    // Postgres unique-violation (23505). Translate into a friendly message
+    // based on which constraint fired. Safety net for race conditions.
+    if (error.code === '23505') {
+      const constraint = error.constraint || '';
+
+      if (constraint.includes('email')) {
+        // Preserve enumeration protection for email
+        return res.status(200).json({
+          success: true,
+          message: 'If your information is valid, please check your email to continue.',
+        });
+      }
+
+      if (constraint.includes('phone')) {
+        return res.status(409).json({
+          success: false,
+          code: 'PHONE_TAKEN',
+          message: 'This phone number is already registered. Please use a different one or log in.',
+        });
+      }
+
+      return res.status(409).json({
+        success: false,
+        message: 'Some of your information is already registered. Please check and try again.',
+      });
+    }
+
     return res.status(500).json({
       success: false,
       message: error.message || 'Registration failed',
@@ -218,11 +325,92 @@ router.post('/register', registerLimiter, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
+// POST /verify-email
+// Validates the raw token from the email link.
+// ─────────────────────────────────────────────
+router.post('/verify-email', strictLimiter, async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (!token) {
+      return res.status(400).json({ success: false, message: 'Verification token is required' });
+    }
+
+    const result = await verifyEmailUseCase.execute({ token });
+
+    securityEvents.log({
+      eventType: 'EMAIL_VERIFIED',
+      userId: result.user?.id,
+      email: result.user?.email,
+      ipAddress: clientIp(req),
+      userAgent: clientUa(req),
+    });
+
+    return res.json({ success: true, message: result.message });
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      message: error.message || 'Verification failed',
+    });
+  }
+});
+
+// ─────────────────────────────────────────────
+// POST /resend-verification
+// Issues a fresh verification token and re-sends the email.
+// Always returns generic success to prevent enumeration.
+// ─────────────────────────────────────────────
+router.post('/resend-verification', strictLimiter, async (req, res) => {
+  const genericResponse = {
+    success: true,
+    message: 'If your email is registered and unverified, a new verification link has been sent.',
+  };
+
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Email is required' });
+    }
+
+    const user = await userRepo.findByEmail(email);
+    if (!user) return res.json(genericResponse);
+    if (user.emailVerified) return res.json(genericResponse);
+
+    const rawVerifyToken = crypto.randomBytes(32).toString('hex');
+    const hashedVerifyToken = hashToken(rawVerifyToken);
+    const verifyExpiry = new Date(Date.now() + EMAIL_VERIFICATION_TTL_MS).toISOString();
+
+    await userRepo.update(user.id, {
+      emailVerificationToken: hashedVerifyToken,
+      emailVerificationExpiry: verifyExpiry,
+    });
+
+    try {
+      await emailService.sendVerification({
+        to: user.email,
+        fullName: user.fullName,
+        token: rawVerifyToken,
+      });
+    } catch (emailErr) {
+      logger.error(
+        { err: emailErr.message, userId: user.id },
+        'resend-verification: email send failed'
+      );
+    }
+
+    return res.json(genericResponse);
+  } catch (error) {
+    logger.error({ err: error.message }, 'resend-verification: unexpected error');
+    return res.status(500).json({
+      success: false,
+      message: 'Something went wrong. Please try again later.',
+    });
+  }
+});
+
+// ─────────────────────────────────────────────
 // POST /login
-// IP limiter (20/15min per IP) runs at the SERVER layer, BEFORE
-// express.json(), so rejected floods short-circuit before body parsing.
-// Email limiter (10/15min per email) runs here, because it needs
-// req.body.email from the parsed body.
+// IP limiter runs at the SERVER layer, BEFORE express.json().
+// Email limiter runs here because it needs req.body.email.
 // ─────────────────────────────────────────────
 router.post('/login', loginEmailLimiter, async (req, res) => {
   try {
@@ -344,23 +532,62 @@ router.post('/logout', (req, res) => {
 });
 
 // ─────────────────────────────────────────────
-// POST /forgot-password  (placeholder for Phase 4)
+// POST /forgot-password
+// Sends a reset link if the email exists. Generic response always.
 // ─────────────────────────────────────────────
 router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
-  return res.status(501).json({
-    success: false,
-    message: 'Password reset is not yet enabled. Coming soon.',
-  });
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Email is required' });
+    }
+
+    const result = await forgotPasswordUseCase.execute({ email });
+    return res.json(result);
+  } catch (error) {
+    logger.error({ err: error.message }, 'forgot-password: unexpected error');
+    return res.json({
+      success: true,
+      message: 'If your email is registered, you will receive a reset link.',
+    });
+  }
 });
 
 // ─────────────────────────────────────────────
-// POST /reset-password (placeholder for Phase 4)
+// POST /reset-password
+// Validates token, sets new password, clears token.
 // ─────────────────────────────────────────────
 router.post('/reset-password', strictLimiter, async (req, res) => {
-  return res.status(501).json({
-    success: false,
-    message: 'Password reset is not yet enabled. Coming soon.',
-  });
+  try {
+    const { token, newPassword } = req.body;
+
+    if (!token || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Token and new password are required.',
+      });
+    }
+
+    const pwError = validatePassword(newPassword);
+    if (pwError) {
+      return res.status(400).json({ success: false, message: pwError });
+    }
+
+    const result = await resetPasswordUseCase.execute({ token, newPassword });
+
+    securityEvents.log({
+      eventType: 'PASSWORD_RESET_SUCCESS',
+      ipAddress: clientIp(req),
+      userAgent: clientUa(req),
+    });
+
+    return res.json(result);
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      message: error.message || 'Password reset failed',
+    });
+  }
 });
 
 module.exports = router;
