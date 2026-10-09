@@ -1,7 +1,9 @@
 // frontend/src/pages/Register.jsx
+// v1.4.0-prod — After successful registration, shows a "Check your email"
+//               welcome screen with a resend link, instead of redirecting
+//               straight to the dashboard.
 // v1.3.1-prod — Renames "Consultancy" to "Consultancy / Services" so
-//               service-based firms can self-identify. Internal value
-//               sent to backend unchanged for now (uses display label).
+//               service-based firms can self-identify.
 
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -9,12 +11,12 @@ import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import {
   Moon, Sun, User, Mail, Phone, Lock, Building2, ChevronRight,
-  Eye, EyeOff, Sparkles,
+  Eye, EyeOff, Sparkles, MailCheck, ArrowRight, Loader2,
 } from 'lucide-react';
+import { authApi } from '../services/api';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
-// Industries users can currently sign up for.
 const READY_INDUSTRIES = [
   'Retail / Wholesale',
   'Construction',
@@ -23,7 +25,6 @@ const READY_INDUSTRIES = [
   'NGO / Non-Profit',
 ];
 
-// Industries that appear in the dropdown but are not yet selectable.
 const COMING_SOON_INDUSTRIES = [
   'Manufacturing',
   'Healthcare',
@@ -51,6 +52,11 @@ const Register = () => {
     industry: '',
   });
   const [errors, setErrors] = useState({});
+
+  // Set when registration succeeds — triggers the "check your email" screen
+  const [successEmail, setSuccessEmail] = useState(null);
+  const [resending, setResending] = useState(false);
+  const [resent, setResent] = useState(false);
 
   useEffect(() => {
     if (!requestedPlanId) return;
@@ -99,13 +105,13 @@ const Register = () => {
         fullName: formData.fullName.trim(),
         email: formData.email.trim().toLowerCase(),
         phone: formData.phone.trim(),
-        // Do NOT trim password — spaces are legitimate.
         password: formData.password,
         businessName: formData.businessName.trim(),
         industry: formData.industry,
       };
       await register(userData);
-      navigate('/dashboard', { replace: true });
+      // Instead of navigating, show the "check your email" screen.
+      setSuccessEmail(userData.email);
     } catch (error) {
       console.error('Registration error:', error);
       setErrors({
@@ -116,6 +122,108 @@ const Register = () => {
     }
   };
 
+  const handleResend = async () => {
+    setResending(true);
+    try {
+      await authApi.resendVerification(successEmail);
+      setResent(true);
+      setTimeout(() => setResent(false), 4000);
+    } catch {
+      /* silent — Resend behavior is intentionally opaque */
+    } finally {
+      setResending(false);
+    }
+  };
+
+  // ── Success screen (post-registration)
+  if (successEmail) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-slate-900 transition-colors duration-300 flex flex-col">
+        <header className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md z-50 border-b border-gray-200 dark:border-slate-700 transition-colors duration-300">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex items-center justify-between h-16">
+              <Link to="/" className="flex items-center space-x-2">
+                <span className="text-2xl font-bold text-primary-600 dark:text-gold-400">AI CFO</span>
+                <span className="text-sm font-medium text-gray-600 dark:text-gray-400 hidden sm:inline">ENTERPRISE</span>
+              </Link>
+              <button onClick={toggleTheme} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition" aria-label="Toggle dark mode">
+                {theme === 'dark' ? <Sun className="w-5 h-5 text-gold-400" /> : <Moon className="w-5 h-5 text-gray-600" />}
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <div className="flex-1 flex items-center justify-center px-4 py-12">
+          <div className="w-full max-w-md">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-gray-200 dark:border-slate-700 p-8 transition-colors duration-300 text-center">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-50 dark:bg-green-900/30 mb-4">
+                <MailCheck className="w-8 h-8 text-green-600 dark:text-green-400" />
+              </div>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                Check your email
+              </h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-3">
+                We've sent a verification link to{' '}
+                <span className="font-medium text-gray-900 dark:text-white break-all">
+                  {successEmail}
+                </span>
+                . Click the link in that email to verify your account.
+              </p>
+
+              <div className="mt-6 p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-left">
+                <p className="text-sm text-amber-800 dark:text-amber-300">
+                  <strong>Didn't get it?</strong> Check your spam or promotions folder. The link expires in 24 hours.
+                </p>
+              </div>
+
+              {resent && (
+                <div className="mt-4 p-3 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+                  <p className="text-sm text-green-700 dark:text-green-400">
+                    ✓ Verification email sent again.
+                  </p>
+                </div>
+              )}
+
+              <div className="mt-6 flex flex-col gap-3">
+                <button
+                  onClick={handleResend}
+                  disabled={resending || resent}
+                  className="w-full py-3 px-4 text-primary-700 dark:text-gold-400 bg-primary-50 dark:bg-primary-900/30 rounded-lg font-medium hover:bg-primary-100 dark:hover:bg-primary-900/50 transition disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center"
+                >
+                  {resending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Sending...
+                    </>
+                  ) : (
+                    'Resend verification email'
+                  )}
+                </button>
+
+                <button
+                  onClick={() => navigate('/dashboard', { replace: true })}
+                  className="w-full py-3 px-4 text-white bg-primary-600 hover:bg-primary-700 rounded-lg font-medium transition shadow-md hover:shadow-lg inline-flex items-center justify-center"
+                >
+                  Continue to dashboard
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </button>
+              </div>
+
+              <p className="mt-6 text-xs text-gray-500 dark:text-gray-500">
+                You can use the app now — verify your email anytime before your trial ends.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <footer className="py-4 px-4 text-center text-sm text-gray-500 dark:text-gray-500 border-t border-gray-200 dark:border-slate-700">
+          <p>Built for African SMEs 🇳🇬</p>
+        </footer>
+      </div>
+    );
+  }
+
+  // ── Registration form
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-900 transition-colors duration-300 flex flex-col">
       <header className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md z-50 border-b border-gray-200 dark:border-slate-700 transition-colors duration-300">
@@ -226,15 +334,11 @@ const Register = () => {
                 <select id="industry" name="industry" value={formData.industry} onChange={handleChange}
                   className={`w-full px-4 py-3 rounded-lg border ${errors.industry ? 'border-red-500' : 'border-gray-300 dark:border-slate-600'} bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition outline-none appearance-none`}>
                   <option value="">Select your industry</option>
-
-                  {/* Ready industries — selectable */}
                   {READY_INDUSTRIES.map((industry) => (
                     <option key={industry} value={industry}>
                       {industry}
                     </option>
                   ))}
-
-                  {/* Coming-soon industries — disabled, appear below */}
                   {COMING_SOON_INDUSTRIES.map((industry) => (
                     <option key={industry} value={industry} disabled>
                       {industry} — Coming soon

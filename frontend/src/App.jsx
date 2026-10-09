@@ -1,4 +1,5 @@
 // frontend/src/App.jsx
+// v2.3.0 — Adds /verify-email, /forgot-password, /reset-password public routes.
 // v2.2.0 — Mounts <ChatWidget /> globally inside BrowserRouter.
 
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
@@ -9,6 +10,9 @@ import ChatWidget from './components/Landing/ChatWidget';
 import Landing from './pages/Landing';
 import Register from './pages/Register';
 import Login from './pages/Login';
+import VerifyEmail from './pages/VerifyEmail';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import Dashboard from './pages/Dashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import Reports from './pages/Reports';
@@ -50,6 +54,9 @@ function App() {
             <Route path="/" element={<Landing />} />
             <Route path="/register" element={<Register />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/verify-email" element={<VerifyEmail />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/payment/success" element={<PaymentSuccess />} />
 
             {/* Protected Routes - Regular Users */}

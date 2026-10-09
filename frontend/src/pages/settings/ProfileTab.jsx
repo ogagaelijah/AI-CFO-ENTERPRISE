@@ -1,7 +1,11 @@
 // src/pages/settings/ProfileTab.jsx
+// v1.1.0 — Adds EmailStatusBadge under the Email field.
+// v1.0.0 — Initial.
+
 import { useState } from 'react';
 import { Save, Lock } from 'lucide-react';
 import api from '../../services/api';
+import EmailStatusBadge from '../../components/common/EmailStatusBadge';
 
 const ProfileTab = ({ profileData, setProfileData }) => {
   const [loading, setLoading] = useState(false);
@@ -80,7 +84,10 @@ const ProfileTab = ({ profileData, setProfileData }) => {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
+              <EmailStatusBadge />
+            </div>
             <input
               type="email"
               value={profileData.email}

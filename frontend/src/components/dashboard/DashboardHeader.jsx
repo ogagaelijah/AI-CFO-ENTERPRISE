@@ -1,4 +1,7 @@
 // frontend/src/components/dashboard/DashboardHeader.jsx
+// v1.1.0 — Adds EmailStatusBadge (compact) in the avatar dropdown.
+// v1.0.0 — Initial.
+
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import {
@@ -7,6 +10,7 @@ import {
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { usePlan } from '../../hooks/usePlan';
+import EmailStatusBadge from '../common/EmailStatusBadge';
 
 const DashboardHeader = ({
   user,
@@ -19,10 +23,9 @@ const DashboardHeader = ({
   const { logout } = useAuth();
   const { planId, planName, isTrial, isReadOnly, daysRemaining } = usePlan();
 
-  const [openDropdown, setOpenDropdown] = useState(null); // 'notifications' | 'profile' | null
+  const [openDropdown, setOpenDropdown] = useState(null);
   const containerRef = useRef(null);
 
-  // Close dropdowns on outside click or Escape
   useEffect(() => {
     const onClick = (e) => {
       if (containerRef.current && !containerRef.current.contains(e.target)) {
@@ -43,7 +46,6 @@ const DashboardHeader = ({
   const toggleDropdown = (name) =>
     setOpenDropdown((prev) => (prev === name ? null : name));
 
-  // ── Plan badge
   const planStyles = {
     basic: 'bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-gray-300 border-gray-200 dark:border-slate-600',
     pro: 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-gold-400 border-primary-200 dark:border-primary-800',
@@ -93,7 +95,6 @@ const DashboardHeader = ({
   return (
     <header className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border-b border-gray-200 dark:border-slate-700 px-4 sm:px-6 py-3 sticky top-0 z-30">
       <div className="flex items-center justify-between" ref={containerRef}>
-        {/* Mobile menu + logo */}
         <div className="flex items-center space-x-3 md:hidden">
           <button
             onClick={onMenuToggle}
@@ -127,7 +128,6 @@ const DashboardHeader = ({
             <span>{industryConfig.label}</span>
           </div>
 
-          {/* Notifications */}
           <div className="relative">
             <button
               onClick={() => toggleDropdown('notifications')}
@@ -159,7 +159,6 @@ const DashboardHeader = ({
             )}
           </div>
 
-          {/* Theme toggle */}
           <button
             onClick={toggleTheme}
             className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition"
@@ -172,7 +171,6 @@ const DashboardHeader = ({
             )}
           </button>
 
-          {/* Avatar dropdown */}
           <div className="relative">
             <button
               onClick={() => toggleDropdown('profile')}
@@ -190,14 +188,17 @@ const DashboardHeader = ({
             </button>
 
             {openDropdown === 'profile' && (
-              <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-gray-200 dark:border-slate-700 z-50">
+              <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-gray-200 dark:border-slate-700 z-50">
                 <div className="px-4 py-3 border-b border-gray-200 dark:border-slate-700">
                   <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
                     {user?.fullName || 'User'}
                   </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
                     {user?.email || ''}
                   </p>
+                  <div className="mt-1.5">
+                    <EmailStatusBadge variant="compact" showResend={false} />
+                  </div>
                 </div>
                 <div className="py-1">
                   <Link
