@@ -103,3 +103,5 @@ coverage/
 ai-cfo.db*
 # Load test results (regenerate on each run)
 load-tests/results/*.json
+
+prod-users-backup-*.json
