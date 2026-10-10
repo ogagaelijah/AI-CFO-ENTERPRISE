@@ -1,9 +1,10 @@
 // frontend/src/pages/Register.jsx
-// v1.4.0-prod — After successful registration, shows a "Check your email"
-//               welcome screen with a resend link, instead of redirecting
-//               straight to the dashboard.
-// v1.3.1-prod — Renames "Consultancy" to "Consultancy / Services" so
-//               service-based firms can self-identify.
+// v1.5.1-prod — Phone-taken block now also shows the "Log in instead" link
+//               (parity with email-taken).
+// v1.5.0-prod — Surfaces EMAIL_TAKEN + PHONE_TAKEN as inline errors with
+//               actionable "Log in instead" hints (was silently swallowed).
+// v1.4.0-prod — Post-registration "Check your email" success screen.
+// v1.3.1-prod — Renames "Consultancy" to "Consultancy / Services".
 
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -11,7 +12,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import {
   Moon, Sun, User, Mail, Phone, Lock, Building2, ChevronRight,
-  Eye, EyeOff, Sparkles, MailCheck, ArrowRight, Loader2,
+  Eye, EyeOff, Sparkles, MailCheck, ArrowRight, Loader2, AlertCircle,
 } from 'lucide-react';
 import { authApi } from '../services/api';
 
@@ -80,6 +81,8 @@ const Register = () => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
     if (errors[name]) setErrors((prev) => ({ ...prev, [name]: '' }));
+    if (errors.submit) setErrors((prev) => ({ ...prev, submit: '' }));
+    if (errors.submitCode) setErrors((prev) => ({ ...prev, submitCode: '' }));
   };
 
   const validateForm = () => {
@@ -110,12 +113,16 @@ const Register = () => {
         industry: formData.industry,
       };
       await register(userData);
-      // Instead of navigating, show the "check your email" screen.
       setSuccessEmail(userData.email);
     } catch (error) {
       console.error('Registration error:', error);
+      const responseData = error.response?.data || {};
+      const code = responseData.code;
+      const message = responseData.message || 'Registration failed. Please try again.';
+
       setErrors({
-        submit: error.response?.data?.message || 'Registration failed. Please try again.',
+        submit: message,
+        submitCode: code || null,
       });
     } finally {
       setIsLoading(false);
@@ -224,6 +231,9 @@ const Register = () => {
   }
 
   // ── Registration form
+  const isEmailTaken = errors.submitCode === 'EMAIL_TAKEN';
+  const isPhoneTaken = errors.submitCode === 'PHONE_TAKEN';
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-900 transition-colors duration-300 flex flex-col">
       <header className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md z-50 border-b border-gray-200 dark:border-slate-700 transition-colors duration-300">
@@ -287,7 +297,7 @@ const Register = () => {
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                   <input id="email" name="email" type="email" value={formData.email} onChange={handleChange}
-                    className={`w-full pl-10 pr-4 py-3 rounded-lg border ${errors.email ? 'border-red-500' : 'border-gray-300 dark:border-slate-600'} bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition outline-none`}
+                    className={`w-full pl-10 pr-4 py-3 rounded-lg border ${errors.email || isEmailTaken ? 'border-red-500' : 'border-gray-300 dark:border-slate-600'} bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition outline-none`}
                     placeholder="you@example.com" autoComplete="email" />
                 </div>
                 {errors.email && <p className="mt-1 text-sm text-red-500">{errors.email}</p>}
@@ -298,7 +308,7 @@ const Register = () => {
                 <div className="relative">
                   <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                   <input id="phone" name="phone" type="tel" value={formData.phone} onChange={handleChange}
-                    className="w-full pl-10 pr-4 py-3 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition outline-none"
+                    className={`w-full pl-10 pr-4 py-3 rounded-lg border ${isPhoneTaken ? 'border-red-500' : 'border-gray-300 dark:border-slate-600'} bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition outline-none`}
                     placeholder="080 1234 5678" autoComplete="tel" />
                 </div>
               </div>
@@ -348,9 +358,38 @@ const Register = () => {
                 {errors.industry && <p className="mt-1 text-sm text-red-500">{errors.industry}</p>}
               </div>
 
+              {/* Submit-level errors: email-taken, phone-taken, generic */}
               {errors.submit && (
                 <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
-                  <p className="text-sm text-red-600 dark:text-red-400">{errors.submit}</p>
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm text-red-600 dark:text-red-400">{errors.submit}</p>
+                      {isEmailTaken && (
+                        <Link
+                          to="/login"
+                          className="inline-flex items-center text-sm font-medium text-primary-600 dark:text-gold-400 hover:underline mt-1"
+                        >
+                          Log in instead
+                          <ArrowRight className="w-3.5 h-3.5 ml-1" />
+                        </Link>
+                      )}
+                      {isPhoneTaken && (
+                        <>
+                          <p className="text-xs text-red-500 dark:text-red-400 mt-1">
+                            If you have another account with this phone, log in with that account's email instead.
+                          </p>
+                          <Link
+                            to="/login"
+                            className="inline-flex items-center text-sm font-medium text-primary-600 dark:text-gold-400 hover:underline mt-1"
+                          >
+                            Log in instead
+                            <ArrowRight className="w-3.5 h-3.5 ml-1" />
+                          </Link>
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
 

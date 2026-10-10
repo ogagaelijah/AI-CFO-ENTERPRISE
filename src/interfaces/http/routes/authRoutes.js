@@ -1,4 +1,7 @@
 // src/interfaces/http/routes/authRoutes.js
+// v4.0.0-prod — Email duplicate now returns 409 EMAIL_TAKEN with explicit
+//               message (was generic 200 to prevent enumeration). Phone
+//               duplicate already returned 409 PHONE_TAKEN.
 // v3.9.0-prod — Friendly duplicate-phone error, phone normalization,
 //               Postgres 23505 translation in /register catch.
 // v3.8.0-prod — Email verification + password reset wired to Resend.
@@ -84,15 +87,11 @@ const validatePassword = (password) => {
  */
 const normalizePhone = (input) => {
   if (!input || typeof input !== 'string') return null;
-  // Strip everything except digits and a leading +
   let s = input.trim().replace(/[^\d+]/g, '');
-  // Drop leading +
   if (s.startsWith('+')) s = s.slice(1);
-  // Convert 234XXXXXXXXXX → 0XXXXXXXXXX
   if (s.startsWith('234') && s.length === 13) {
     s = '0' + s.slice(3);
   }
-  // Validate: 11 digits starting with 0
   if (!/^0\d{10}$/.test(s)) return null;
   return s;
 };
@@ -150,6 +149,7 @@ router.post('/register', registerLimiter, async (req, res) => {
       }
     }
 
+    // ── Duplicate email check (v4.0.0: explicit rejection, matching phone)
     const emailExists = await userRepo.emailExists(email);
     if (emailExists) {
       securityEvents.log({
@@ -158,12 +158,14 @@ router.post('/register', registerLimiter, async (req, res) => {
         ipAddress: clientIp(req),
         userAgent: clientUa(req),
       });
-      return res.status(200).json({
-        success: true,
-        message: 'If your information is valid, please check your email to continue.',
+      return res.status(409).json({
+        success: false,
+        code: 'EMAIL_TAKEN',
+        message: 'This email is already registered. Please log in or use a different email.',
       });
     }
 
+    // ── Duplicate phone check
     if (normalizedPhone) {
       const phoneExists = await userRepo.phoneExists(normalizedPhone);
       if (phoneExists) {
@@ -296,10 +298,10 @@ router.post('/register', registerLimiter, async (req, res) => {
       const constraint = error.constraint || '';
 
       if (constraint.includes('email')) {
-        // Preserve enumeration protection for email
-        return res.status(200).json({
-          success: true,
-          message: 'If your information is valid, please check your email to continue.',
+        return res.status(409).json({
+          success: false,
+          code: 'EMAIL_TAKEN',
+          message: 'This email is already registered. Please log in or use a different email.',
         });
       }
 
@@ -326,7 +328,6 @@ router.post('/register', registerLimiter, async (req, res) => {
 
 // ─────────────────────────────────────────────
 // POST /verify-email
-// Validates the raw token from the email link.
 // ─────────────────────────────────────────────
 router.post('/verify-email', strictLimiter, async (req, res) => {
   try {
@@ -356,8 +357,6 @@ router.post('/verify-email', strictLimiter, async (req, res) => {
 
 // ─────────────────────────────────────────────
 // POST /resend-verification
-// Issues a fresh verification token and re-sends the email.
-// Always returns generic success to prevent enumeration.
 // ─────────────────────────────────────────────
 router.post('/resend-verification', strictLimiter, async (req, res) => {
   const genericResponse = {
@@ -409,8 +408,6 @@ router.post('/resend-verification', strictLimiter, async (req, res) => {
 
 // ─────────────────────────────────────────────
 // POST /login
-// IP limiter runs at the SERVER layer, BEFORE express.json().
-// Email limiter runs here because it needs req.body.email.
 // ─────────────────────────────────────────────
 router.post('/login', loginEmailLimiter, async (req, res) => {
   try {
@@ -533,7 +530,6 @@ router.post('/logout', (req, res) => {
 
 // ─────────────────────────────────────────────
 // POST /forgot-password
-// Sends a reset link if the email exists. Generic response always.
 // ─────────────────────────────────────────────
 router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
   try {
@@ -555,7 +551,6 @@ router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
 
 // ─────────────────────────────────────────────
 // POST /reset-password
-// Validates token, sets new password, clears token.
 // ─────────────────────────────────────────────
 router.post('/reset-password', strictLimiter, async (req, res) => {
   try {
