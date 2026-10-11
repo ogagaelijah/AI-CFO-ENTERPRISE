@@ -1,26 +1,25 @@
 // src/application/useCases/auth/ForgotPasswordUseCase.js
+// v2.1.0-prod — Sends reset email via Resend (emailService injected).
+//               Falls back to returning the token in dev for manual testing.
 // v2.0.0-prod — 30-min expiry, hashed token, invalidates previous tokens
 
 const crypto = require('crypto');
 const Email = require('../../../domain/valueObjects/Email');
+const logger = require('../../../shared/utils/logger');
 
 const RESET_TOKEN_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 class ForgotPasswordUseCase {
-    constructor(userRepository) {
+    constructor(userRepository, { emailService } = {}) {
         this.userRepository = userRepository;
+        this.emailService = emailService || null;
     }
 
-    /**
-     * Hash the reset token before storing.
-     * SHA-256 is fine because the token itself is 256-bit random.
-     */
     _hashToken(rawToken) {
         return crypto.createHash('sha256').update(rawToken).digest('hex');
     }
 
     async execute({ email }) {
-        // Always return the same message — prevents account enumeration
         const genericResponse = {
             success: true,
             message: 'If your email is registered, you will receive a reset link.',
@@ -38,20 +37,30 @@ class ForgotPasswordUseCase {
             return genericResponse;
         }
 
-        // Generate 256-bit token; store only its hash
         const rawToken = crypto.randomBytes(32).toString('hex');
         const hashedToken = this._hashToken(rawToken);
         const expiry = new Date(Date.now() + RESET_TOKEN_TTL_MS).toISOString();
 
-        // Invalidate any previous token, set the new one
         await this.userRepository.update(user.id, {
             resetToken: hashedToken,
             resetTokenExpiry: expiry,
         });
 
-        // In production: send rawToken by email, never in the response
-        // For dev: return it so you can test the flow
+        // Send the email. Never let an email failure leak whether the account exists.
+        if (this.emailService) {
+            try {
+                await this.emailService.sendPasswordReset({
+                    to: user.email,
+                    fullName: user.fullName,
+                    token: rawToken,
+                });
+            } catch (err) {
+                logger.error({ err: err.message, userId: user.id }, 'forgot-password: email send failed');
+            }
+        }
+
         const response = { ...genericResponse };
+        // Dev-only: return the token so you can test without an inbox.
         if (process.env.NODE_ENV !== 'production') {
             response.resetToken = rawToken;
         }

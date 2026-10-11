@@ -1,4 +1,6 @@
 // frontend/src/pages/Dashboard.jsx
+// v2.3.0-prod — Mounts VerifyEmailBanner above WelcomeBanner when
+//               user.emailVerified is false.
 // v2.2.1-prod — Regex fix: handles '/' in industry names (NGO / Non-Profit).
 
 import { useState } from 'react';
@@ -20,6 +22,7 @@ import IndustryFeatures from '../components/dashboard/IndustryFeatures';
 import WelcomeMessage from '../components/dashboard/WelcomeMessage';
 import TrialBanner from '../components/subscription/TrialBanner';
 import ReadOnlyBanner from '../components/subscription/ReadOnlyBanner';
+import VerifyEmailBanner from '../components/dashboard/VerifyEmailBanner';
 
 const TRANSACTION_LABELS = new Set([
   'Sales', 'Income', 'Expenses', 'Purchases',
@@ -133,6 +136,8 @@ const Dashboard = () => {
           ) : isTrial ? (
             <TrialBanner daysRemaining={daysRemaining} planName={planName} />
           ) : null}
+
+          <VerifyEmailBanner />
 
           {error && (
             <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg flex items-center justify-between">
