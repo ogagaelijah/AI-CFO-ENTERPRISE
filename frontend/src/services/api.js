@@ -1,4 +1,6 @@
 // frontend/src/services/api.js
+// v4.1.0-prod — Adds verifyEmail, resendVerification, forgotPassword,
+//               resetPassword to authApi.
 // v4.0.0-prod — Bearer auth support alongside cookies. Fixes cross-origin
 //               cookie blocks on staging/production. Token stored in
 //               localStorage; attached as Authorization header on every
@@ -160,6 +162,13 @@ export const authApi = {
   login: (data) => api.post('/auth/login', data),
   logout: () => api.post('/auth/logout'),
   getCurrentUser: () => api.get('/auth/me'),
+
+  // Phase 4.5/4.6 — email verification + password reset
+  verifyEmail: (token) => api.post('/auth/verify-email', { token }),
+  resendVerification: (email) => api.post('/auth/resend-verification', { email }),
+  forgotPassword: (email) => api.post('/auth/forgot-password', { email }),
+  resetPassword: (token, newPassword) =>
+    api.post('/auth/reset-password', { token, newPassword }),
 };
 
 export const businessApi = {

@@ -15,11 +15,8 @@ pnpm-lock.yaml
 # ENVIRONMENT VARIABLES (Sensitive Data)
 # =============================================
 .env
-.env.local
-.env.*.local
-.env.production
-.env.development
-.env.test
+.env.*
+!.env.examples
 
 # =============================================
 # DATABASE FILES
@@ -106,3 +103,5 @@ coverage/
 ai-cfo.db*
 # Load test results (regenerate on each run)
 load-tests/results/*.json
+
+prod-users-backup-*.json
