@@ -1,19 +1,26 @@
 // frontend/src/pages/Landing.jsx
-// v1.3.0 — Adds <ProblemStatement /> and <FAQSection /> to the landing page.
-//           Adds "FAQ" nav link (desktop + mobile).
-// v1.2.1 — Renames "Consultancy" to "Consultancy / Services" in the
-//           live industries list and the feature card description.
-//           Matches Register.jsx and industryConfig.js.
+// v1.8.0 — Extracts header to <Navbar />. Adds mega-menu navigation.
+// v1.7.0 — Adds <AboutSection /> and <ContactSection />.
+// v1.6.0 — Extracts footer to <Footer /> component. Adds <ResourcesSection />.
+// v1.5.0 — Adds <ResourcesSection /> between FAQ and Footer.
+// v1.4.0 — Adds <LoyaltyBanner /> between Pricing and FAQ.
+// v1.3.0 — Adds <ProblemStatement /> and <FAQSection />.
+// v1.2.1 — Renames "Consultancy" to "Consultancy / Services".
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useTheme } from '../context/ThemeContext';
 import {
-  Moon, Sun, TrendingUp, Package, Users, FileText, BarChart3, Zap,
-  ChevronRight, Check, Menu, X, Loader2,
+  TrendingUp, Package, Users, FileText, BarChart3, Zap,
+  ChevronRight, Check, Loader2,
 } from 'lucide-react';
+import Navbar from '../components/Landing/Navbar';
 import ProblemStatement from '../components/Landing/ProblemStatement';
+import AboutSection from '../components/Landing/AboutSection';
 import FAQSection from '../components/Landing/FAQSection';
+import LoyaltyBanner from '../components/Landing/LoyaltyBanner';
+import ResourcesSection from '../components/Landing/ResourcesSection';
+import ContactSection from '../components/Landing/ContactSection';
+import Footer from '../components/Landing/Footer';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -36,7 +43,6 @@ const PLAN_FEATURES = [
   { key: 'white_label', label: 'White-label' },
 ];
 
-// Kept in sync with Register.jsx.
 const READY_INDUSTRIES = [
   'Retail / Wholesale',
   'Construction',
@@ -53,8 +59,6 @@ const COMING_SOON_INDUSTRIES = [
 ];
 
 const Landing = () => {
-  const { theme, toggleTheme } = useTheme();
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [billingCycle, setBillingCycle] = useState('monthly');
   const [plans, setPlans] = useState([]);
   const [plansLoading, setPlansLoading] = useState(true);
@@ -120,77 +124,10 @@ const Landing = () => {
     };
   }, [plans]);
 
-  const closeMenu = () => setIsMenuOpen(false);
-
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-900 transition-colors duration-300">
-      {/* Header */}
-      <header className="fixed top-0 left-0 right-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md z-50 border-b border-gray-200 dark:border-slate-700 transition-colors duration-300">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <Link to="/" className="flex items-center space-x-2">
-              <span className="text-2xl font-bold text-primary-600 dark:text-gold-400">AI CFO</span>
-              <span className="text-sm font-medium text-gray-600 dark:text-gray-400 hidden sm:inline">ENTERPRISE</span>
-            </Link>
-
-            <nav className="hidden md:flex items-center space-x-8">
-              <a href="#features" className="text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-gold-400 transition">Features</a>
-              <a href="#industries" className="text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-gold-400 transition">Industries</a>
-              <a href="#pricing" className="text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-gold-400 transition">Pricing</a>
-              <a href="#faq" className="text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-gold-400 transition">FAQ</a>
-            </nav>
-
-            <div className="hidden md:flex items-center space-x-4">
-              <button
-                onClick={toggleTheme}
-                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition"
-                aria-label="Toggle dark mode"
-              >
-                {theme === 'dark' ? <Sun className="w-5 h-5 text-gold-400" /> : <Moon className="w-5 h-5 text-gray-600" />}
-              </button>
-              <Link to="/login" className="px-4 py-2 text-sm font-medium text-primary-600 dark:text-gold-400 hover:underline transition">
-                Log in
-              </Link>
-              <Link to="/register" className="px-4 py-2 text-sm font-medium text-white bg-primary-600 dark:bg-gold-500 dark:text-slate-900 rounded-lg hover:bg-primary-700 dark:hover:bg-gold-600 transition shadow-md hover:shadow-lg">
-                Sign up free
-              </Link>
-            </div>
-
-            <div className="flex items-center space-x-2 md:hidden">
-              <button
-                onClick={toggleTheme}
-                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition"
-                aria-label="Toggle dark mode"
-              >
-                {theme === 'dark' ? <Sun className="w-5 h-5 text-gold-400" /> : <Moon className="w-5 h-5 text-gray-600" />}
-              </button>
-              <button
-                onClick={() => setIsMenuOpen(!isMenuOpen)}
-                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition"
-                aria-label="Toggle menu"
-              >
-                {isMenuOpen ? <X className="w-6 h-6 text-gray-700 dark:text-gray-300" /> : <Menu className="w-6 h-6 text-gray-700 dark:text-gray-300" />}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {isMenuOpen && (
-          <div className="md:hidden bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-700 shadow-lg">
-            <div className="px-4 py-4 space-y-3">
-              <a href="#features" className="block text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-gold-400 transition py-2" onClick={closeMenu}>Features</a>
-              <a href="#industries" className="block text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-gold-400 transition py-2" onClick={closeMenu}>Industries</a>
-              <a href="#pricing" className="block text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-gold-400 transition py-2" onClick={closeMenu}>Pricing</a>
-              <a href="#faq" className="block text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-gold-400 transition py-2" onClick={closeMenu}>FAQ</a>
-              <hr className="border-gray-200 dark:border-slate-700" />
-              <Link to="/login" className="block text-primary-600 dark:text-gold-400 font-medium py-2" onClick={closeMenu}>Log in</Link>
-              <Link to="/register" className="block text-center text-white bg-primary-600 dark:bg-gold-500 dark:text-slate-900 rounded-lg px-4 py-3 font-medium" onClick={closeMenu}>
-                Sign up free
-              </Link>
-            </div>
-          </div>
-        )}
-      </header>
+      {/* Navbar */}
+      <Navbar />
 
       {/* Hero */}
       <section className="pt-32 pb-20 px-4">
@@ -220,8 +157,11 @@ const Landing = () => {
         </div>
       </section>
 
-      {/* Problem Statement — NEW */}
+      {/* Problem Statement */}
       <ProblemStatement />
+
+      {/* About */}
+      <AboutSection />
 
       {/* Features */}
       <section id="features" className="py-20 px-4 bg-white dark:bg-slate-800 transition-colors duration-300">
@@ -256,7 +196,6 @@ const Landing = () => {
             5 live today, more coming soon.
           </p>
 
-          {/* Ready now */}
           <div className="mb-10">
             <p className="text-xs font-semibold uppercase tracking-wider text-green-600 dark:text-green-400 mb-3 fade-in">
               ✓ Available now
@@ -270,7 +209,6 @@ const Landing = () => {
             </div>
           </div>
 
-          {/* Coming soon */}
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400 mb-3 fade-in">
               ⏳ Coming soon
@@ -405,27 +343,20 @@ const Landing = () => {
         </div>
       </section>
 
-      {/* FAQ — NEW */}
+      {/* Loyalty Banner */}
+      <LoyaltyBanner />
+
+      {/* FAQ */}
       <FAQSection />
 
+      {/* Resources */}
+      <ResourcesSection />
+
+      {/* Contact */}
+      <ContactSection />
+
       {/* Footer */}
-      <footer className="py-12 px-4 bg-gray-900 dark:bg-slate-950 transition-colors duration-300">
-        <div className="max-w-6xl mx-auto text-center">
-          <div className="text-2xl font-bold text-white mb-4">
-            AI CFO <span className="text-gold-400">ENTERPRISE</span>
-          </div>
-          <p className="text-gray-400 mb-6">Built for African SMEs 🇳🇬</p>
-          <div className="flex flex-wrap justify-center gap-6 text-sm text-gray-400">
-            <a href="#features" className="hover:text-white transition">Features</a>
-            <a href="#pricing" className="hover:text-white transition">Pricing</a>
-            <a href="#faq" className="hover:text-white transition">FAQ</a>
-            <a href="mailto:support@aicfotechnologies.com" className="hover:text-white transition">Contact</a>
-          </div>
-          <div className="mt-6 text-sm text-gray-500">
-            © 2026 AI CFO ENTERPRISE. All rights reserved.
-          </div>
-        </div>
-      </footer>
+      <Footer />
     </div>
   );
 };

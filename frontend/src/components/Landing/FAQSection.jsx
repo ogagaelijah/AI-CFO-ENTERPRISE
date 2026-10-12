@@ -98,6 +98,35 @@ const FAQ_GROUPS = [
     ],
   },
   {
+    category: 'Financing Incentive',
+    items: [
+      {
+        q: 'How does the ₦3M loan incentive work?',
+        a: 'Subscribe to AI CFO Enterprise for 10 out of your first 12 months and you become eligible to apply for business financing of up to ₦3,000,000. Eligibility requires: (1) an active paid subscription for at least 10 of your first 12 months, (2) a verified business profile, and (3) a clean payment history with no failed or reversed charges. Once eligible, you submit an application, complete a short credit assessment, and — subject to partner terms — financing is disbursed directly to your business account.',
+      },
+      {
+        q: 'When do I become eligible?',
+        a: 'Eligibility is assessed after your 10th active subscription month within your first 12 months. You do not need to apply in advance — we will notify you when you qualify.',
+      },
+      {
+        q: 'Is the ₦3M a grant or a loan?',
+        a: 'It is a loan, not a grant. The ₦3,000,000 is the maximum amount you may be eligible to borrow. Repayment terms, interest rate, and duration are set by our financing partner and disclosed to you before you accept any offer.',
+      },
+      {
+        q: 'What can I use the financing for?',
+        a: 'Business purposes only — for example, purchasing inventory, expanding operations, hiring staff, or covering short-term working capital gaps. Personal use is not permitted.',
+      },
+      {
+        q: 'What happens if I miss a subscription month?',
+        a: 'Missing a month does not immediately disqualify you — the incentive allows 10 active months out of your first 12. However, missed or failed payments may affect your credit assessment.',
+      },
+      {
+        q: 'Is financing guaranteed?',
+        a: 'No. Eligibility to apply does not guarantee approval. All applications are subject to eligibility verification, credit assessment, and partner terms. Terms and conditions apply.',
+      },
+    ],
+  },
+  {
     category: 'Data & Security',
     items: [
       {
