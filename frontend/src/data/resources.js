@@ -11,7 +11,7 @@
 // Blog posts live on Hashnode. When a post is published, add its URL here.
 // Videos will live on YouTube (@CFOTECHNOLOGIES).
 
-export const PLACEHOLDER_MODE = true;
+export const PLACEHOLDER_MODE = false;
 
 export const RESOURCES = [
   {
@@ -27,11 +27,11 @@ export const RESOURCES = [
   {
     type: 'blog',
     title: 'How to track debtors without losing your mind',
-    description: 'A practical guide for Nigerian SME owners on managing who owes you and when to follow up.',
-    url: '#',
+    description: 'A practical system for Nigerian SME owners who are tired of chasing customers for money they already earned.',
+    url:'https://aicfotechnologies.substack.com/p/how-to-track-debtors-without-losing',
     thumbnail: null,
-    date: '2026-10-20',
-    isPlaceholder: true,
+    date: '2026-10-13',
+    isPlaceholder: false,
   },
   {
     type: 'guide',
