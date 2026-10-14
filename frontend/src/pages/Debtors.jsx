@@ -1,32 +1,88 @@
 // frontend/src/pages/Debtors.jsx
-import { useState, useEffect } from 'react';
+// v1.1.0-prod — Uses usePaginatedApi hook + Pagination. Server-side search
+//               via URL ?search= (300ms debounce). Summary via extra.
+
+import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
-import { 
+import {
   Plus, RefreshCw, Users, DollarSign, TrendingDown, AlertTriangle,
-  Eye, CreditCard, Trash2, X, CheckCircle, AlertCircle
+  Eye, CreditCard, Trash2, X, CheckCircle, AlertCircle, Search,
 } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
+import Pagination from '../components/common/Pagination';
+import usePaginatedApi from '../hooks/usePaginatedApi';
 
 import AddDebtorModal from '../components/debtors/AddDebtorModal';
 import RecordPaymentModal from '../components/debtors/RecordPaymentModal';
 import DebtorDetailModal from '../components/debtors/DebtorDetailModal';
 import DeleteDebtorModal from '../components/debtors/DeleteDebtorModal';
 
+const DEFAULT_SUMMARY = {
+  total_debtors: 0,
+  total_owed: 0,
+  total_paid: 0,
+  total_outstanding: 0,
+  active_count: 0,
+  paid_count: 0,
+  overdue_count: 0,
+};
+
 const Debtors = () => {
   const { user } = useAuth();
-  const [debtors, setDebtors] = useState([]);
-  const [summary, setSummary] = useState({
-    total_debtors: 0,
-    total_owed: 0,
-    total_paid: 0,
-    total_outstanding: 0,
-    active_count: 0,
-    paid_count: 0,
-    overdue_count: 0,
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Read current search from URL (single source of truth)
+  const urlSearch = searchParams.get('search') || '';
+  const [searchInput, setSearchInput] = useState(urlSearch);
+
+  // Debounce: sync input → URL after 300ms of no typing
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (searchInput === urlSearch) return;
+      setSearchParams(
+        (prev) => {
+          const sp = new URLSearchParams(prev);
+          const v = searchInput.trim();
+          if (v) sp.set('search', v);
+          else sp.delete('search');
+          sp.delete('page'); // reset to page 1
+          return sp;
+        },
+        { replace: true }
+      );
+    }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchInput]);
+
+  // Keep input in sync if URL changes externally (e.g. back button)
+  useEffect(() => {
+    if (urlSearch !== searchInput) setSearchInput(urlSearch);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlSearch]);
+
+  const hookParams = useMemo(
+    () => (urlSearch ? { search: urlSearch } : {}),
+    [urlSearch]
+  );
+
+  const {
+    items: debtors,
+    pagination,
+    extra,
+    isLoading,
+    error: loadError,
+    goToPage,
+    refresh,
+  } = usePaginatedApi('/debtors', {
+    itemKey: 'debtors',
+    params: hookParams,
   });
-  const [isLoading, setIsLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
+
+  const summary = extra?.summary || DEFAULT_SUMMARY;
+
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -35,40 +91,6 @@ const Debtors = () => {
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [selectedDebtor, setSelectedDebtor] = useState(null);
-
-  useEffect(() => {
-    fetchDebtors();
-  }, []);
-
-  const fetchDebtors = async () => {
-    try {
-      setIsLoading(true);
-      setError('');
-
-      const response = await api.get('/debtors');
-
-      if (response.data?.success) {
-        setDebtors(response.data.data.debtors || []);
-        setSummary(response.data.data.summary || {
-          total_debtors: 0,
-          total_owed: 0,
-          total_paid: 0,
-          total_outstanding: 0,
-          active_count: 0,
-          paid_count: 0,
-          overdue_count: 0,
-        });
-      } else {
-        setDebtors([]);
-      }
-    } catch (error) {
-      console.error('❌ Error fetching debtors:', error);
-      setError('Failed to load debtors');
-      setDebtors([]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleDeleteDebtor = async () => {
     if (!selectedDebtor) return;
@@ -79,11 +101,26 @@ const Debtors = () => {
         setSuccess('✅ Debtor deleted successfully!');
         setDeleteModalOpen(false);
         setSelectedDebtor(null);
-        fetchDebtors();
+        refresh();
       }
     } catch (error) {
       setError(error.response?.data?.message || 'Failed to delete debtor');
     }
+  };
+
+  const handleClearSearch = () => {
+    setSearchInput('');
+    // The debounce effect will sync the URL.
+    // Also immediately clear for snappier UX:
+    setSearchParams(
+      (prev) => {
+        const sp = new URLSearchParams(prev);
+        sp.delete('search');
+        sp.delete('page');
+        return sp;
+      },
+      { replace: true }
+    );
   };
 
   const getStatusBadge = (debtor) => {
@@ -91,7 +128,6 @@ const Debtors = () => {
       return { label: 'Paid', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400', icon: '✅' };
     }
 
-    // Overdue only if strictly before today (calendar-day comparison, matches backend)
     const todayStr = new Date().toISOString().slice(0, 10);
     const dueStr = debtor.due_date ? String(debtor.due_date).slice(0, 10) : null;
     if (dueStr && dueStr < todayStr) {
@@ -109,12 +145,7 @@ const Debtors = () => {
     });
   };
 
-  const filteredDebtors = debtors.filter(debtor =>
-    debtor.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    debtor.customer_type?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  if (isLoading) {
+  if (isLoading && debtors.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
@@ -124,6 +155,8 @@ const Debtors = () => {
       </div>
     );
   }
+
+  const displayError = error || loadError;
 
   return (
     <div className="space-y-6">
@@ -141,10 +174,10 @@ const Debtors = () => {
         }
       />
 
-      {error && (
+      {displayError && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg flex items-center space-x-2">
           <AlertCircle className="w-5 h-5 flex-shrink-0" />
-          <span>{error}</span>
+          <span>{displayError}</span>
           <button onClick={() => setError('')} className="ml-auto text-red-500 hover:text-red-700">
             <X className="w-4 h-4" />
           </button>
@@ -195,19 +228,20 @@ const Debtors = () => {
 
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="flex-1 flex space-x-2">
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search debtors by name or type..."
-            className="flex-1 px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-          />
+          <div className="flex-1 relative">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Search debtors by name or type..."
+              className="w-full pl-9 pr-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            />
+          </div>
           <button
-            onClick={() => {
-              setSearchTerm('');
-              fetchDebtors();
-            }}
+            onClick={handleClearSearch}
             className="px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition"
+            title="Clear search and refresh"
           >
             <RefreshCw className="w-5 h-5" />
           </button>
@@ -229,20 +263,20 @@ const Debtors = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-slate-700">
-              {filteredDebtors.length === 0 ? (
+              {debtors.length === 0 ? (
                 <tr>
                   <td colSpan="7" className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
-                    {searchTerm ? 'No debtors match your search.' : 'No debtors found. Add your first debtor!'}
+                    {urlSearch ? 'No debtors match your search.' : 'No debtors found. Add your first debtor!'}
                   </td>
                 </tr>
               ) : (
-                filteredDebtors.map((debtor) => {
+                debtors.map((debtor) => {
                   const status = getStatusBadge(debtor);
-                  const daysOverdue = debtor.due_date && debtor.balance_remaining > 0 
-                    ? Math.ceil((new Date() - new Date(debtor.due_date)) / (1000 * 60 * 60 * 24)) 
+                  const daysOverdue = debtor.due_date && debtor.balance_remaining > 0
+                    ? Math.ceil((new Date() - new Date(debtor.due_date)) / (1000 * 60 * 60 * 24))
                     : 0;
                   const isPaid = debtor.balance_remaining <= 0 || debtor.status === 'PAID';
-                  
+
                   return (
                     <tr key={debtor.id} className="hover:bg-gray-50 dark:hover:bg-slate-700/50 transition">
                       <td className="px-4 py-3">
@@ -317,13 +351,14 @@ const Debtors = () => {
             </tbody>
           </table>
         </div>
+        <Pagination pagination={pagination} onPageChange={goToPage} />
       </div>
 
       <AddDebtorModal
         isOpen={addModalOpen}
         onClose={() => setAddModalOpen(false)}
         onSuccess={() => {
-          fetchDebtors();
+          refresh();
           setAddModalOpen(false);
         }}
       />
@@ -335,7 +370,7 @@ const Debtors = () => {
           setSelectedDebtor(null);
         }}
         onSuccess={() => {
-          fetchDebtors();
+          refresh();
           setPaymentModalOpen(false);
           setSelectedDebtor(null);
         }}

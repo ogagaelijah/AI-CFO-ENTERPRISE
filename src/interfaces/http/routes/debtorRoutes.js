@@ -1,6 +1,7 @@
 // src/interfaces/http/routes/debtorRoutes.js
-// v1.1.0-prod — Pagination on GET /. Standardized data.pagination shape.
-//               Legacy pagination.limit/offset removed (unused by frontend).
+// v1.2.0-prod — Accepts ?search= query param. Passes through to
+//               findByFilters + countByBusinessId (server-side search).
+// v1.1.0-prod — Pagination on GET /.
 
 const express = require('express');
 const router = express.Router();
@@ -25,19 +26,20 @@ const recordDebtorPaymentUseCase = new RecordDebtorPaymentUseCase({
 router.use(authMiddleware);
 
 // =============================================
-// GET /api/debtors?page=1&limit=50
+// GET /api/debtors?page=1&limit=50&search=YGY
 // =============================================
 router.get('/', async (req, res) => {
     try {
         const userId = req.user.id;
         const businessId = req.user.businessId;
-        const { status, customerType } = req.query;
+        const { status, customerType, search } = req.query;
 
         if (!businessId) {
             return res.status(400).json({ success: false, message: 'Business context required' });
         }
 
         const { page, limit, offset } = parsePagination(req.query);
+        const searchTerm = (search || '').trim() || null;
 
         const [debtors, total, summary, totalOutstanding, overdue] = await Promise.all([
             debtorRepo.findByFilters({
@@ -45,10 +47,15 @@ router.get('/', async (req, res) => {
                 userId,
                 status,
                 customerType,
+                search: searchTerm,
                 limit,
                 offset,
             }),
-            debtorRepo.countByBusinessId(businessId, { status, customerType }),
+            debtorRepo.countByBusinessId(businessId, {
+                status,
+                customerType,
+                search: searchTerm,
+            }),
             debtorRepo.getSummary(businessId),
             debtorRepo.getTotalOutstanding(businessId),
             debtorRepo.findOverdue(businessId),

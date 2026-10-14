@@ -1,8 +1,7 @@
 // src/interfaces/http/routes/inventoryRoutes.js
-// v1.2.0-prod — Pagination added at TOP LEVEL. Response shape preserved:
+// v1.3.0-prod — Adds search param passthrough (server-side search wired).
+// v1.2.0-prod — Pagination at TOP LEVEL. Response shape:
 //               { success, data: [...items...], summary, pagination }.
-//               Zero frontend changes required.
-// v1.1.0-prod — (reverted nested shape)
 
 const express = require('express');
 const router = express.Router();
@@ -16,7 +15,7 @@ const inventoryRepo = new InventoryRepository();
 router.use(authMiddleware);
 
 // =============================================
-// GET /api/inventory?page=1&limit=50
+// GET /api/inventory?page=1&limit=50&search=gala
 // =============================================
 router.get('/', async (req, res) => {
     try {
@@ -28,6 +27,7 @@ router.get('/', async (req, res) => {
         }
 
         const { page, limit, offset } = parsePagination(req.query);
+        const searchTerm = (search || '').trim() || null;
 
         // Low-stock view — bounded set by design (typically <100 items).
         // Still returns pagination for consistency.
@@ -45,7 +45,7 @@ router.get('/', async (req, res) => {
             });
         }
 
-        const filters = { search };
+        const filters = { search: searchTerm };
 
         const [items, total, summary] = await Promise.all([
             inventoryRepo.findByBusinessId(businessId, { ...filters, limit, offset }),

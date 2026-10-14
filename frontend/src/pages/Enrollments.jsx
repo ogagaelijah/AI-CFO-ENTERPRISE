@@ -1,21 +1,46 @@
 // frontend/src/pages/Enrollments.jsx
+// v1.1.0-prod — Uses usePaginatedApi hook + Pagination. Filters synced
+//               to URL (server-side via query params).
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { Plus, X, CheckCircle, AlertCircle } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
+import Pagination from '../components/common/Pagination';
+import usePaginatedApi from '../hooks/usePaginatedApi';
 import EnrollmentTable from '../components/Enrollments/EnrollmentTable';
 import EnrollStudentModal from '../components/Enrollments/EnrollStudentModal';
 import EnrollmentConfirmModal from '../components/Enrollments/EnrollmentConfirmModal';
 
 const Enrollments = () => {
   const { user } = useAuth();
-  const [enrollments, setEnrollments] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [sessionFilter, setSessionFilter] = useState('');
-  const [termFilter, setTermFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const sessionFilter = searchParams.get('session') || '';
+  const termFilter = searchParams.get('term') || '';
+  const statusFilter = searchParams.get('status') || '';
+
+  const hookParams = useMemo(() => {
+    const p = {};
+    if (sessionFilter) p.session = sessionFilter;
+    if (termFilter) p.term = termFilter;
+    if (statusFilter) p.status = statusFilter;
+    return p;
+  }, [sessionFilter, termFilter, statusFilter]);
+
+  const {
+    items: enrollments,
+    pagination,
+    isLoading,
+    error: loadError,
+    goToPage,
+    refresh,
+  } = usePaginatedApi('/enrollments', {
+    itemKey: 'enrollments',
+    params: hookParams,
+  });
 
   const [showModal, setShowModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -23,29 +48,17 @@ const Enrollments = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  useEffect(() => {
-    fetchEnrollments();
-  }, [sessionFilter, termFilter, statusFilter]);
-
-  const fetchEnrollments = async () => {
-    try {
-      setIsLoading(true);
-      setError('');
-      const params = { limit: 200 };
-      if (sessionFilter) params.session = sessionFilter;
-      if (termFilter) params.term = termFilter;
-      if (statusFilter) params.status = statusFilter;
-
-      const response = await api.get('/enrollments', { params });
-      if (response.data?.success) {
-        setEnrollments(response.data.enrollments || []);
-      }
-    } catch (error) {
-      console.error('Error fetching enrollments:', error);
-      setError(error.response?.data?.message || 'Failed to load enrollments');
-    } finally {
-      setIsLoading(false);
-    }
+  const setFilter = (key, value) => {
+    setSearchParams(
+      (prev) => {
+        const sp = new URLSearchParams(prev);
+        if (value) sp.set(key, value);
+        else sp.delete(key);
+        sp.delete('page');
+        return sp;
+      },
+      { replace: true }
+    );
   };
 
   const handleEnroll = async (data) => {
@@ -56,7 +69,7 @@ const Enrollments = () => {
       if (response.data?.success) {
         setShowModal(false);
         setSuccess('✅ Student enrolled');
-        await fetchEnrollments();
+        refresh();
       } else {
         setError(response.data?.message || 'Failed to enroll student');
       }
@@ -78,7 +91,7 @@ const Enrollments = () => {
         setShowConfirmModal(false);
         setSelectedEnrollment(null);
         setSuccess('✅ Student unenrolled');
-        await fetchEnrollments();
+        refresh();
       } else {
         setError(response.data?.message || 'Failed to unenroll');
       }
@@ -90,7 +103,7 @@ const Enrollments = () => {
     }
   };
 
-  if (isLoading) {
+  if (isLoading && enrollments.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
@@ -100,6 +113,8 @@ const Enrollments = () => {
       </div>
     );
   }
+
+  const displayError = error || loadError;
 
   return (
     <div className="space-y-6">
@@ -121,10 +136,10 @@ const Enrollments = () => {
         }
       />
 
-      {error && (
+      {displayError && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg flex items-center space-x-2">
           <AlertCircle className="w-5 h-5 flex-shrink-0" />
-          <span>{error}</span>
+          <span>{displayError}</span>
           <button onClick={() => setError('')} className="ml-auto text-red-500 hover:text-red-700">
             <X className="w-4 h-4" />
           </button>
@@ -144,20 +159,20 @@ const Enrollments = () => {
         <input
           type="text"
           value={sessionFilter}
-          onChange={(e) => setSessionFilter(e.target.value)}
+          onChange={(e) => setFilter('session', e.target.value)}
           placeholder="Filter by session (e.g. 2025/2026)"
           className="flex-1 px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
         />
         <input
           type="text"
           value={termFilter}
-          onChange={(e) => setTermFilter(e.target.value)}
+          onChange={(e) => setFilter('term', e.target.value)}
           placeholder="Filter by term (e.g. Term 1)"
           className="flex-1 px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
         />
         <select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
+          onChange={(e) => setFilter('status', e.target.value)}
           className="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
         >
           <option value="">All Statuses</option>
@@ -167,13 +182,16 @@ const Enrollments = () => {
         </select>
       </div>
 
-      <EnrollmentTable
-        enrollments={enrollments}
-        onUnenroll={(enrollment) => {
-          setSelectedEnrollment(enrollment);
-          setShowConfirmModal(true);
-        }}
-      />
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 overflow-hidden">
+        <EnrollmentTable
+          enrollments={enrollments}
+          onUnenroll={(enrollment) => {
+            setSelectedEnrollment(enrollment);
+            setShowConfirmModal(true);
+          }}
+        />
+        <Pagination pagination={pagination} onPageChange={goToPage} />
+      </div>
 
       <EnrollStudentModal
         isOpen={showModal}

@@ -1,11 +1,11 @@
 // src/infrastructure/database/sqlite/repositories/DebtorRepository.js
-// v3.7.1-prod — _hydrate() strips joined_customer_name so it never leaks
-//               into API responses. Merged value is preserved as customer_name.
+// v3.8.0-prod — Adds `search` support to findByFilters, countByFilters,
+//               countByBusinessId.
+// v3.7.1-prod — _hydrate() strips joined_customer_name.
 // v3.7.0-prod — Adds countByBusinessId(businessId, filters) wrapper.
 
 const BaseRepository = require('./BaseRepository');
 
-// ── Global Postgres DATE parser fix ──
 const pg = require('pg');
 pg.types.setTypeParser(1082, (val) => val);
 pg.types.setTypeParser(1083, (val) => val);
@@ -37,7 +37,6 @@ class DebtorRepository extends BaseRepository {
                 ? row.joined_customer_name
                 : (row.customer_name || null);
 
-        // Strip the raw JOIN field so it never reaches the API response.
         const { joined_customer_name, ...rest } = row;
 
         return {
@@ -269,7 +268,13 @@ class DebtorRepository extends BaseRepository {
     }
 
     async findByFilters({
-        businessId = null, userId = null, status, customerType, limit = 50, offset = 0,
+        businessId = null,
+        userId = null,
+        status,
+        customerType,
+        search,
+        limit = 50,
+        offset = 0,
     }) {
         let sql = `${DebtorRepository.SELECT_WITH_CUSTOMER} WHERE 1=1`;
         const params = [];
@@ -291,6 +296,11 @@ class DebtorRepository extends BaseRepository {
             sql += ` AND d.customer_type = $${i++}`;
             params.push(customerType);
         }
+        if (search) {
+            sql += ` AND (d.customer_name ILIKE $${i} OR d.customer_type ILIKE $${i})`;
+            params.push(`%${search}%`);
+            i++;
+        }
 
         sql += ` ORDER BY d.balance_remaining DESC LIMIT $${i++} OFFSET $${i++}`;
         params.push(limit, offset);
@@ -299,7 +309,7 @@ class DebtorRepository extends BaseRepository {
         return result.rows.map(row => this._hydrate(row));
     }
 
-    async countByFilters({ businessId = null, userId = null, status, customerType }) {
+    async countByFilters({ businessId = null, userId = null, status, customerType, search }) {
         let sql = 'SELECT COUNT(*)::int AS total FROM debtors WHERE 1=1';
         const params = [];
         let i = 1;
@@ -320,6 +330,11 @@ class DebtorRepository extends BaseRepository {
             sql += ` AND customer_type = $${i++}`;
             params.push(customerType);
         }
+        if (search) {
+            sql += ` AND (customer_name ILIKE $${i} OR customer_type ILIKE $${i})`;
+            params.push(`%${search}%`);
+            i++;
+        }
 
         const result = await this._query(sql, params);
         return result.rows[0]?.total || 0;
@@ -330,6 +345,7 @@ class DebtorRepository extends BaseRepository {
             businessId,
             status: filters.status,
             customerType: filters.customerType,
+            search: filters.search,
         });
     }
 

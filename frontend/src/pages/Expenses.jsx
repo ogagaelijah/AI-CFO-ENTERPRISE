@@ -1,10 +1,14 @@
 // frontend/src/pages/Expenses.jsx
+// v1.1.0-prod — Uses usePaginatedApi hook + Pagination. Summary via extra.
+// v1.0.0-prod — Initial.
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { Plus, X, CheckCircle, AlertCircle } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
+import Pagination from '../components/common/Pagination';
+import usePaginatedApi from '../hooks/usePaginatedApi';
 import SummaryCards from '../components/Expenses/SummaryCards';
 import ExpenseTable from '../components/Expenses/ExpenseTable';
 import RecordExpenseModal from '../components/Expenses/RecordExpenseModal';
@@ -14,15 +18,24 @@ import EditExpenseModal from '../components/Expenses/EditExpenseModal';
 
 const Expenses = () => {
   const { user } = useAuth();
-  const [expenses, setExpenses] = useState([]);
-  const [summary, setSummary] = useState({
+
+  const {
+    items: expenses,
+    pagination,
+    extra,
+    isLoading,
+    error: loadError,
+    goToPage,
+    refresh,
+  } = usePaginatedApi('/expenses', { itemKey: 'expenses' });
+
+  const summary = extra?.summary || {
     total_entries: 0,
     total_amount: 0,
     average_amount: 0,
     categories_used: 0,
-  });
-  const [isLoading, setIsLoading] = useState(true);
-  
+  };
+
   const [showModal, setShowModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -40,32 +53,6 @@ const Expenses = () => {
     description: '',
     date: new Date().toISOString().split('T')[0],
   });
-
-  useEffect(() => {
-    fetchExpenses();
-  }, []);
-
-  const fetchExpenses = async () => {
-    try {
-      setIsLoading(true);
-      setError('');
-      const response = await api.get('/expenses');
-      if (response.data?.success) {
-        setExpenses(response.data.data.expenses || []);
-        setSummary(response.data.data.summary || {
-          total_entries: 0,
-          total_amount: 0,
-          average_amount: 0,
-          categories_used: 0,
-        });
-      }
-    } catch (error) {
-      console.error('Error fetching expenses:', error);
-      setError('Failed to load expenses');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const fetchExpenseDetail = async (id) => {
     try {
@@ -135,7 +122,7 @@ const Expenses = () => {
           date: new Date().toISOString().split('T')[0],
         });
         setSuccess('✅ Expense recorded successfully!');
-        await fetchExpenses();
+        refresh();
       } else {
         setError(response.data?.message || 'Failed to record expense');
       }
@@ -166,7 +153,7 @@ const Expenses = () => {
         setShowEditModal(false);
         setSelectedExpense(null);
         setSuccess('✅ Expense updated successfully!');
-        await fetchExpenses();
+        refresh();
       } else {
         setError(response.data?.message || 'Failed to update expense');
       }
@@ -183,7 +170,7 @@ const Expenses = () => {
       const response = await api.delete(`/expenses/${id}`);
       if (response.data?.success) {
         setSuccess('✅ Expense deleted successfully!');
-        await fetchExpenses();
+        refresh();
       } else {
         setError(response.data?.message || 'Failed to delete expense');
       }
@@ -200,7 +187,7 @@ const Expenses = () => {
     setShowModal(true);
   };
 
-  if (isLoading) {
+  if (isLoading && expenses.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
@@ -210,6 +197,8 @@ const Expenses = () => {
       </div>
     );
   }
+
+  const displayError = error || loadError;
 
   return (
     <div className="space-y-6">
@@ -232,10 +221,10 @@ const Expenses = () => {
         }
       />
 
-      {error && (
+      {displayError && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg flex items-center space-x-2">
           <AlertCircle className="w-5 h-5 flex-shrink-0" />
-          <span>{error}</span>
+          <span>{displayError}</span>
           <button onClick={() => setError('')} className="ml-auto text-red-500 hover:text-red-700">
             <X className="w-4 h-4" />
           </button>
@@ -253,15 +242,18 @@ const Expenses = () => {
 
       <SummaryCards summary={summary} />
 
-      <ExpenseTable
-        expenses={expenses}
-        onView={fetchExpenseDetail}
-        onEdit={(expense) => {
-          setSelectedExpense(expense);
-          setShowEditModal(true);
-        }}
-        onDelete={handleDelete}
-      />
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 overflow-hidden">
+        <ExpenseTable
+          expenses={expenses}
+          onView={fetchExpenseDetail}
+          onEdit={(expense) => {
+            setSelectedExpense(expense);
+            setShowEditModal(true);
+          }}
+          onDelete={handleDelete}
+        />
+        <Pagination pagination={pagination} onPageChange={goToPage} />
+      </div>
 
       <RecordExpenseModal
         isOpen={showModal}
