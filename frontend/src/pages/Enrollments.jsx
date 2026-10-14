@@ -1,8 +1,8 @@
 // frontend/src/pages/Enrollments.jsx
-// v1.1.0-prod — Uses usePaginatedApi hook + Pagination. Filters synced
-//               to URL (server-side via query params).
+// v1.2.0-prod — Uses isInitialLoading so filter changes don't unmount the table.
+// v1.1.0-prod — Uses usePaginatedApi hook + Pagination. Filters synced to URL.
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
@@ -33,7 +33,7 @@ const Enrollments = () => {
   const {
     items: enrollments,
     pagination,
-    isLoading,
+    isInitialLoading,
     error: loadError,
     goToPage,
     refresh,
@@ -103,7 +103,7 @@ const Enrollments = () => {
     }
   };
 
-  if (isLoading && enrollments.length === 0) {
+  if (isInitialLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">

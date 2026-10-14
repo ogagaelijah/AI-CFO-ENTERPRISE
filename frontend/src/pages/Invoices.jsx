@@ -1,4 +1,5 @@
 // frontend/src/pages/Invoices.jsx
+// v1.2.0-prod — Uses isInitialLoading so refetches don't unmount the table.
 // v1.1.0-prod — Uses usePaginatedApi hook + Pagination. Summary via extra.
 
 import { useState } from 'react';
@@ -23,7 +24,7 @@ const Invoices = () => {
     items: invoices,
     pagination,
     extra,
-    isLoading,
+    isInitialLoading,
     error: loadError,
     goToPage,
     refresh,
@@ -76,7 +77,6 @@ const Invoices = () => {
         ...data,
         businessId: user?.businessId || user?.id,
       });
-
       if (response.data?.success) {
         setShowModal(false);
         setSuccess(`✅ Invoice ${response.data.invoice?.invoiceNumber || ''} created!`);
@@ -98,7 +98,6 @@ const Invoices = () => {
         ...data,
         businessId: user?.businessId || user?.id,
       });
-
       if (response.data?.success) {
         setShowEditModal(false);
         setSelectedInvoice(null);
@@ -121,7 +120,6 @@ const Invoices = () => {
       const response = await api.delete(`/invoices/${selectedInvoice.id}`, {
         params: { businessId: user?.businessId || user?.id },
       });
-
       if (response.data?.success) {
         setShowConfirmModal(false);
         setSelectedInvoice(null);
@@ -145,7 +143,6 @@ const Invoices = () => {
         status: 'SENT',
         businessId: user?.businessId || user?.id,
       });
-
       if (response.data?.success) {
         setShowDetailModal(false);
         setSelectedInvoice(null);
@@ -172,7 +169,6 @@ const Invoices = () => {
         notes: data.notes,
         businessId: user?.businessId || user?.id,
       });
-
       if (response.data?.success) {
         setShowPaymentModal(false);
         setShowDetailModal(false);
@@ -197,7 +193,7 @@ const Invoices = () => {
     setShowPaymentModal(true);
   };
 
-  if (isLoading && invoices.length === 0) {
+  if (isInitialLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">

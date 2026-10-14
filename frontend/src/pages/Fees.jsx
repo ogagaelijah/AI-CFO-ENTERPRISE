@@ -1,6 +1,6 @@
 // frontend/src/pages/Fees.jsx
+// v1.3.0-prod — Uses isInitialLoading so search/filter don't unmount input.
 // v1.2.0-prod — Uses usePaginatedApi hook + Pagination. Summary via extra.
-//               Status filter + search synced to URL.
 // v1.1.0 — Adds "Generate Class Fees" bulk action.
 
 import { useState, useEffect, useMemo } from 'react';
@@ -63,7 +63,7 @@ const Fees = () => {
     items: fees,
     pagination,
     extra,
-    isLoading,
+    isInitialLoading,
     error: loadError,
     goToPage,
     refresh,
@@ -258,7 +258,7 @@ const Fees = () => {
     setShowPaymentModal(true);
   };
 
-  if (isLoading && fees.length === 0) {
+  if (isInitialLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">

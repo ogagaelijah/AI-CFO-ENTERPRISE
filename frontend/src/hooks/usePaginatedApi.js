@@ -1,7 +1,7 @@
 // frontend/src/hooks/usePaginatedApi.js
-// v1.2.0-prod — Adds `extra` return value (summary, totals, etc.).
-// v1.1.0-prod — Auto-guard: if requested page > totalPages, redirect.
-// v1.0.0-prod — Central hook for paginated GET endpoints.
+// v1.2.1-prod — Adds isInitialLoading. Distinguishes first-load spinner from
+//               subsequent in-place refetches (search, filter, page change).
+// v1.2.0-prod — Adds `extra` return value.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -35,7 +35,6 @@ const extractItemsPaginationExtra = (body, itemKey) => {
     body.pagination ||
     null;
 
-  // Extra: any keys in body (or body.data) that aren't items/pagination
   const extra = {};
   const skipKeys = new Set([itemKey, 'items', 'pagination']);
 
@@ -64,12 +63,11 @@ export default function usePaginatedApi(url, options = {}) {
   } = options;
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialPage = readIntParam(searchParams, 'page', 1);
-
   const [items, setItems] = useState([]);
   const [pagination, setPagination] = useState(null);
   const [extra, setExtra] = useState({});
   const [isLoading, setIsLoading] = useState(enabled);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [error, setError] = useState('');
 
   const abortRef = useRef(null);
@@ -90,12 +88,14 @@ export default function usePaginatedApi(url, options = {}) {
         setItems(rows);
         setPagination(p);
         setExtra(x);
+        setHasLoadedOnce(true);
       } catch (err) {
         if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError') return;
         setError(err?.response?.data?.message || 'Failed to load data');
         setItems([]);
         setPagination(null);
         setExtra({});
+        setHasLoadedOnce(true);
       } finally {
         if (!signal?.aborted) setIsLoading(false);
       }
@@ -120,7 +120,6 @@ export default function usePaginatedApi(url, options = {}) {
     };
   }, [urlPage, fetchPage, enabled]);
 
-  // Auto-reset to page 1 when filters/search change.
   useEffect(() => {
     if (!resetPageOnParamsChange) return;
     if (prevParamsKeyRef.current === paramsKey) return;
@@ -138,7 +137,6 @@ export default function usePaginatedApi(url, options = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paramsKey]);
 
-  // Auto-guard: bounce to a valid page if URL points past the end.
   useEffect(() => {
     if (!enabled) return;
     if (isLoading) return;
@@ -195,5 +193,14 @@ export default function usePaginatedApi(url, options = {}) {
     fetchPage(urlPage, { signal: controller.signal });
   }, [fetchPage, urlPage]);
 
-  return { items, pagination, extra, isLoading, error, goToPage, refresh };
+  return {
+    items,
+    pagination,
+    extra,
+    isLoading,
+    isInitialLoading: isLoading && !hasLoadedOnce,
+    error,
+    goToPage,
+    refresh,
+  };
 }

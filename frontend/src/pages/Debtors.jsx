@@ -1,6 +1,7 @@
 // frontend/src/pages/Debtors.jsx
-// v1.1.0-prod — Uses usePaginatedApi hook + Pagination. Server-side search
-//               via URL ?search= (300ms debounce). Summary via extra.
+// v1.2.0-prod — Uses isInitialLoading so search doesn't unmount input.
+//               Fixes cursor-loss bug on search.
+// v1.1.0-prod — Uses usePaginatedApi hook + Pagination. Server-side search.
 
 import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -33,11 +34,9 @@ const Debtors = () => {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Read current search from URL (single source of truth)
   const urlSearch = searchParams.get('search') || '';
   const [searchInput, setSearchInput] = useState(urlSearch);
 
-  // Debounce: sync input → URL after 300ms of no typing
   useEffect(() => {
     const t = setTimeout(() => {
       if (searchInput === urlSearch) return;
@@ -47,7 +46,7 @@ const Debtors = () => {
           const v = searchInput.trim();
           if (v) sp.set('search', v);
           else sp.delete('search');
-          sp.delete('page'); // reset to page 1
+          sp.delete('page');
           return sp;
         },
         { replace: true }
@@ -57,7 +56,6 @@ const Debtors = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput]);
 
-  // Keep input in sync if URL changes externally (e.g. back button)
   useEffect(() => {
     if (urlSearch !== searchInput) setSearchInput(urlSearch);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -72,7 +70,7 @@ const Debtors = () => {
     items: debtors,
     pagination,
     extra,
-    isLoading,
+    isInitialLoading,
     error: loadError,
     goToPage,
     refresh,
@@ -94,7 +92,6 @@ const Debtors = () => {
 
   const handleDeleteDebtor = async () => {
     if (!selectedDebtor) return;
-
     try {
       const response = await api.delete(`/debtors/${selectedDebtor.id}`);
       if (response.data?.success) {
@@ -110,8 +107,6 @@ const Debtors = () => {
 
   const handleClearSearch = () => {
     setSearchInput('');
-    // The debounce effect will sync the URL.
-    // Also immediately clear for snappier UX:
     setSearchParams(
       (prev) => {
         const sp = new URLSearchParams(prev);
@@ -127,7 +122,6 @@ const Debtors = () => {
     if (debtor.balance_remaining <= 0 || debtor.status === 'PAID') {
       return { label: 'Paid', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400', icon: '✅' };
     }
-
     const todayStr = new Date().toISOString().slice(0, 10);
     const dueStr = debtor.due_date ? String(debtor.due_date).slice(0, 10) : null;
     if (dueStr && dueStr < todayStr) {
@@ -139,13 +133,11 @@ const Debtors = () => {
   const formatDate = (date) => {
     if (!date) return 'N/A';
     return new Date(date).toLocaleDateString('en-NG', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
+      year: 'numeric', month: 'short', day: 'numeric'
     });
   };
 
-  if (isLoading && debtors.length === 0) {
+  if (isInitialLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">

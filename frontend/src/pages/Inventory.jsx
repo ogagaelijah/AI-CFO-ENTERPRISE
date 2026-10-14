@@ -1,6 +1,6 @@
 // frontend/src/pages/Inventory.jsx
-// v1.1.0-prod — Uses usePaginatedApi hook + Pagination. Adds server-side
-//               search input (300ms debounce, URL ?search=). Summary via extra.
+// v1.2.0-prod — Uses isInitialLoading so search doesn't unmount input.
+// v1.1.0-prod — Uses usePaginatedApi hook + Pagination. Server-side search.
 
 import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -67,7 +67,7 @@ const Inventory = () => {
     items: inventory,
     pagination,
     extra,
-    isLoading,
+    isInitialLoading,
     error: loadError,
     goToPage,
     refresh,
@@ -90,11 +90,7 @@ const Inventory = () => {
 
   const handleAddStock = async (data) => {
     try {
-      const response = await api.post('/inventory', {
-        ...data,
-        userId: user?.id,
-      });
-
+      const response = await api.post('/inventory', { ...data, userId: user?.id });
       if (response.data?.success) {
         setShowAddModal(false);
         setSuccess('✅ Stock added successfully!');
@@ -110,11 +106,7 @@ const Inventory = () => {
 
   const handleEditItem = async (id, data) => {
     try {
-      const response = await api.put(`/inventory/${id}`, {
-        ...data,
-        userId: user?.id,
-      });
-
+      const response = await api.put(`/inventory/${id}`, { ...data, userId: user?.id });
       if (response.data?.success) {
         setShowEditModal(false);
         setSelectedItem(null);
@@ -131,11 +123,7 @@ const Inventory = () => {
 
   const handleAdjustStock = async (id, data) => {
     try {
-      const response = await api.patch(`/inventory/${id}/stock`, {
-        ...data,
-        userId: user?.id,
-      });
-
+      const response = await api.patch(`/inventory/${id}/stock`, { ...data, userId: user?.id });
       if (response.data?.success) {
         setShowAdjustModal(false);
         setSelectedItem(null);
@@ -153,10 +141,7 @@ const Inventory = () => {
   const handleDeleteItem = async () => {
     if (!selectedItem) return;
     try {
-      const response = await api.delete(`/inventory/${selectedItem.id}`, {
-        params: { userId: user?.id },
-      });
-
+      const response = await api.delete(`/inventory/${selectedItem.id}`, { params: { userId: user?.id } });
       if (response.data?.success) {
         setShowDeleteModal(false);
         setSelectedItem(null);
@@ -196,7 +181,7 @@ const Inventory = () => {
     );
   };
 
-  if (isLoading && inventory.length === 0) {
+  if (isInitialLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
@@ -300,20 +285,14 @@ const Inventory = () => {
       <EditItemModal
         isOpen={showEditModal}
         item={selectedItem}
-        onClose={() => {
-          setShowEditModal(false);
-          setSelectedItem(null);
-        }}
+        onClose={() => { setShowEditModal(false); setSelectedItem(null); }}
         onSubmit={handleEditItem}
       />
 
       <AdjustStockModal
         isOpen={showAdjustModal}
         item={selectedItem}
-        onClose={() => {
-          setShowAdjustModal(false);
-          setSelectedItem(null);
-        }}
+        onClose={() => { setShowAdjustModal(false); setSelectedItem(null); }}
         onSubmit={handleAdjustStock}
       />
 

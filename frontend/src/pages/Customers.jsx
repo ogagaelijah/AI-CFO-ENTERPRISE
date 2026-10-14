@@ -1,4 +1,5 @@
 // frontend/src/pages/Customers.jsx
+// v1.3.0-prod — Uses isInitialLoading so refetches don't unmount the table.
 // v1.2.0-prod — Uses usePaginatedApi hook + Pagination. Summary from pagination.
 // v1.1.0-prod — Accepts initialType prop. Filters by type when locked.
 
@@ -37,7 +38,7 @@ const Customers = ({ initialType = null }) => {
   const {
     items: customers,
     pagination,
-    isLoading,
+    isInitialLoading,
     error: loadError,
     goToPage,
     refresh,
@@ -46,10 +47,9 @@ const Customers = ({ initialType = null }) => {
     params: hookParams,
   });
 
-  // Summary derived from pagination.total (server-side, accurate for all pages)
   const summary = {
     total: pagination?.total || 0,
-    active: pagination?.total || 0, // Note: was previously computed client-side as metadata?.status !== 'INACTIVE'
+    active: pagination?.total || 0,
   };
 
   const [showModal, setShowModal] = useState(false);
@@ -85,13 +85,11 @@ const Customers = ({ initialType = null }) => {
   const handleCreate = async (data) => {
     setError('');
     setSuccess('');
-
     try {
       const response = await api.post('/customers', {
         ...data,
         businessId: user?.businessId || user?.id,
       });
-
       if (response.data?.success) {
         setShowModal(false);
         setSuccess(`✅ ${labels.singular} created successfully!`);
@@ -108,13 +106,11 @@ const Customers = ({ initialType = null }) => {
   const handleUpdate = async (data) => {
     setError('');
     setSuccess('');
-
     try {
       const response = await api.put(`/customers/${selectedCustomer.id}`, {
         ...data,
         businessId: user?.businessId || user?.id,
       });
-
       if (response.data?.success) {
         setShowEditModal(false);
         setSelectedCustomer(null);
@@ -131,15 +127,12 @@ const Customers = ({ initialType = null }) => {
 
   const handleDelete = async () => {
     if (!selectedCustomer) return;
-
     setError('');
     setSuccess('');
-
     try {
       const response = await api.delete(`/customers/${selectedCustomer.id}`, {
         params: { businessId: user?.businessId || user?.id },
       });
-
       if (response.data?.success) {
         setShowConfirmModal(false);
         setSelectedCustomer(null);
@@ -154,7 +147,7 @@ const Customers = ({ initialType = null }) => {
     }
   };
 
-  if (isLoading && customers.length === 0) {
+  if (isInitialLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">

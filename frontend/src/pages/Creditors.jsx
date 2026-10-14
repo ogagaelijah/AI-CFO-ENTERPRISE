@@ -1,4 +1,5 @@
 // frontend/src/pages/Creditors.jsx
+// v1.2.0-prod — Uses isInitialLoading so refetches don't unmount the table.
 // v1.1.0-prod — Uses usePaginatedApi hook + Pagination. Summary via extra.
 
 import { useState } from 'react';
@@ -22,7 +23,7 @@ const Creditors = () => {
     items: creditors,
     pagination,
     extra,
-    isLoading,
+    isInitialLoading,
     error: loadError,
     goToPage,
     refresh,
@@ -51,31 +52,18 @@ const Creditors = () => {
   const [success, setSuccess] = useState('');
 
   const [addForm, setAddForm] = useState({
-    supplierName: '',
-    totalOwed: 0,
-    dueDate: '',
-    notes: '',
+    supplierName: '', totalOwed: 0, dueDate: '', notes: '',
   });
   const [paymentForm, setPaymentForm] = useState({
-    amount: 0,
-    notes: '',
+    amount: 0, notes: '',
   });
 
   const handleAddSubmit = (e) => {
     e.preventDefault();
     setError('');
     setSuccess('');
-
-    if (!addForm.supplierName.trim()) {
-      setError('Supplier name is required');
-      return;
-    }
-
-    if (addForm.totalOwed <= 0) {
-      setError('Amount owed must be greater than 0');
-      return;
-    }
-
+    if (!addForm.supplierName.trim()) { setError('Supplier name is required'); return; }
+    if (addForm.totalOwed <= 0) { setError('Amount owed must be greater than 0'); return; }
     setShowAddModal(false);
     setConfirmData({ ...addForm });
     setConfirmType('add');
@@ -84,11 +72,9 @@ const Creditors = () => {
 
   const handleConfirmAdd = async () => {
     if (isSubmitting) return;
-
     setError('');
     setSuccess('');
     setIsSubmitting(true);
-
     try {
       const response = await api.post('/creditors', {
         supplierName: confirmData.supplierName.trim(),
@@ -96,7 +82,6 @@ const Creditors = () => {
         dueDate: confirmData.dueDate || null,
         notes: confirmData.notes?.trim() || '',
       });
-
       if (response.data?.success) {
         setSuccess('✅ Creditor added successfully!');
         setAddForm({ supplierName: '', totalOwed: 0, dueDate: '', notes: '' });
@@ -117,17 +102,11 @@ const Creditors = () => {
     e.preventDefault();
     setError('');
     setSuccess('');
-
-    if (paymentForm.amount <= 0) {
-      setError('Payment amount must be greater than 0');
-      return;
-    }
-
+    if (paymentForm.amount <= 0) { setError('Payment amount must be greater than 0'); return; }
     if (paymentForm.amount > selectedCreditor.balance_remaining) {
       setError(`Payment amount exceeds balance of ₦${selectedCreditor.balance_remaining.toLocaleString()}`);
       return;
     }
-
     setShowPaymentModal(false);
     setConfirmData({
       creditor: selectedCreditor,
@@ -140,17 +119,14 @@ const Creditors = () => {
 
   const handleConfirmPayment = async () => {
     if (isSubmitting) return;
-
     setError('');
     setSuccess('');
     setIsSubmitting(true);
-
     try {
       const response = await api.post(`/creditors/${selectedCreditor.id}/payment`, {
         amount: parseFloat(confirmData.amount),
         notes: confirmData.notes?.trim() || '',
       });
-
       if (response.data?.success) {
         setSuccess(`✅ Payment of ₦${parseFloat(confirmData.amount).toLocaleString()} recorded successfully!`);
         setShowPaymentModal(false);
@@ -188,7 +164,6 @@ const Creditors = () => {
 
   const handleDelete = async (id) => {
     if (!confirm('Are you sure you want to delete this creditor?')) return;
-
     try {
       const response = await api.delete(`/creditors/${id}`);
       if (response.data?.success) {
@@ -204,14 +179,11 @@ const Creditors = () => {
     if (isSubmitting) return;
     setShowConfirmModal(false);
     setConfirmData(null);
-    if (confirmType === 'add') {
-      setShowAddModal(true);
-    } else if (confirmType === 'payment') {
-      setShowPaymentModal(true);
-    }
+    if (confirmType === 'add') setShowAddModal(true);
+    else if (confirmType === 'payment') setShowPaymentModal(true);
   };
 
-  if (isLoading && creditors.length === 0) {
+  if (isInitialLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
@@ -231,11 +203,7 @@ const Creditors = () => {
         subtitle="Suppliers you owe money to"
         actions={
           <button
-            onClick={() => {
-              setShowAddModal(true);
-              setError('');
-              setSuccess('');
-            }}
+            onClick={() => { setShowAddModal(true); setError(''); setSuccess(''); }}
             className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
           >
             <Plus className="w-5 h-5" />
@@ -295,10 +263,7 @@ const Creditors = () => {
         form={paymentForm}
         setForm={setPaymentForm}
         onSubmit={handlePaymentSubmit}
-        onClose={() => {
-          setShowPaymentModal(false);
-          setSelectedCreditor(null);
-        }}
+        onClose={() => { setShowPaymentModal(false); setSelectedCreditor(null); }}
         error={error}
       />
 
@@ -315,10 +280,7 @@ const Creditors = () => {
         isOpen={showDetailModal}
         creditor={selectedCreditor}
         isLoading={isLoadingDetail}
-        onClose={() => {
-          setShowDetailModal(false);
-          setSelectedCreditor(null);
-        }}
+        onClose={() => { setShowDetailModal(false); setSelectedCreditor(null); }}
       />
     </div>
   );

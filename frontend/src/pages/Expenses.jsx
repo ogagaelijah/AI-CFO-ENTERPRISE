@@ -1,6 +1,6 @@
 // frontend/src/pages/Expenses.jsx
+// v1.2.0-prod — Uses isInitialLoading so refetches don't unmount the table.
 // v1.1.0-prod — Uses usePaginatedApi hook + Pagination. Summary via extra.
-// v1.0.0-prod — Initial.
 
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -23,7 +23,7 @@ const Expenses = () => {
     items: expenses,
     pagination,
     extra,
-    isLoading,
+    isInitialLoading,
     error: loadError,
     goToPage,
     refresh,
@@ -80,7 +80,6 @@ const Expenses = () => {
       setError('Category is required');
       return;
     }
-
     if (formData.amount <= 0) {
       setError('Amount must be greater than 0');
       return;
@@ -93,17 +92,14 @@ const Expenses = () => {
 
   const handleConfirm = async () => {
     if (isSubmitting) return;
-
     setError('');
     setSuccess('');
-
     if (!confirmData) {
       setError('No data to confirm');
       return;
     }
 
     setIsSubmitting(true);
-
     try {
       const response = await api.post('/expenses', {
         category: confirmData.category.trim(),
@@ -128,8 +124,7 @@ const Expenses = () => {
       }
     } catch (error) {
       console.error('Error recording expense:', error);
-      const errorMsg = error.response?.data?.message || 'Failed to record expense';
-      setError(errorMsg);
+      setError(error.response?.data?.message || 'Failed to record expense');
       setShowConfirmModal(false);
       setShowModal(true);
     } finally {
@@ -140,7 +135,6 @@ const Expenses = () => {
   const handleEditSubmit = async (updatedData) => {
     setError('');
     setSuccess('');
-
     try {
       const response = await api.put(`/expenses/${selectedExpense.id}`, {
         category: updatedData.category.trim(),
@@ -165,7 +159,6 @@ const Expenses = () => {
 
   const handleDelete = async (id) => {
     if (!confirm('Are you sure you want to delete this expense record?')) return;
-
     try {
       const response = await api.delete(`/expenses/${id}`);
       if (response.data?.success) {
@@ -187,7 +180,7 @@ const Expenses = () => {
     setShowModal(true);
   };
 
-  if (isLoading && expenses.length === 0) {
+  if (isInitialLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">

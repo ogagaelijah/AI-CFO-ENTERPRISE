@@ -1,6 +1,7 @@
 // frontend/src/pages/Sales.jsx
-// v1.1.0-prod — Uses usePaginatedApi hook + <Pagination /> component.
-// v1.0.0-prod — Initial.
+// v1.2.0-prod — Uses isInitialLoading so search/filter/page changes don't
+//               unmount the table.
+// v1.1.0-prod — Uses usePaginatedApi hook + Pagination.
 
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -21,18 +22,16 @@ const Sales = () => {
     items: sales,
     pagination,
     isLoading,
+    isInitialLoading,
     error: loadError,
     goToPage,
     refresh,
   } = usePaginatedApi('/sales', { itemKey: 'sales' });
 
-  // Modals
   const [showModal, setShowModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showPartialModal, setShowPartialModal] = useState(false);
-
-  // Data
   const [selectedSale, setSelectedSale] = useState(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -64,7 +63,6 @@ const Sales = () => {
 
   const handleConfirmSale = async () => {
     if (isSubmitting) return;
-
     const data = confirmData;
     if (!data) return;
 
@@ -108,7 +106,7 @@ const Sales = () => {
     }
   };
 
-  if (isLoading && sales.length === 0) {
+  if (isInitialLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
