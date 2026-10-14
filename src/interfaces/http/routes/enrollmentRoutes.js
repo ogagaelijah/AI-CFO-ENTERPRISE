@@ -1,4 +1,6 @@
 // src/interfaces/http/routes/enrollmentRoutes.js
+// v1.1.0-prod — GET / pagination standardized. Response shape preserved
+//               ({ success, enrollments, pagination }).
 
 'use strict';
 
@@ -17,6 +19,7 @@ const PromoteEnrollmentUseCase = require('../../../application/useCases/enrollme
 
 const { authMiddleware } = require('../middleware/authMiddleware');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
+const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 
 const enrollmentRepo = new EnrollmentRepository();
 const studentRepo = new StudentRepository();
@@ -44,7 +47,10 @@ router.get('/', async (req, res) => {
         if (!businessId) {
             return res.status(400).json({ success: false, message: 'Business ID is required' });
         }
-        const { limit = 50, offset = 0, studentId, classId, session, term, status } = req.query;
+
+        const { studentId, classId, session, term, status } = req.query;
+        const { page, limit, offset } = parsePagination(req.query);
+
         const result = await getEnrollmentsUseCase.execute({
             businessId,
             studentId: studentId ? parseInt(studentId, 10) : null,
@@ -55,7 +61,13 @@ router.get('/', async (req, res) => {
             limit,
             offset,
         });
-        res.json(result);
+
+        const total = result?.pagination?.total || 0;
+
+        res.json({
+            ...result,
+            pagination: buildPaginationMeta({ page, limit, total }),
+        });
     } catch (error) {
         console.error('❌ [GET /api/enrollments]', error.message);
         res.status(500).json({ success: false, message: error.message || 'Failed to fetch enrollments' });

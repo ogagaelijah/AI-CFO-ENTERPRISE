@@ -1,10 +1,14 @@
 // frontend/src/pages/Invoices.jsx
+// v1.2.0-prod — Uses isInitialLoading so refetches don't unmount the table.
+// v1.1.0-prod — Uses usePaginatedApi hook + Pagination. Summary via extra.
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { Plus, X, CheckCircle, AlertCircle } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
+import Pagination from '../components/common/Pagination';
+import usePaginatedApi from '../hooks/usePaginatedApi';
 import SummaryCards from '../components/Invoices/SummaryCards';
 import InvoiceTable from '../components/Invoices/InvoiceTable';
 import RecordInvoiceModal from '../components/Invoices/RecordInvoiceModal';
@@ -15,15 +19,24 @@ import ConfirmModal from '../components/Invoices/ConfirmModal';
 
 const Invoices = () => {
   const { user } = useAuth();
-  const [invoices, setInvoices] = useState([]);
-  const [summary, setSummary] = useState({
+
+  const {
+    items: invoices,
+    pagination,
+    extra,
+    isInitialLoading,
+    error: loadError,
+    goToPage,
+    refresh,
+  } = usePaginatedApi('/invoices', { itemKey: 'invoices' });
+
+  const summary = extra?.summary || {
     totalCount: 0,
     totalInvoiced: 0,
     totalPaid: 0,
     totalOutstanding: 0,
     overdueCount: 0,
-  });
-  const [isLoading, setIsLoading] = useState(true);
+  };
 
   const [showModal, setShowModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -34,39 +47,6 @@ const Invoices = () => {
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-
-  useEffect(() => {
-    fetchInvoices();
-  }, []);
-
-  const fetchInvoices = async () => {
-    try {
-      setIsLoading(true);
-      setError('');
-      const response = await api.get('/invoices', {
-        params: {
-          businessId: user?.businessId || user?.id,
-          limit: 100,
-        },
-      });
-
-      if (response.data?.success) {
-        setInvoices(response.data.invoices || []);
-        setSummary(response.data.summary || {
-          totalCount: 0,
-          totalInvoiced: 0,
-          totalPaid: 0,
-          totalOutstanding: 0,
-          overdueCount: 0,
-        });
-      }
-    } catch (error) {
-      console.error('Error fetching invoices:', error);
-      setError(error.response?.data?.message || 'Failed to load invoices');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const fetchInvoiceDetail = async (id) => {
     try {
@@ -97,11 +77,10 @@ const Invoices = () => {
         ...data,
         businessId: user?.businessId || user?.id,
       });
-
       if (response.data?.success) {
         setShowModal(false);
         setSuccess(`✅ Invoice ${response.data.invoice?.invoiceNumber || ''} created!`);
-        await fetchInvoices();
+        refresh();
       } else {
         setError(response.data?.message || 'Failed to create invoice');
       }
@@ -119,12 +98,11 @@ const Invoices = () => {
         ...data,
         businessId: user?.businessId || user?.id,
       });
-
       if (response.data?.success) {
         setShowEditModal(false);
         setSelectedInvoice(null);
         setSuccess('✅ Invoice updated successfully!');
-        await fetchInvoices();
+        refresh();
       } else {
         setError(response.data?.message || 'Failed to update invoice');
       }
@@ -142,12 +120,11 @@ const Invoices = () => {
       const response = await api.delete(`/invoices/${selectedInvoice.id}`, {
         params: { businessId: user?.businessId || user?.id },
       });
-
       if (response.data?.success) {
         setShowConfirmModal(false);
         setSelectedInvoice(null);
         setSuccess('✅ Invoice deleted successfully!');
-        await fetchInvoices();
+        refresh();
       } else {
         setError(response.data?.message || 'Failed to delete invoice');
       }
@@ -166,12 +143,11 @@ const Invoices = () => {
         status: 'SENT',
         businessId: user?.businessId || user?.id,
       });
-
       if (response.data?.success) {
         setShowDetailModal(false);
         setSelectedInvoice(null);
         setSuccess(`✅ Invoice ${invoice.invoiceNumber || ''} marked as sent. Client balance updated.`);
-        await fetchInvoices();
+        refresh();
       } else {
         setError(response.data?.message || 'Failed to mark invoice as sent');
       }
@@ -193,7 +169,6 @@ const Invoices = () => {
         notes: data.notes,
         businessId: user?.businessId || user?.id,
       });
-
       if (response.data?.success) {
         setShowPaymentModal(false);
         setShowDetailModal(false);
@@ -202,7 +177,7 @@ const Invoices = () => {
           response.data?.message ||
           `✅ Payment of ₦${Number(data.amount).toLocaleString()} recorded.`
         );
-        await fetchInvoices();
+        refresh();
       } else {
         setError(response.data?.message || 'Failed to record payment');
       }
@@ -218,7 +193,7 @@ const Invoices = () => {
     setShowPaymentModal(true);
   };
 
-  if (isLoading) {
+  if (isInitialLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
@@ -228,6 +203,8 @@ const Invoices = () => {
       </div>
     );
   }
+
+  const displayError = error || loadError;
 
   return (
     <div className="space-y-6">
@@ -249,10 +226,10 @@ const Invoices = () => {
         }
       />
 
-      {error && (
+      {displayError && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg flex items-center space-x-2">
           <AlertCircle className="w-5 h-5 flex-shrink-0" />
-          <span>{error}</span>
+          <span>{displayError}</span>
           <button onClick={() => setError('')} className="ml-auto text-red-500 hover:text-red-700">
             <X className="w-4 h-4" />
           </button>
@@ -270,18 +247,21 @@ const Invoices = () => {
 
       <SummaryCards summary={summary} />
 
-      <InvoiceTable
-        invoices={invoices}
-        onView={fetchInvoiceDetail}
-        onEdit={(invoice) => {
-          setSelectedInvoice(invoice);
-          setShowEditModal(true);
-        }}
-        onDelete={(invoice) => {
-          setSelectedInvoice(invoice);
-          setShowConfirmModal(true);
-        }}
-      />
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 overflow-hidden">
+        <InvoiceTable
+          invoices={invoices}
+          onView={fetchInvoiceDetail}
+          onEdit={(invoice) => {
+            setSelectedInvoice(invoice);
+            setShowEditModal(true);
+          }}
+          onDelete={(invoice) => {
+            setSelectedInvoice(invoice);
+            setShowConfirmModal(true);
+          }}
+        />
+        <Pagination pagination={pagination} onPageChange={goToPage} />
+      </div>
 
       <RecordInvoiceModal
         isOpen={showModal}

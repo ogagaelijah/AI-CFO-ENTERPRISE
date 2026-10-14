@@ -1,17 +1,21 @@
 // src/interfaces/http/routes/inventoryRoutes.js
+// v1.3.0-prod — Adds search param passthrough (server-side search wired).
+// v1.2.0-prod — Pagination at TOP LEVEL. Response shape:
+//               { success, data: [...items...], summary, pagination }.
 
 const express = require('express');
 const router = express.Router();
 const InventoryRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryRepository');
 const { authMiddleware } = require('../middleware/authMiddleware');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
+const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 
 const inventoryRepo = new InventoryRepository();
 
 router.use(authMiddleware);
 
 // =============================================
-// GET /api/inventory
+// GET /api/inventory?page=1&limit=50&search=gala
 // =============================================
 router.get('/', async (req, res) => {
     try {
@@ -22,23 +26,46 @@ router.get('/', async (req, res) => {
             return res.status(400).json({ success: false, message: 'Business context required' });
         }
 
-        let items;
+        const { page, limit, offset } = parsePagination(req.query);
+        const searchTerm = (search || '').trim() || null;
+
+        // Low-stock view — bounded set by design (typically <100 items).
+        // Still returns pagination for consistency.
         if (lowStock === 'true') {
-            items = await inventoryRepo.findLowStock(businessId);
-        } else if (search) {
-            items = await inventoryRepo.searchByName(businessId, search);
-        } else {
-            items = await inventoryRepo.findByBusinessId(businessId);
+            const all = await inventoryRepo.findLowStock(businessId);
+            const total = all.length;
+            const items = all.slice(offset, offset + limit);
+            const summary = await inventoryRepo.getSummary(businessId);
+
+            return res.json({
+                success: true,
+                data: items,
+                summary,
+                pagination: buildPaginationMeta({ page, limit, total }),
+            });
         }
 
-        const summary = await inventoryRepo.getSummary(businessId);
+        const filters = { search: searchTerm };
+
+        const [items, total, summary] = await Promise.all([
+            inventoryRepo.findByBusinessId(businessId, { ...filters, limit, offset }),
+            inventoryRepo.countByBusinessId(businessId, filters),
+            inventoryRepo.getSummary(businessId),
+        ]);
 
         res.json({
             success: true,
-            data: items,
-            summary: summary
+            data: items || [],
+            summary: summary || {
+                total_items: 0,
+                total_quantity: 0,
+                total_cost_value: 0,
+                total_selling_value: 0,
+                total_profit: 0,
+                low_stock_count: 0,
+            },
+            pagination: buildPaginationMeta({ page, limit, total }),
         });
-
     } catch (error) {
         console.error('❌ Error fetching inventory:', error);
         res.status(500).json({

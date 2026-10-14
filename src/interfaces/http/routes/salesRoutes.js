@@ -1,12 +1,7 @@
 // src/interfaces/http/routes/salesRoutes.js
+// v2.2.0-prod — Adds pagination to GET /. Response now includes data.pagination.
+//               Backwards-compatible: data.sales and data.count still present.
 // v2.1.0-prod — multi-tenant aware + 30s read cache for GET /
-//
-// v2.1.0 changes:
-//   - GET / cached for 30s (+60s stale-while-revalidate) via
-//     cacheService.getOrSet. Key: aicfo:sales:{businessId}.
-//   - Cache auto-invalidated by invalidateAfterWrite on any successful
-//     POST/PUT/DELETE under this business.
-//   - Same response shape. No API contract change.
 
 const express = require('express');
 const router = express.Router();
@@ -19,6 +14,11 @@ const PaymentRepository = require('../../../infrastructure/database/sqlite/repos
 const { authMiddleware } = require('../middleware/authMiddleware');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
 const { cacheService } = require('../../../infrastructure/services/cache/CacheService');
+const {
+    parsePagination,
+    buildPaginationMeta,
+    paginationCacheSuffix,
+} = require('../utils/pagination');
 
 const saleRepo = new SaleRepository();
 const inventoryRepo = new InventoryRepository();
@@ -39,7 +39,7 @@ router.use(authMiddleware);
 const SALES_CACHE_TTL_MS = 30_000;
 
 // =============================================
-// GET /api/sales
+// GET /api/sales?page=1&limit=50
 // =============================================
 router.get('/', async (req, res) => {
     try {
@@ -48,17 +48,23 @@ router.get('/', async (req, res) => {
             return res.status(400).json({ success: false, message: 'Business context missing' });
         }
 
-        const cacheKey = `aicfo:sales:${businessId}`;
+        const { page, limit, offset } = parsePagination(req.query);
+        const cacheKey = `aicfo:sales:${businessId}${paginationCacheSuffix({ page, limit })}`;
 
         const payload = await cacheService.getOrSet(
             cacheKey,
             async () => {
-                const sales = await saleRepo.findByBusinessId(businessId);
+                const [sales, total] = await Promise.all([
+                    saleRepo.findByBusinessIdPaginated(businessId, { limit, offset }),
+                    saleRepo.countByBusinessId(businessId),
+                ]);
+
                 return {
                     success: true,
                     data: {
                         sales: sales || [],
                         count: sales?.length || 0,
+                        pagination: buildPaginationMeta({ page, limit, total }),
                     },
                 };
             },

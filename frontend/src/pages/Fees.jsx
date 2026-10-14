@@ -1,11 +1,16 @@
 // frontend/src/pages/Fees.jsx
+// v1.3.0-prod — Uses isInitialLoading so search/filter don't unmount input.
+// v1.2.0-prod — Uses usePaginatedApi hook + Pagination. Summary via extra.
 // v1.1.0 — Adds "Generate Class Fees" bulk action.
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
-import { Plus, X, CheckCircle, AlertCircle, Users } from 'lucide-react';
+import { Plus, X, CheckCircle, AlertCircle, Users, Search } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
+import Pagination from '../components/common/Pagination';
+import usePaginatedApi from '../hooks/usePaginatedApi';
 import SummaryCards from '../components/Fees/SummaryCards';
 import FeeTable from '../components/Fees/FeeTable';
 import RecordFeeModal from '../components/Fees/RecordFeeModal';
@@ -17,17 +22,63 @@ import ConfirmModal from '../components/Fees/ConfirmModal';
 
 const Fees = () => {
   const { user } = useAuth();
-  const [fees, setFees] = useState([]);
-  const [summary, setSummary] = useState({
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const statusFilter = searchParams.get('status') || '';
+  const urlSearch = searchParams.get('search') || '';
+  const [searchInput, setSearchInput] = useState(urlSearch);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (searchInput === urlSearch) return;
+      setSearchParams(
+        (prev) => {
+          const sp = new URLSearchParams(prev);
+          const v = searchInput.trim();
+          if (v) sp.set('search', v);
+          else sp.delete('search');
+          sp.delete('page');
+          return sp;
+        },
+        { replace: true }
+      );
+    }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchInput]);
+
+  useEffect(() => {
+    if (urlSearch !== searchInput) setSearchInput(urlSearch);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlSearch]);
+
+  const hookParams = useMemo(() => {
+    const p = {};
+    if (statusFilter) p.status = statusFilter;
+    if (urlSearch) p.search = urlSearch;
+    return p;
+  }, [statusFilter, urlSearch]);
+
+  const {
+    items: fees,
+    pagination,
+    extra,
+    isInitialLoading,
+    error: loadError,
+    goToPage,
+    refresh,
+  } = usePaginatedApi('/fees', {
+    itemKey: 'fees',
+    params: hookParams,
+  });
+
+  const summary = extra?.summary || {
     totalCount: 0,
     totalAmount: 0,
     totalPaid: 0,
     totalOutstanding: 0,
     overdueCount: 0,
-  });
-  const [isLoading, setIsLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
+  };
 
   const [showModal, setShowModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -40,36 +91,17 @@ const Fees = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  useEffect(() => {
-    fetchFees();
-  }, [statusFilter]);
-
-  const fetchFees = async () => {
-    try {
-      setIsLoading(true);
-      setError('');
-      const params = { limit: 200 };
-      if (statusFilter) params.status = statusFilter;
-      if (searchTerm) params.search = searchTerm;
-
-      const response = await api.get('/fees', { params });
-
-      if (response.data?.success) {
-        setFees(response.data.fees || []);
-        setSummary(response.data.summary || {
-          totalCount: 0,
-          totalAmount: 0,
-          totalPaid: 0,
-          totalOutstanding: 0,
-          overdueCount: 0,
-        });
-      }
-    } catch (error) {
-      console.error('Error fetching fees:', error);
-      setError(error.response?.data?.message || 'Failed to load fees');
-    } finally {
-      setIsLoading(false);
-    }
+  const setStatusFilter = (value) => {
+    setSearchParams(
+      (prev) => {
+        const sp = new URLSearchParams(prev);
+        if (value) sp.set('status', value);
+        else sp.delete('status');
+        sp.delete('page');
+        return sp;
+      },
+      { replace: true }
+    );
   };
 
   const fetchFeeDetail = async (id) => {
@@ -99,7 +131,7 @@ const Fees = () => {
       if (response.data?.success) {
         setShowModal(false);
         setSuccess(`✅ Fee ${response.data.fee?.feeNumber || ''} created`);
-        await fetchFees();
+        refresh();
       } else {
         setError(response.data?.message || 'Failed to create fee');
       }
@@ -121,7 +153,7 @@ const Fees = () => {
           `✅ Generated ${created} fee(s)` +
           (skipped ? `, skipped ${skipped} (already existed)` : '')
         );
-        await fetchFees();
+        refresh();
       } else {
         setError(response.data?.message || 'Failed to generate fees');
       }
@@ -140,7 +172,7 @@ const Fees = () => {
         setShowEditModal(false);
         setSelectedFee(null);
         setSuccess('✅ Fee updated successfully!');
-        await fetchFees();
+        refresh();
       } else {
         setError(response.data?.message || 'Failed to update fee');
       }
@@ -160,7 +192,7 @@ const Fees = () => {
         setShowConfirmModal(false);
         setSelectedFee(null);
         setSuccess(response.data.message || '✅ Fee deleted');
-        await fetchFees();
+        refresh();
       } else {
         setError(response.data?.message || 'Failed to delete fee');
       }
@@ -181,7 +213,7 @@ const Fees = () => {
         setShowDetailModal(false);
         setSelectedFee(null);
         setSuccess(`✅ Fee ${fee.feeNumber || ''} marked as sent. Student balance updated.`);
-        await fetchFees();
+        refresh();
       } else {
         setError(response.data?.message || 'Failed to mark fee as sent');
       }
@@ -210,7 +242,7 @@ const Fees = () => {
           response.data?.message ||
           `✅ Payment of ₦${Number(data.amount).toLocaleString()} recorded.`
         );
-        await fetchFees();
+        refresh();
       } else {
         setError(response.data?.message || 'Failed to record payment');
       }
@@ -226,7 +258,7 @@ const Fees = () => {
     setShowPaymentModal(true);
   };
 
-  if (isLoading) {
+  if (isInitialLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
@@ -236,6 +268,8 @@ const Fees = () => {
       </div>
     );
   }
+
+  const displayError = error || loadError;
 
   return (
     <div className="space-y-6">
@@ -253,7 +287,7 @@ const Fees = () => {
               className="flex items-center space-x-2 px-4 py-2 border border-primary-600 text-primary-600 dark:text-gold-400 dark:border-gold-400 hover:bg-primary-50 dark:hover:bg-gold-900/20 rounded-lg transition"
             >
               <Users className="w-5 h-5" />
-              <span>Generate Class Fees</span>
+              <span className="hidden sm:inline">Generate Class Fees</span>
             </button>
             <button
               onClick={() => {
@@ -270,10 +304,10 @@ const Fees = () => {
         }
       />
 
-      {error && (
+      {displayError && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg flex items-center space-x-2">
           <AlertCircle className="w-5 h-5 flex-shrink-0" />
-          <span>{error}</span>
+          <span>{displayError}</span>
           <button onClick={() => setError('')} className="ml-auto text-red-500 hover:text-red-700">
             <X className="w-4 h-4" />
           </button>
@@ -292,14 +326,16 @@ const Fees = () => {
       <SummaryCards summary={summary} />
 
       <div className="flex flex-col sm:flex-row gap-3">
-        <input
-          type="text"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && fetchFees()}
-          placeholder="Search by fee number, student, or description..."
-          className="flex-1 px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-        />
+        <div className="flex-1 relative">
+          <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search by fee number, student, or description..."
+            className="w-full pl-9 pr-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+          />
+        </div>
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
@@ -314,18 +350,21 @@ const Fees = () => {
         </select>
       </div>
 
-      <FeeTable
-        fees={fees}
-        onView={fetchFeeDetail}
-        onEdit={(fee) => {
-          setSelectedFee(fee);
-          setShowEditModal(true);
-        }}
-        onDelete={(fee) => {
-          setSelectedFee(fee);
-          setShowConfirmModal(true);
-        }}
-      />
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 overflow-hidden">
+        <FeeTable
+          fees={fees}
+          onView={fetchFeeDetail}
+          onEdit={(fee) => {
+            setSelectedFee(fee);
+            setShowEditModal(true);
+          }}
+          onDelete={(fee) => {
+            setSelectedFee(fee);
+            setShowConfirmModal(true);
+          }}
+        />
+        <Pagination pagination={pagination} onPageChange={goToPage} />
+      </div>
 
       <RecordFeeModal
         isOpen={showModal}

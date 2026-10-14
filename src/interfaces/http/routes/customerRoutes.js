@@ -1,12 +1,8 @@
 // src/interfaces/http/routes/customerRoutes.js
-// v1.2.0-prod — 30s read cache on list endpoint. Removed taxId (migration 019).
-//
-// v1.2.0 changes:
-//   - GET / (list) now cached for 30s (+60s stale-while-revalidate).
-//     Key: aicfo:customers:{businessId}:{limit}:{offset}:{search}:{type}.
-//   - Single-customer, history, create, update, delete: unchanged.
-//   - Cache auto-invalidated on any successful write via
-//     invalidateAfterWrite (already mounted on POST/PUT/DELETE).
+// v1.3.0-prod — GET / pagination standardized. Adds data.pagination while
+//               preserving { customers, total, limit, offset, hasMore }.
+//               Cache key now includes page.
+// v1.2.0-prod — 30s read cache on list endpoint. Removed taxId.
 
 const express = require('express');
 const router = express.Router();
@@ -20,6 +16,7 @@ const DeleteCustomerUseCase = require('../../../application/useCases/customers/D
 const { authMiddleware } = require('../middleware/authMiddleware');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
 const { cacheService } = require('../../../infrastructure/services/cache/CacheService');
+const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 
 const customerRepo = new CustomerRepository();
 
@@ -54,12 +51,12 @@ router.use(authMiddleware);
 const CUSTOMERS_CACHE_TTL_MS = 30_000;
 
 // =============================================
-// GET /api/customers - Get all customers
+// GET /api/customers?page=1&limit=50
 // =============================================
 router.get('/', async (req, res) => {
     try {
         const businessId = req.user.businessId || req.query.businessId;
-        const { limit = 50, offset = 0, search, type } = req.query;
+        const { search, type } = req.query;
 
         if (!businessId) {
             return res.status(400).json({
@@ -68,22 +65,34 @@ router.get('/', async (req, res) => {
             });
         }
 
-        const parsedLimit = parseInt(limit);
-        const parsedOffset = parseInt(offset);
+        const { page, limit, offset } = parsePagination(req.query);
         const normalizedSearch = search || '';
         const normalizedType = type || '';
 
-        const cacheKey = `aicfo:customers:${businessId}:${parsedLimit}:${parsedOffset}:${normalizedSearch}:${normalizedType}`;
+        const cacheKey = `aicfo:customers:${businessId}:p${page}:l${limit}:${normalizedSearch}:${normalizedType}`;
 
         const payload = await cacheService.getOrSet(
             cacheKey,
-            () => getCustomersUseCase.execute({
-                businessId,
-                limit: parsedLimit,
-                offset: parsedOffset,
-                search: normalizedSearch || null,
-                type: normalizedType || null,
-            }),
+            async () => {
+                const result = await getCustomersUseCase.execute({
+                    businessId,
+                    limit,
+                    offset,
+                    search: normalizedSearch || null,
+                    type: normalizedType || null,
+                });
+
+                // Add standardized pagination block (additive — preserves
+                // everything else the use case returned).
+                return {
+                    ...result,
+                    pagination: buildPaginationMeta({
+                        page,
+                        limit,
+                        total: result?.total || 0,
+                    }),
+                };
+            },
             CUSTOMERS_CACHE_TTL_MS
         );
 

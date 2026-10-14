@@ -1,6 +1,7 @@
 // src/interfaces/http/routes/feeRoutes.js
-// v1.2.0-prod — Wires debtorRepository + userId into the bulk generation
-//               path so SENT bulk fees create linked debtor rows.
+// v1.3.0-prod — GET / pagination standardized. Response shape preserved
+//               ({ success, fees, summary, pagination }).
+// v1.2.0-prod — Wires debtorRepository + userId into the bulk generation path.
 
 'use strict';
 
@@ -26,6 +27,7 @@ const RecordFeePaymentUseCase = require('../../../application/useCases/fees/Reco
 
 const { authMiddleware } = require('../middleware/authMiddleware');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
+const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 
 const feeRepo = new FeeRepository();
 const studentRepo = new StudentRepository();
@@ -49,7 +51,7 @@ const generateBulk = new GenerateFeesForClassUseCase({
     termRepository: termRepo,
     classRepository: classRepo,
     enrollmentRepository: enrollmentRepo,
-    debtorRepository: debtorRepo,               // ← ADDED
+    debtorRepository: debtorRepo,
 });
 const getFee = new GetFeeUseCase({ feeRepository: feeRepo });
 const getFees = new GetFeesUseCase({ feeRepository: feeRepo });
@@ -71,7 +73,7 @@ const recordPayment = new RecordFeePaymentUseCase({
 
 router.use(authMiddleware);
 
-// GET /api/fees
+// GET /api/fees?page=1&limit=50
 router.get('/', async (req, res) => {
     try {
         const businessId = req.user.businessId;
@@ -79,7 +81,8 @@ router.get('/', async (req, res) => {
             return res.status(400).json({ success: false, message: 'Business ID is required' });
         }
 
-        const { limit = 50, offset = 0, status, studentId, termId, classId, search } = req.query;
+        const { status, studentId, termId, classId, search } = req.query;
+        const { page, limit, offset } = parsePagination(req.query);
 
         const result = await getFees.execute({
             businessId,
@@ -92,7 +95,12 @@ router.get('/', async (req, res) => {
             offset,
         });
 
-        res.json(result);
+        const total = result?.pagination?.total || 0;
+
+        res.json({
+            ...result,
+            pagination: buildPaginationMeta({ page, limit, total }),
+        });
     } catch (error) {
         console.error('❌ [GET /api/fees]', error.message);
         res.status(500).json({ success: false, message: error.message || 'Failed to fetch fees' });
@@ -163,7 +171,7 @@ router.post('/', invalidateAfterWrite, async (req, res) => {
 router.post('/bulk', invalidateAfterWrite, async (req, res) => {
     try {
         const businessId = req.user.businessId;
-        const userId = req.user.id;             // ← ADDED
+        const userId = req.user.id;
         if (!businessId) {
             return res.status(400).json({ success: false, message: 'Business ID is required' });
         }
@@ -172,7 +180,7 @@ router.post('/bulk', invalidateAfterWrite, async (req, res) => {
 
         const result = await generateBulk.execute({
             businessId,
-            userId,                             // ← ADDED
+            userId,
             classId,
             termId,
             issueDate: issueDate ? new Date(issueDate) : new Date(),

@@ -1,12 +1,15 @@
 // frontend/src/pages/Customers.jsx
+// v1.3.0-prod — Uses isInitialLoading so refetches don't unmount the table.
+// v1.2.0-prod — Uses usePaginatedApi hook + Pagination. Summary from pagination.
 // v1.1.0-prod — Accepts initialType prop. Filters by type when locked.
-//               Adapts titles, button text, and modal behavior.
 
-import { useState, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { Plus, X, CheckCircle, AlertCircle } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
+import Pagination from '../components/common/Pagination';
+import usePaginatedApi from '../hooks/usePaginatedApi';
 import SummaryCards from '../components/Customers/SummaryCards';
 import CustomerTable from '../components/Customers/CustomerTable';
 import RecordCustomerModal from '../components/Customers/RecordCustomerModal';
@@ -27,12 +30,27 @@ const Customers = ({ initialType = null }) => {
   const { user } = useAuth();
   const labels = TYPE_LABELS[initialType] || TYPE_LABELS.CUSTOMER;
 
-  const [customers, setCustomers] = useState([]);
-  const [summary, setSummary] = useState({
-    total: 0,
-    active: 0,
+  const hookParams = useMemo(
+    () => (initialType ? { type: initialType } : {}),
+    [initialType]
+  );
+
+  const {
+    items: customers,
+    pagination,
+    isInitialLoading,
+    error: loadError,
+    goToPage,
+    refresh,
+  } = usePaginatedApi('/customers', {
+    itemKey: 'customers',
+    params: hookParams,
   });
-  const [isLoading, setIsLoading] = useState(true);
+
+  const summary = {
+    total: pagination?.total || 0,
+    active: pagination?.total || 0,
+  };
 
   const [showModal, setShowModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -42,39 +60,6 @@ const Customers = ({ initialType = null }) => {
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-
-  useEffect(() => {
-    fetchCustomers();
-  }, [initialType]);
-
-  const fetchCustomers = async () => {
-    try {
-      setIsLoading(true);
-      setError('');
-      const params = {
-        businessId: user?.businessId || user?.id,
-        limit: 100,
-      };
-      if (initialType) params.type = initialType;
-
-      const response = await api.get('/customers', { params });
-
-      if (response.data?.success) {
-        const customersData = response.data.customers || [];
-        setCustomers(customersData);
-
-        const total = customersData.length;
-        const active = customersData.filter(c => c.metadata?.status !== 'INACTIVE').length;
-
-        setSummary({ total, active });
-      }
-    } catch (error) {
-      console.error('Error fetching customers:', error);
-      setError('Failed to load customers');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const fetchCustomerDetail = async (id) => {
     try {
@@ -100,17 +85,15 @@ const Customers = ({ initialType = null }) => {
   const handleCreate = async (data) => {
     setError('');
     setSuccess('');
-
     try {
       const response = await api.post('/customers', {
         ...data,
         businessId: user?.businessId || user?.id,
       });
-
       if (response.data?.success) {
         setShowModal(false);
         setSuccess(`✅ ${labels.singular} created successfully!`);
-        await fetchCustomers();
+        refresh();
       } else {
         setError(response.data?.message || `Failed to create ${labels.singular.toLowerCase()}`);
       }
@@ -123,18 +106,16 @@ const Customers = ({ initialType = null }) => {
   const handleUpdate = async (data) => {
     setError('');
     setSuccess('');
-
     try {
       const response = await api.put(`/customers/${selectedCustomer.id}`, {
         ...data,
         businessId: user?.businessId || user?.id,
       });
-
       if (response.data?.success) {
         setShowEditModal(false);
         setSelectedCustomer(null);
         setSuccess(`✅ ${labels.singular} updated successfully!`);
-        await fetchCustomers();
+        refresh();
       } else {
         setError(response.data?.message || `Failed to update ${labels.singular.toLowerCase()}`);
       }
@@ -146,20 +127,17 @@ const Customers = ({ initialType = null }) => {
 
   const handleDelete = async () => {
     if (!selectedCustomer) return;
-
     setError('');
     setSuccess('');
-
     try {
       const response = await api.delete(`/customers/${selectedCustomer.id}`, {
         params: { businessId: user?.businessId || user?.id },
       });
-
       if (response.data?.success) {
         setShowConfirmModal(false);
         setSelectedCustomer(null);
         setSuccess(`✅ ${labels.singular} deleted successfully!`);
-        await fetchCustomers();
+        refresh();
       } else {
         setError(response.data?.message || `Failed to delete ${labels.singular.toLowerCase()}`);
       }
@@ -169,7 +147,7 @@ const Customers = ({ initialType = null }) => {
     }
   };
 
-  if (isLoading) {
+  if (isInitialLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
@@ -181,6 +159,8 @@ const Customers = ({ initialType = null }) => {
       </div>
     );
   }
+
+  const displayError = error || loadError;
 
   return (
     <div className="space-y-6">
@@ -204,10 +184,10 @@ const Customers = ({ initialType = null }) => {
         }
       />
 
-      {error && (
+      {displayError && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg flex items-center space-x-2">
           <AlertCircle className="w-5 h-5 flex-shrink-0" />
-          <span>{error}</span>
+          <span>{displayError}</span>
           <button onClick={() => setError('')} className="ml-auto text-red-500 hover:text-red-700">
             <X className="w-4 h-4" />
           </button>
@@ -225,19 +205,22 @@ const Customers = ({ initialType = null }) => {
 
       <SummaryCards summary={summary} entityName={labels.plural} />
 
-      <CustomerTable
-        customers={customers}
-        entityName={labels.singular.toLowerCase()}
-        onView={fetchCustomerDetail}
-        onEdit={(customer) => {
-          setSelectedCustomer(customer);
-          setShowEditModal(true);
-        }}
-        onDelete={(customer) => {
-          setSelectedCustomer(customer);
-          setShowConfirmModal(true);
-        }}
-      />
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 overflow-hidden">
+        <CustomerTable
+          customers={customers}
+          entityName={labels.singular.toLowerCase()}
+          onView={fetchCustomerDetail}
+          onEdit={(customer) => {
+            setSelectedCustomer(customer);
+            setShowEditModal(true);
+          }}
+          onDelete={(customer) => {
+            setSelectedCustomer(customer);
+            setShowConfirmModal(true);
+          }}
+        />
+        <Pagination pagination={pagination} onPageChange={goToPage} />
+      </div>
 
       <RecordCustomerModal
         isOpen={showModal}

@@ -1,4 +1,7 @@
 // src/interfaces/http/routes/debtorRoutes.js
+// v1.2.0-prod — Accepts ?search= query param. Passes through to
+//               findByFilters + countByBusinessId (server-side search).
+// v1.1.0-prod — Pagination on GET /.
 
 const express = require('express');
 const router = express.Router();
@@ -8,47 +11,55 @@ const TransactionRepository = require('../../../infrastructure/database/sqlite/r
 const RecordDebtorPaymentUseCase = require('../../../application/useCases/debtors/RecordDebtorPaymentUseCase');
 const { authMiddleware } = require('../middleware/authMiddleware');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
+const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 
-// Initialize repositories
 const debtorRepo = new DebtorRepository();
 const paymentRepo = new PaymentRepository();
 const transactionRepo = new TransactionRepository();
 
-// Initialize Use Cases
 const recordDebtorPaymentUseCase = new RecordDebtorPaymentUseCase({
     debtorRepository: debtorRepo,
     paymentRepository: paymentRepo,
     transactionRepository: transactionRepo,
 });
 
-// All routes require authentication
 router.use(authMiddleware);
 
 // =============================================
-// GET /api/debtors - Get all debtors
+// GET /api/debtors?page=1&limit=50&search=YGY
 // =============================================
 router.get('/', async (req, res) => {
     try {
         const userId = req.user.id;
         const businessId = req.user.businessId;
-        const { status, customerType, limit = 50, offset = 0 } = req.query;
+        const { status, customerType, search } = req.query;
 
         if (!businessId) {
             return res.status(400).json({ success: false, message: 'Business context required' });
         }
 
-        const debtors = await debtorRepo.findByFilters({
-            businessId,
-            userId,
-            status,
-            customerType,
-            limit: parseInt(limit),
-            offset: parseInt(offset),
-        });
+        const { page, limit, offset } = parsePagination(req.query);
+        const searchTerm = (search || '').trim() || null;
 
-        const summary = await debtorRepo.getSummary(businessId);
-        const totalOutstanding = await debtorRepo.getTotalOutstanding(businessId);
-        const overdue = await debtorRepo.findOverdue(businessId);
+        const [debtors, total, summary, totalOutstanding, overdue] = await Promise.all([
+            debtorRepo.findByFilters({
+                businessId,
+                userId,
+                status,
+                customerType,
+                search: searchTerm,
+                limit,
+                offset,
+            }),
+            debtorRepo.countByBusinessId(businessId, {
+                status,
+                customerType,
+                search: searchTerm,
+            }),
+            debtorRepo.getSummary(businessId),
+            debtorRepo.getTotalOutstanding(businessId),
+            debtorRepo.findOverdue(businessId),
+        ]);
 
         res.json({
             success: true,
@@ -59,12 +70,8 @@ router.get('/', async (req, res) => {
                     totalOutstanding,
                     overdueCount: overdue.length,
                 },
-                pagination: {
-                    limit: parseInt(limit),
-                    offset: parseInt(offset),
-                    total: summary?.total_debtors || 0,
-                }
-            }
+                pagination: buildPaginationMeta({ page, limit, total }),
+            },
         });
     } catch (error) {
         console.error('❌ Error fetching debtors:', error);
@@ -182,7 +189,6 @@ router.get('/:id', async (req, res) => {
             return res.status(404).json({ success: false, message: 'Debtor not found' });
         }
 
-        // Ownership check: business_id preferred, fallback to user_id
         if (debtor.business_id !== businessId && debtor.user_id !== userId) {
             return res.status(403).json({ success: false, message: 'Access denied' });
         }
