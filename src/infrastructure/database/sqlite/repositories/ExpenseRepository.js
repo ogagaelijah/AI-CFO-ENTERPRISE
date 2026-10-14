@@ -1,4 +1,5 @@
 // src/infrastructure/database/sqlite/repositories/ExpenseRepository.js
+// v1.1.0-prod — Adds countByBusinessId(businessId, filters) for pagination.
 // Postgres async. Same logic as SQLite.
 
 const BaseRepository = require('./BaseRepository');
@@ -100,6 +101,35 @@ class ExpenseRepository extends BaseRepository {
             limit,
             offset,
         });
+    }
+
+    /**
+     * Count rows for pagination metadata. Mirrors findByBusinessId filters.
+     *
+     * @param {number|string} businessId
+     * @param {{ category?: string, startDate?: string, endDate?: string }} filters
+     * @returns {Promise<number>}
+     */
+    async countByBusinessId(businessId, filters = {}) {
+        let query = 'SELECT COUNT(*)::int AS count FROM expenses WHERE business_id = $1';
+        const params = [businessId];
+        let i = 2;
+
+        if (filters.category) {
+            query += ` AND category = $${i++}`;
+            params.push(filters.category);
+        }
+        if (filters.startDate) {
+            query += ` AND date >= $${i++}`;
+            params.push(filters.startDate);
+        }
+        if (filters.endDate) {
+            query += ` AND date <= $${i++}`;
+            params.push(filters.endDate);
+        }
+
+        const result = await this._query(query, params);
+        return result.rows[0]?.count || 0;
     }
 
     async getTodayExpenses(businessId) {

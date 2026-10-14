@@ -1,4 +1,6 @@
 // src/interfaces/http/routes/expenseRoutes.js
+// v1.1.0-prod — Pagination on GET /. Filters always honored, always bounded.
+//               Adds data.pagination to response. Everything else unchanged.
 
 const express = require('express');
 const router = express.Router();
@@ -7,6 +9,7 @@ const PaymentRepository = require('../../../infrastructure/database/sqlite/repos
 const RecordExpenseUseCase = require('../../../application/useCases/expenses/RecordExpenseUseCase');
 const { authMiddleware } = require('../middleware/authMiddleware');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
+const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 
 const expenseRepo = new ExpenseRepository();
 const paymentRepo = new PaymentRepository();
@@ -15,34 +18,26 @@ const recordExpenseUseCase = new RecordExpenseUseCase(expenseRepo, paymentRepo);
 router.use(authMiddleware);
 
 // =============================================
-// GET /api/expenses
+// GET /api/expenses?page=1&limit=50
 // =============================================
 router.get('/', async (req, res) => {
     try {
         const businessId = req.user.businessId;
-        const { startDate, endDate, category, limit, offset } = req.query;
+        const { category, startDate, endDate } = req.query;
 
         if (!businessId) {
             return res.status(400).json({ success: false, message: 'Business context required' });
         }
 
-        let expenses;
-        if (startDate && endDate) {
-            expenses = await expenseRepo.findByDateRange(businessId, startDate, endDate);
-        } else if (category) {
-            expenses = await expenseRepo.findByCategory(businessId, category);
-        } else {
-            expenses = await expenseRepo.findByFilters({
-                businessId,
-                category,
-                startDate,
-                endDate,
-                limit: parseInt(limit) || 50,
-                offset: parseInt(offset) || 0,
-            });
-        }
+        const { page, limit, offset } = parsePagination(req.query);
 
-        const summary = await expenseRepo.getExpenseSummary(businessId);
+        const filters = { category, startDate, endDate };
+
+        const [expenses, total, summary] = await Promise.all([
+            expenseRepo.findByFilters({ businessId, ...filters, limit, offset }),
+            expenseRepo.countByBusinessId(businessId, filters),
+            expenseRepo.getExpenseSummary(businessId),
+        ]);
 
         res.json({
             success: true,
@@ -53,8 +48,9 @@ router.get('/', async (req, res) => {
                     total_amount: 0,
                     average_amount: 0,
                     categories_used: 0,
-                }
-            }
+                },
+                pagination: buildPaginationMeta({ page, limit, total }),
+            },
         });
     } catch (error) {
         console.error('❌ Error fetching expenses:', error);

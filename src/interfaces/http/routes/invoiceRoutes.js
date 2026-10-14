@@ -1,4 +1,7 @@
 // src/interfaces/http/routes/invoiceRoutes.js
+// v1.1.0-prod — GET / pagination standardized. Response shape preserved
+//               ({ success, invoices, summary, pagination }); pagination
+//               block now { page, limit, total, totalPages, hasNext, hasPrev }.
 
 'use strict';
 
@@ -21,6 +24,7 @@ const RecordInvoicePaymentUseCase = require('../../../application/useCases/invoi
 
 const { authMiddleware } = require('../middleware/authMiddleware');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
+const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 
 const invoiceRepo = new InvoiceRepository();
 const customerRepo = new CustomerRepository();
@@ -56,7 +60,7 @@ const recordInvoicePaymentUseCase = new RecordInvoicePaymentUseCase({
 
 router.use(authMiddleware);
 
-// GET /api/invoices
+// GET /api/invoices?page=1&limit=50
 router.get('/', async (req, res) => {
     try {
         const businessId = req.user.businessId;
@@ -64,10 +68,8 @@ router.get('/', async (req, res) => {
             return res.status(400).json({ success: false, message: 'Business ID is required' });
         }
 
-        const {
-            limit = 50, offset = 0, status, customerId, projectId,
-            fromDate, toDate, search,
-        } = req.query;
+        const { status, customerId, projectId, fromDate, toDate, search } = req.query;
+        const { page, limit, offset } = parsePagination(req.query);
 
         const result = await getInvoicesUseCase.execute({
             businessId,
@@ -81,7 +83,14 @@ router.get('/', async (req, res) => {
             offset,
         });
 
-        res.json(result);
+        // Extract total from the use case's pagination block (which uses
+        // { total, limit, offset, hasMore }) and re-emit as standardized.
+        const total = result?.pagination?.total || 0;
+
+        res.json({
+            ...result,
+            pagination: buildPaginationMeta({ page, limit, total }),
+        });
     } catch (error) {
         console.error('❌ [GET /api/invoices]', error.message);
         res.status(500).json({ success: false, message: error.message || 'Failed to fetch invoices' });
@@ -202,7 +211,6 @@ router.delete('/:id', invalidateAfterWrite, async (req, res) => {
 
 // =============================================
 // POST /api/invoices/:id/payments
-// Record a payment against an invoice (syncs linked debtor atomically).
 // =============================================
 router.post('/:id/payments', invalidateAfterWrite, async (req, res) => {
     try {

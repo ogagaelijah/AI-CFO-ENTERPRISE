@@ -1,4 +1,6 @@
 // src/interfaces/http/routes/creditorRoutes.js
+// v1.1.0-prod — Pagination on GET /. Fix: pagination always applied
+//               (previously findByBusinessId was unbounded when no status filter).
 
 const express = require('express');
 const router = express.Router();
@@ -8,6 +10,7 @@ const TransactionRepository = require('../../../infrastructure/database/sqlite/r
 const RecordCreditorPaymentUseCase = require('../../../application/useCases/creditors/RecordCreditorPaymentUseCase');
 const { authMiddleware } = require('../middleware/authMiddleware');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
+const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 
 const creditorRepo = new CreditorRepository();
 const paymentRepo = new PaymentRepository();
@@ -22,32 +25,25 @@ const recordCreditorPaymentUseCase = new RecordCreditorPaymentUseCase({
 router.use(authMiddleware);
 
 // =============================================
-// GET /api/creditors
+// GET /api/creditors?page=1&limit=50
 // =============================================
 router.get('/', async (req, res) => {
     try {
-        const userId = req.user.id;
         const businessId = req.user.businessId;
-        const { status, limit = 50, offset = 0 } = req.query;
+        const { status } = req.query;
 
         if (!businessId) {
             return res.status(400).json({ success: false, message: 'Business context required' });
         }
 
-        let creditors;
-        if (status) {
-            creditors = await creditorRepo.findByFilters({
-                businessId,
-                status,
-                limit: parseInt(limit),
-                offset: parseInt(offset),
-            });
-        } else {
-            creditors = await creditorRepo.findByBusinessId(businessId);
-        }
+        const { page, limit, offset } = parsePagination(req.query);
 
-        const summary = await creditorRepo.getSummary(businessId);
-        const totalOutstanding = await creditorRepo.getTotalOutstanding(businessId);
+        const [creditors, total, summary, totalOutstanding] = await Promise.all([
+            creditorRepo.findByFilters({ businessId, status, limit, offset }),
+            creditorRepo.countByBusinessId(businessId, { status }),
+            creditorRepo.getSummary(businessId),
+            creditorRepo.getTotalOutstanding(businessId),
+        ]);
 
         res.json({
             success: true,
@@ -63,11 +59,7 @@ router.get('/', async (req, res) => {
                     overdue_count: 0,
                 },
                 totalOutstanding: totalOutstanding || 0,
-                pagination: {
-                    limit: parseInt(limit),
-                    offset: parseInt(offset),
-                    total: summary?.total_creditors || 0,
-                }
+                pagination: buildPaginationMeta({ page, limit, total }),
             }
         });
     } catch (error) {
@@ -148,7 +140,6 @@ router.get('/:id', async (req, res) => {
             return res.status(404).json({ success: false, message: 'Creditor not found' });
         }
 
-        // Ownership check
         if (creditor.business_id !== businessId && creditor.user_id !== userId) {
             return res.status(403).json({ success: false, message: 'Access denied' });
         }

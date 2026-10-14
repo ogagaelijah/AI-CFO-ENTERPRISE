@@ -1,27 +1,21 @@
 // src/infrastructure/database/sqlite/repositories/DebtorRepository.js
-// v3.6.1-prod — Read-time LEFT JOIN customers. Explicit null-preservation
-//               on create. DATE columns returned as 'YYYY-MM-DD' strings
-//               with NO timezone drift.
+// v3.7.1-prod — _hydrate() strips joined_customer_name so it never leaks
+//               into API responses. Merged value is preserved as customer_name.
+// v3.7.0-prod — Adds countByBusinessId(businessId, filters) wrapper.
 
 const BaseRepository = require('./BaseRepository');
 
 // ── Global Postgres DATE parser fix ──
-// By default, node-pg parses a DATE (OID 1082) into a JS Date at local
-// midnight. Reading it back with .toISOString() shifts by a day in any
-// timezone east of UTC. We override the parser to return the raw string.
 const pg = require('pg');
-pg.types.setTypeParser(1082, (val) => val); // DATE → string as-is
-pg.types.setTypeParser(1083, (val) => val); // TIME → string as-is
-pg.types.setTypeParser(1114, (val) => val); // TIMESTAMP WITHOUT TZ → string
-// NOTE: we do NOT override 1184 (TIMESTAMPTZ) — those should stay Date objects.
+pg.types.setTypeParser(1082, (val) => val);
+pg.types.setTypeParser(1083, (val) => val);
+pg.types.setTypeParser(1114, (val) => val);
 
-// Defensive normalization in case a Date slips through.
 const toDateOnly = (value) => {
     if (value === null || value === undefined) return null;
     if (typeof value === 'string') return value.slice(0, 10);
     if (value instanceof Date) {
         if (Number.isNaN(value.getTime())) return null;
-        // Use LOCAL components — matches how node-pg constructs DATE Dates.
         const y = value.getFullYear();
         const m = String(value.getMonth() + 1).padStart(2, '0');
         const d = String(value.getDate()).padStart(2, '0');
@@ -43,8 +37,11 @@ class DebtorRepository extends BaseRepository {
                 ? row.joined_customer_name
                 : (row.customer_name || null);
 
+        // Strip the raw JOIN field so it never reaches the API response.
+        const { joined_customer_name, ...rest } = row;
+
         return {
-            ...row,
+            ...rest,
             customer_name: resolvedName,
             due_date: toDateOnly(row.due_date),
             total_owed: Number(row.total_owed) || 0,
@@ -326,6 +323,14 @@ class DebtorRepository extends BaseRepository {
 
         const result = await this._query(sql, params);
         return result.rows[0]?.total || 0;
+    }
+
+    async countByBusinessId(businessId, filters = {}) {
+        return this.countByFilters({
+            businessId,
+            status: filters.status,
+            customerType: filters.customerType,
+        });
     }
 
     async update(id, data) {
