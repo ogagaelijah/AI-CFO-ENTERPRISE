@@ -1,9 +1,8 @@
 // frontend/src/App.jsx
+// v2.5.0 — Removes global <ChatWidget />. Chat widget now lives inside
+//           Landing.jsx only (previously appeared on every route).
 // v2.4.0 — Adds route-level code splitting via React.lazy + Suspense.
-//           Entry pages (Landing, Login, Register, VerifyEmail,
-//           ForgotPassword, ResetPassword) stay eager for zero-delay load.
-//           All other pages load on demand.
-// v2.3.0 — Adds /verify-email, /forgot-password, /reset-password public routes.
+// v2.3.0 — Adds /verify-email, /forgot-password, /reset-password routes.
 // v2.2.0 — Mounts <ChatWidget /> globally inside BrowserRouter.
 
 import { lazy, Suspense } from 'react';
@@ -11,7 +10,6 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
-import ChatWidget from './components/Landing/ChatWidget';
 
 // ── Entry pages (eager — first-visit critical) ──────────────────────────
 import Landing from './pages/Landing';
@@ -135,9 +133,6 @@ function App() {
               <Route path="*" element={<Landing />} />
             </Routes>
           </Suspense>
-
-          {/* Global chat widget — visible on every page */}
-          <ChatWidget />
         </BrowserRouter>
       </AuthProvider>
     </ThemeProvider>
