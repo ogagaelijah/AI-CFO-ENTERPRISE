@@ -1,4 +1,6 @@
 // frontend/src/pages/Landing.jsx
+// v1.9.0 — Mounts <ChatWidget /> here. Chat widget now only appears on
+//           the landing page (previously rendered globally on every route).
 // v1.8.0 — Extracts header to <Navbar />. Adds mega-menu navigation.
 // v1.7.0 — Adds <AboutSection /> and <ContactSection />.
 // v1.6.0 — Extracts footer to <Footer /> component. Adds <ResourcesSection />.
@@ -21,6 +23,7 @@ import LoyaltyBanner from '../components/Landing/LoyaltyBanner';
 import ResourcesSection from '../components/Landing/ResourcesSection';
 import ContactSection from '../components/Landing/ContactSection';
 import Footer from '../components/Landing/Footer';
+import ChatWidget from '../components/Landing/ChatWidget';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -357,6 +360,9 @@ const Landing = () => {
 
       {/* Footer */}
       <Footer />
+
+      {/* Chat widget — landing page only */}
+      <ChatWidget />
     </div>
   );
 };

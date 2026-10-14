@@ -1,9 +1,15 @@
 // frontend/src/pages/Sales.jsx
-import { useState, useEffect } from 'react';
+// v1.2.0-prod — Uses isInitialLoading so search/filter/page changes don't
+//               unmount the table.
+// v1.1.0-prod — Uses usePaginatedApi hook + Pagination.
+
+import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { Plus } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
+import Pagination from '../components/common/Pagination';
+import usePaginatedApi from '../hooks/usePaginatedApi';
 import RecordSaleModal from '../components/Sales/RecordSaleModal';
 import SaleDetailModal from '../components/Sales/SaleDetailModal';
 import ConfirmModal from '../components/Sales/ConfirmModal';
@@ -11,16 +17,21 @@ import PartialPaymentModal from '../components/Sales/PartialPaymentModal';
 
 const Sales = () => {
   const { user } = useAuth();
-  const [sales, setSales] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  
-  // Modals
+
+  const {
+    items: sales,
+    pagination,
+    isLoading,
+    isInitialLoading,
+    error: loadError,
+    goToPage,
+    refresh,
+  } = usePaginatedApi('/sales', { itemKey: 'sales' });
+
   const [showModal, setShowModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showPartialModal, setShowPartialModal] = useState(false);
-  
-  // Data
   const [selectedSale, setSelectedSale] = useState(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -30,43 +41,16 @@ const Sales = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const fetchSales = async () => {
-    try {
-      setIsLoading(true);
-      setError('');
-      const response = await api.get('/sales');
-      let salesData = [];
-      if (response.data?.data?.sales) {
-        salesData = response.data.data.sales;
-      } else if (response.data?.sales) {
-        salesData = response.data.sales;
-      } else if (Array.isArray(response.data)) {
-        salesData = response.data;
-      }
-      setSales(salesData);
-    } catch (error) {
-      console.error('❌ Error fetching sales:', error);
-      setError('Failed to load sales');
-      setSales([]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchSales();
-  }, []);
-
   const fetchSaleDetail = async (saleId) => {
     try {
       setIsLoadingDetail(true);
       const response = await api.get(`/sales/${saleId}`);
       const saleData = response.data?.data || response.data;
-      
+
       if (saleData.items && typeof saleData.items === 'string') {
         try { saleData.items = JSON.parse(saleData.items); } catch (e) { saleData.items = []; }
       }
-      
+
       setSelectedSale(saleData);
       setShowDetailModal(true);
     } catch (error) {
@@ -79,7 +63,6 @@ const Sales = () => {
 
   const handleConfirmSale = async () => {
     if (isSubmitting) return;
-
     const data = confirmData;
     if (!data) return;
 
@@ -109,12 +92,12 @@ const Sales = () => {
 
       await api.post('/sales', saleData);
       setSuccess(`✅ Sale recorded successfully! Payment: ${saleData.paymentStatus}`);
-      
+
       setShowConfirmModal(false);
       setShowPartialModal(false);
       setConfirmData(null);
       setPartialAmount('');
-      fetchSales();
+      refresh();
     } catch (error) {
       console.error('❌ Error recording sale:', error);
       setError(error.response?.data?.message || 'Failed to record sale');
@@ -123,7 +106,7 @@ const Sales = () => {
     }
   };
 
-  if (isLoading) {
+  if (isInitialLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
@@ -133,6 +116,8 @@ const Sales = () => {
       </div>
     );
   }
+
+  const displayError = error || loadError;
 
   return (
     <div className="space-y-6">
@@ -150,7 +135,7 @@ const Sales = () => {
         }
       />
 
-      {error && <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg">{error}</div>}
+      {displayError && <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg">{displayError}</div>}
       {success && <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-400 px-4 py-3 rounded-lg">{success}</div>}
 
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 overflow-hidden">
@@ -213,6 +198,7 @@ const Sales = () => {
             </tbody>
           </table>
         </div>
+        <Pagination pagination={pagination} onPageChange={goToPage} />
       </div>
 
       <RecordSaleModal

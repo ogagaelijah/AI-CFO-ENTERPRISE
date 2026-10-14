@@ -1,4 +1,5 @@
 // src/infrastructure/database/sqlite/repositories/SaleRepository.js
+// v3.3.0-prod — Adds pagination support: findByBusinessIdPaginated + countByBusinessId.
 // v3.2.0-prod — Postgres async. Added nextSaleNumber(businessId) for per-business numbering.
 
 const BaseRepository = require('./BaseRepository');
@@ -79,6 +80,40 @@ class SaleRepository extends BaseRepository {
             [businessId]
         );
         return result.rows.map(row => this._hydrate(row));
+    }
+
+    /**
+     * Paginated fetch for a business.
+     * Uses idx_sales_business_date composite index (business_id, sale_date).
+     *
+     * @param {number|string} businessId
+     * @param {{ limit: number, offset: number }} params
+     * @returns {Promise<Array>}
+     */
+    async findByBusinessIdPaginated(businessId, { limit, offset }) {
+        const result = await this._query(
+            `SELECT * FROM sales
+             WHERE business_id = $1
+             ORDER BY sale_date DESC, id DESC
+             LIMIT $2 OFFSET $3`,
+            [businessId, limit, offset]
+        );
+        return result.rows.map(row => this._hydrate(row));
+    }
+
+    /**
+     * Total count for pagination metadata.
+     * Uses idx_sales_business_date — index-only scan.
+     *
+     * @param {number|string} businessId
+     * @returns {Promise<number>}
+     */
+    async countByBusinessId(businessId) {
+        const result = await this._query(
+            'SELECT COUNT(*)::int AS count FROM sales WHERE business_id = $1',
+            [businessId]
+        );
+        return result.rows[0]?.count || 0;
     }
 
     async findByUserId(userId) {

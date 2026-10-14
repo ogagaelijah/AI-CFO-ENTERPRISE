@@ -1,5 +1,6 @@
 // src/infrastructure/database/sqlite/repositories/CreditorRepository.js
-// v3.2.0-prod — Postgres async. overdue_count now uses due_date instead of status.
+// v3.3.0-prod — Adds countByBusinessId(businessId, filters) wrapper.
+// v3.2.0-prod — Postgres async. overdue_count uses due_date instead of status.
 
 const BaseRepository = require('./BaseRepository');
 
@@ -109,6 +110,17 @@ class CreditorRepository extends BaseRepository {
 
         const result = await this._query(sql, params);
         return result.rows[0]?.total || 0;
+    }
+
+    /**
+     * Wrapper for consistency with other repositories.
+     * Delegates to countByFilters.
+     */
+    async countByBusinessId(businessId, filters = {}) {
+        return this.countByFilters({
+            businessId,
+            status: filters.status,
+        });
     }
 
     async findActive(businessId) {

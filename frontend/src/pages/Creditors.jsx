@@ -1,9 +1,14 @@
 // frontend/src/pages/Creditors.jsx
-import { useState, useEffect } from 'react';
+// v1.2.0-prod — Uses isInitialLoading so refetches don't unmount the table.
+// v1.1.0-prod — Uses usePaginatedApi hook + Pagination. Summary via extra.
+
+import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { Plus, X, CheckCircle, AlertCircle } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
+import Pagination from '../components/common/Pagination';
+import usePaginatedApi from '../hooks/usePaginatedApi';
 import SummaryCards from '../components/Creditors/SummaryCards';
 import CreditorTable from '../components/Creditors/CreditorTable';
 import AddCreditorModal from '../components/Creditors/AddCreditorModal';
@@ -13,8 +18,18 @@ import CreditorDetailModal from '../components/Creditors/CreditorDetailModal';
 
 const Creditors = () => {
   const { user } = useAuth();
-  const [creditors, setCreditors] = useState([]);
-  const [summary, setSummary] = useState({
+
+  const {
+    items: creditors,
+    pagination,
+    extra,
+    isInitialLoading,
+    error: loadError,
+    goToPage,
+    refresh,
+  } = usePaginatedApi('/creditors', { itemKey: 'creditors' });
+
+  const summary = extra?.summary || {
     total_creditors: 0,
     total_owed: 0,
     total_paid: 0,
@@ -22,8 +37,7 @@ const Creditors = () => {
     active_count: 0,
     paid_count: 0,
     overdue_count: 0,
-  });
-  const [isLoading, setIsLoading] = useState(true);
+  };
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -38,60 +52,18 @@ const Creditors = () => {
   const [success, setSuccess] = useState('');
 
   const [addForm, setAddForm] = useState({
-    supplierName: '',
-    totalOwed: 0,
-    dueDate: '',
-    notes: '',
+    supplierName: '', totalOwed: 0, dueDate: '', notes: '',
   });
   const [paymentForm, setPaymentForm] = useState({
-    amount: 0,
-    notes: '',
+    amount: 0, notes: '',
   });
-
-  useEffect(() => {
-    fetchCreditors();
-  }, []);
-
-  const fetchCreditors = async () => {
-    try {
-      setIsLoading(true);
-      setError('');
-      const response = await api.get('/creditors');
-      if (response.data?.success) {
-        setCreditors(response.data.data.creditors || []);
-        setSummary(response.data.data.summary || {
-          total_creditors: 0,
-          total_owed: 0,
-          total_paid: 0,
-          total_outstanding: 0,
-          active_count: 0,
-          paid_count: 0,
-          overdue_count: 0,
-        });
-      }
-    } catch (error) {
-      console.error('Error fetching creditors:', error);
-      setError('Failed to load creditors');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleAddSubmit = (e) => {
     e.preventDefault();
     setError('');
     setSuccess('');
-
-    if (!addForm.supplierName.trim()) {
-      setError('Supplier name is required');
-      return;
-    }
-
-    if (addForm.totalOwed <= 0) {
-      setError('Amount owed must be greater than 0');
-      return;
-    }
-
+    if (!addForm.supplierName.trim()) { setError('Supplier name is required'); return; }
+    if (addForm.totalOwed <= 0) { setError('Amount owed must be greater than 0'); return; }
     setShowAddModal(false);
     setConfirmData({ ...addForm });
     setConfirmType('add');
@@ -100,11 +72,9 @@ const Creditors = () => {
 
   const handleConfirmAdd = async () => {
     if (isSubmitting) return;
-
     setError('');
     setSuccess('');
     setIsSubmitting(true);
-
     try {
       const response = await api.post('/creditors', {
         supplierName: confirmData.supplierName.trim(),
@@ -112,13 +82,12 @@ const Creditors = () => {
         dueDate: confirmData.dueDate || null,
         notes: confirmData.notes?.trim() || '',
       });
-
       if (response.data?.success) {
         setSuccess('✅ Creditor added successfully!');
         setAddForm({ supplierName: '', totalOwed: 0, dueDate: '', notes: '' });
         setConfirmData(null);
         setShowConfirmModal(false);
-        await fetchCreditors();
+        refresh();
       }
     } catch (error) {
       setError(error.response?.data?.message || 'Failed to add creditor');
@@ -133,17 +102,11 @@ const Creditors = () => {
     e.preventDefault();
     setError('');
     setSuccess('');
-
-    if (paymentForm.amount <= 0) {
-      setError('Payment amount must be greater than 0');
-      return;
-    }
-
+    if (paymentForm.amount <= 0) { setError('Payment amount must be greater than 0'); return; }
     if (paymentForm.amount > selectedCreditor.balance_remaining) {
       setError(`Payment amount exceeds balance of ₦${selectedCreditor.balance_remaining.toLocaleString()}`);
       return;
     }
-
     setShowPaymentModal(false);
     setConfirmData({
       creditor: selectedCreditor,
@@ -156,17 +119,14 @@ const Creditors = () => {
 
   const handleConfirmPayment = async () => {
     if (isSubmitting) return;
-
     setError('');
     setSuccess('');
     setIsSubmitting(true);
-
     try {
       const response = await api.post(`/creditors/${selectedCreditor.id}/payment`, {
         amount: parseFloat(confirmData.amount),
         notes: confirmData.notes?.trim() || '',
       });
-
       if (response.data?.success) {
         setSuccess(`✅ Payment of ₦${parseFloat(confirmData.amount).toLocaleString()} recorded successfully!`);
         setShowPaymentModal(false);
@@ -174,7 +134,7 @@ const Creditors = () => {
         setPaymentForm({ amount: 0, notes: '' });
         setConfirmData(null);
         setShowConfirmModal(false);
-        await fetchCreditors();
+        refresh();
       }
     } catch (error) {
       setError(error.response?.data?.message || 'Failed to record payment');
@@ -204,12 +164,11 @@ const Creditors = () => {
 
   const handleDelete = async (id) => {
     if (!confirm('Are you sure you want to delete this creditor?')) return;
-
     try {
       const response = await api.delete(`/creditors/${id}`);
       if (response.data?.success) {
         setSuccess('✅ Creditor deleted successfully!');
-        await fetchCreditors();
+        refresh();
       }
     } catch (error) {
       setError(error.response?.data?.message || 'Failed to delete creditor');
@@ -220,14 +179,11 @@ const Creditors = () => {
     if (isSubmitting) return;
     setShowConfirmModal(false);
     setConfirmData(null);
-    if (confirmType === 'add') {
-      setShowAddModal(true);
-    } else if (confirmType === 'payment') {
-      setShowPaymentModal(true);
-    }
+    if (confirmType === 'add') setShowAddModal(true);
+    else if (confirmType === 'payment') setShowPaymentModal(true);
   };
 
-  if (isLoading) {
+  if (isInitialLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
@@ -238,6 +194,8 @@ const Creditors = () => {
     );
   }
 
+  const displayError = error || loadError;
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -245,11 +203,7 @@ const Creditors = () => {
         subtitle="Suppliers you owe money to"
         actions={
           <button
-            onClick={() => {
-              setShowAddModal(true);
-              setError('');
-              setSuccess('');
-            }}
+            onClick={() => { setShowAddModal(true); setError(''); setSuccess(''); }}
             className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
           >
             <Plus className="w-5 h-5" />
@@ -258,10 +212,10 @@ const Creditors = () => {
         }
       />
 
-      {error && (
+      {displayError && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg flex items-center space-x-2">
           <AlertCircle className="w-5 h-5 flex-shrink-0" />
-          <span>{error}</span>
+          <span>{displayError}</span>
           <button onClick={() => setError('')} className="ml-auto text-red-500 hover:text-red-700">
             <X className="w-4 h-4" />
           </button>
@@ -279,17 +233,20 @@ const Creditors = () => {
 
       <SummaryCards summary={summary} />
 
-      <CreditorTable
-        creditors={creditors}
-        onView={fetchCreditorDetail}
-        onPay={(creditor) => {
-          setSelectedCreditor(creditor);
-          setPaymentForm({ amount: 0, notes: '' });
-          setShowPaymentModal(true);
-        }}
-        onEdit={() => {}}
-        onDelete={handleDelete}
-      />
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 overflow-hidden">
+        <CreditorTable
+          creditors={creditors}
+          onView={fetchCreditorDetail}
+          onPay={(creditor) => {
+            setSelectedCreditor(creditor);
+            setPaymentForm({ amount: 0, notes: '' });
+            setShowPaymentModal(true);
+          }}
+          onEdit={() => {}}
+          onDelete={handleDelete}
+        />
+        <Pagination pagination={pagination} onPageChange={goToPage} />
+      </div>
 
       <AddCreditorModal
         isOpen={showAddModal}
@@ -306,10 +263,7 @@ const Creditors = () => {
         form={paymentForm}
         setForm={setPaymentForm}
         onSubmit={handlePaymentSubmit}
-        onClose={() => {
-          setShowPaymentModal(false);
-          setSelectedCreditor(null);
-        }}
+        onClose={() => { setShowPaymentModal(false); setSelectedCreditor(null); }}
         error={error}
       />
 
@@ -326,10 +280,7 @@ const Creditors = () => {
         isOpen={showDetailModal}
         creditor={selectedCreditor}
         isLoading={isLoadingDetail}
-        onClose={() => {
-          setShowDetailModal(false);
-          setSelectedCreditor(null);
-        }}
+        onClose={() => { setShowDetailModal(false); setSelectedCreditor(null); }}
       />
     </div>
   );
