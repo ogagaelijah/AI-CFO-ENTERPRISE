@@ -1,14 +1,15 @@
 // src/interfaces/http/routes/analyticsRoutes.js
+// v1.1.0-prod — All routes require OWNER/ADMIN/MANAGER/ACCOUNTANT.
+// v1.0.0-prod — Initial.
 
 const express = require('express');
 const router = express.Router();
 const { authMiddleware } = require('../middleware/authMiddleware');
+const { requireRole } = require('../middleware/requireRole');
 
-// ===== Core Analytics Provider =====
 const AnalyticsProvider = require('../../../application/services/analytics/integration/AnalyticsProvider');
 const ReportEngineAdapter = require('../../../application/services/analytics/integration/ReportEngineAdapter');
 
-// ===== Report Services (SSOT - Read from Report Engine) =====
 const ProfitLossService = require('../../../application/services/reports/ProfitLossService');
 const CashFlowService = require('../../../application/services/reports/CashFlowService');
 const BalanceSheetService = require('../../../application/services/reports/BalanceSheetService');
@@ -20,7 +21,6 @@ const ExecutiveReportService = require('../../../application/services/reports/Ex
 const AgingService = require('../../../application/services/reports/AgingService');
 const InventoryReportService = require('../../../application/services/reports/InventoryReportService');
 
-// ===== Repositories =====
 const SaleRepository = require('../../../infrastructure/database/sqlite/repositories/SaleRepository');
 const PurchaseRepository = require('../../../infrastructure/database/sqlite/repositories/PurchaseRepository');
 const ExpenseRepository = require('../../../infrastructure/database/sqlite/repositories/ExpenseRepository');
@@ -33,7 +33,6 @@ const SupplierRepository = require('../../../infrastructure/database/sqlite/repo
 const ReportRepository = require('../../../infrastructure/database/sqlite/repositories/ReportRepository');
 const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository');
 
-// ===== Initialize Repositories =====
 const saleRepo = new SaleRepository();
 const purchaseRepo = new PurchaseRepository();
 const expenseRepo = new ExpenseRepository();
@@ -46,7 +45,6 @@ const supplierRepo = new SupplierRepository();
 const reportRepo = new ReportRepository();
 const paymentRepo = new PaymentRepository();
 
-// ===== Initialize Report Services (SSOT) =====
 const profitLossService = new ProfitLossService({
   saleRepository: saleRepo,
   expenseRepository: expenseRepo,
@@ -143,7 +141,6 @@ const inventoryReportService = new InventoryReportService({
   reportRepository: reportRepo,
 });
 
-// ===== Initialize Report Engine Adapter =====
 const reportEngineAdapter = new ReportEngineAdapter({
   profitLossService,
   cashFlowService,
@@ -157,31 +154,25 @@ const reportEngineAdapter = new ReportEngineAdapter({
   inventoryReportService,
 });
 
-// ===== Initialize Analytics Provider =====
-const analyticsProvider = new AnalyticsProvider({
-  reportEngineAdapter,
-});
+const analyticsProvider = new AnalyticsProvider({ reportEngineAdapter });
 
-// Apply auth to all routes
 router.use(authMiddleware);
 
+const FINANCIAL_ROLES = ['OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
+
 // =============================================
-// POST /api/analytics/generate - Main endpoint
+// POST /api/analytics/generate
 // =============================================
-router.post('/generate', async (req, res) => {
+router.post('/generate', requireRole(...FINANCIAL_ROLES), async (req, res) => {
   try {
     const userId = req.user.id || req.user.userId;
     const businessId = req.user.businessId || req.body.businessId;
     const { period = 'monthly', startDate: bodyStart, endDate: bodyEnd } = req.body;
 
     if (!businessId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Business ID is required'
-      });
+      return res.status(400).json({ success: false, message: 'Business ID is required' });
     }
 
-    // Resolve period dates
     let startDate, endDate, periodType;
     if (bodyStart && bodyEnd) {
       startDate = bodyStart;
@@ -197,20 +188,10 @@ router.post('/generate', async (req, res) => {
     console.log(`📊 [POST /api/analytics/generate] userId: ${userId}, businessId: ${businessId}, period: ${periodType}`);
 
     const result = await analyticsProvider.generateAnalytics({
-      userId,
-      businessId,
-      startDate,
-      endDate,
-      periodType,
+      userId, businessId, startDate, endDate, periodType,
     });
 
-    res.json({
-      success: true,
-      data: result,
-      period: periodType,
-      timestamp: new Date().toISOString(),
-    });
-
+    res.json({ success: true, data: result, period: periodType, timestamp: new Date().toISOString() });
   } catch (error) {
     console.error('❌ Error generating analytics:', error);
     res.status(500).json({
@@ -222,19 +203,16 @@ router.post('/generate', async (req, res) => {
 });
 
 // =============================================
-// POST /api/analytics/executive - Executive dashboard
+// POST /api/analytics/executive
 // =============================================
-router.post('/executive', async (req, res) => {
+router.post('/executive', requireRole(...FINANCIAL_ROLES), async (req, res) => {
   try {
     const userId = req.user.id || req.user.userId;
     const businessId = req.user.businessId || req.body.businessId;
     const { period = 'monthly', startDate: bodyStart, endDate: bodyEnd } = req.body;
 
     if (!businessId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Business ID is required'
-      });
+      return res.status(400).json({ success: false, message: 'Business ID is required' });
     }
 
     let startDate, endDate, periodType;
@@ -252,36 +230,22 @@ router.post('/executive', async (req, res) => {
     console.log(`📊 [POST /api/analytics/executive] userId: ${userId}, businessId: ${businessId}`);
 
     const fullAnalytics = await analyticsProvider.generateAnalytics({
-      userId,
-      businessId,
-      startDate,
-      endDate,
-      periodType,
+      userId, businessId, startDate, endDate, periodType,
     });
 
-    // Extract executive summary from the full analytics
     const executive = fullAnalytics.executive || {};
 
-    res.json({
-      success: true,
-      data: executive,
-      period: periodType,
-      timestamp: new Date().toISOString(),
-    });
-
+    res.json({ success: true, data: executive, period: periodType, timestamp: new Date().toISOString() });
   } catch (error) {
     console.error('❌ Error generating executive analytics:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to generate executive analytics',
-    });
+    res.status(500).json({ success: false, message: error.message || 'Failed to generate executive analytics' });
   }
 });
 
 // =============================================
-// POST /api/analytics/health-check - Service health
+// POST /api/analytics/health-check
 // =============================================
-router.post('/health-check', async (req, res) => {
+router.post('/health-check', requireRole(...FINANCIAL_ROLES), async (req, res) => {
   res.json({
     success: true,
     message: 'Analytics service is running',
@@ -294,9 +258,6 @@ router.post('/health-check', async (req, res) => {
   });
 });
 
-// =============================================
-// Helper - Resolve period dates
-// =============================================
 function resolvePeriod(period = 'monthly') {
   const now = new Date();
   let startDate, endDate;
@@ -314,7 +275,6 @@ function resolvePeriod(period = 'monthly') {
     startDate = `${now.getFullYear()}-01-01`;
     endDate = now.toISOString().split('T')[0];
   } else {
-    // monthly (default)
     startDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
     endDate = now.toISOString().split('T')[0];
   }

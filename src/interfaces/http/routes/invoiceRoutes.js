@@ -1,7 +1,8 @@
 // src/interfaces/http/routes/invoiceRoutes.js
-// v1.1.0-prod — GET / pagination standardized. Response shape preserved
-//               ({ success, invoices, summary, pagination }); pagination
-//               block now { page, limit, total, totalPages, hasNext, hasPrev }.
+// v1.2.0-prod — Reads require OWNER/ADMIN/MANAGER/ACCOUNTANT.
+//               Writes require OWNER/ADMIN/MANAGER. Payments add CASHIER.
+//               Error classification applied.
+// v1.1.0-prod — GET / pagination standardized.
 
 'use strict';
 
@@ -23,6 +24,7 @@ const DeleteInvoiceUseCase = require('../../../application/useCases/invoices/Del
 const RecordInvoicePaymentUseCase = require('../../../application/useCases/invoices/RecordInvoicePaymentUseCase');
 
 const { authMiddleware } = require('../middleware/authMiddleware');
+const { requireRole } = require('../middleware/requireRole');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
 const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 
@@ -60,8 +62,23 @@ const recordInvoicePaymentUseCase = new RecordInvoicePaymentUseCase({
 
 router.use(authMiddleware);
 
+const READ_ROLES = ['OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
+const WRITE_ROLES = ['OWNER', 'ADMIN', 'MANAGER'];
+const PAYMENT_ROLES = ['OWNER', 'ADMIN', 'MANAGER', 'CASHIER'];
+
+function classifyError(error) {
+  const msg = String(error?.message || '');
+  if (/not found|does not exist/i.test(msg)) return 404;
+  if (/access denied|forbidden|permission/i.test(msg)) return 403;
+  if (/already exists|duplicate/i.test(msg)) return 409;
+  if (/required|invalid|must be|cannot|exceed|only whitespace|too long|DRAFT|CANCELLED/i.test(msg)) return 400;
+  return 500;
+}
+
+// =============================================
 // GET /api/invoices?page=1&limit=50
-router.get('/', async (req, res) => {
+// =============================================
+router.get('/', requireRole(...READ_ROLES), async (req, res) => {
     try {
         const businessId = req.user.businessId;
         if (!businessId) {
@@ -83,8 +100,6 @@ router.get('/', async (req, res) => {
             offset,
         });
 
-        // Extract total from the use case's pagination block (which uses
-        // { total, limit, offset, hasMore }) and re-emit as standardized.
         const total = result?.pagination?.total || 0;
 
         res.json({
@@ -93,12 +108,14 @@ router.get('/', async (req, res) => {
         });
     } catch (error) {
         console.error('❌ [GET /api/invoices]', error.message);
-        res.status(500).json({ success: false, message: error.message || 'Failed to fetch invoices' });
+        res.status(classifyError(error)).json({ success: false, message: error.message || 'Failed to fetch invoices' });
     }
 });
 
+// =============================================
 // GET /api/invoices/:id
-router.get('/:id', async (req, res) => {
+// =============================================
+router.get('/:id', requireRole(...READ_ROLES), async (req, res) => {
     try {
         const businessId = req.user.businessId;
         const { id } = req.params;
@@ -110,14 +127,15 @@ router.get('/:id', async (req, res) => {
 
         res.json(result);
     } catch (error) {
-        const status = /not found/i.test(error.message) ? 404 : 500;
         console.error('❌ [GET /api/invoices/:id]', error.message);
-        res.status(status).json({ success: false, message: error.message });
+        res.status(classifyError(error)).json({ success: false, message: error.message });
     }
 });
 
-// POST /api/invoices
-router.post('/', invalidateAfterWrite, async (req, res) => {
+// =============================================
+// POST /api/invoices — OWNER / ADMIN / MANAGER
+// =============================================
+router.post('/', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const businessId = req.user.businessId;
         const userId = req.user.id;
@@ -131,30 +149,27 @@ router.post('/', invalidateAfterWrite, async (req, res) => {
         } = req.body;
 
         const result = await createInvoiceUseCase.execute({
-            businessId,
-            userId,
+            businessId, userId,
             customerId: customerId || null,
             projectId: projectId || null,
             invoiceNumber: invoiceNumber || null,
             issueDate: issueDate ? new Date(issueDate) : new Date(),
             dueDate: dueDate ? new Date(dueDate) : null,
             status: status || 'DRAFT',
-            subtotal,
-            tax,
-            currency,
-            notes,
-            metadata,
+            subtotal, tax, currency, notes, metadata,
         });
 
         res.status(201).json(result);
     } catch (error) {
         console.error('❌ [POST /api/invoices]', error.message);
-        res.status(400).json({ success: false, message: error.message });
+        res.status(classifyError(error)).json({ success: false, message: error.message });
     }
 });
 
-// PUT /api/invoices/:id
-router.put('/:id', invalidateAfterWrite, async (req, res) => {
+// =============================================
+// PUT /api/invoices/:id — OWNER / ADMIN / MANAGER
+// =============================================
+router.put('/:id', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const businessId = req.user.businessId;
         const userId = req.user.id;
@@ -167,31 +182,24 @@ router.put('/:id', invalidateAfterWrite, async (req, res) => {
 
         const result = await updateInvoiceUseCase.execute({
             invoiceId: parseInt(id, 10),
-            businessId,
-            userId,
-            customerId,
-            projectId,
-            invoiceNumber,
+            businessId, userId,
+            customerId, projectId, invoiceNumber,
             issueDate: issueDate !== undefined ? (issueDate ? new Date(issueDate) : null) : undefined,
             dueDate: dueDate !== undefined ? (dueDate ? new Date(dueDate) : null) : undefined,
-            status,
-            subtotal,
-            tax,
-            currency,
-            notes,
-            metadata,
+            status, subtotal, tax, currency, notes, metadata,
         });
 
         res.json(result);
     } catch (error) {
-        const status = /not found/i.test(error.message) ? 404 : /access denied/i.test(error.message) ? 403 : 400;
         console.error('❌ [PUT /api/invoices/:id]', error.message);
-        res.status(status).json({ success: false, message: error.message });
+        res.status(classifyError(error)).json({ success: false, message: error.message });
     }
 });
 
-// DELETE /api/invoices/:id
-router.delete('/:id', invalidateAfterWrite, async (req, res) => {
+// =============================================
+// DELETE /api/invoices/:id — OWNER / ADMIN / MANAGER
+// =============================================
+router.delete('/:id', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const businessId = req.user.businessId;
         const { id } = req.params;
@@ -203,16 +211,15 @@ router.delete('/:id', invalidateAfterWrite, async (req, res) => {
 
         res.json(result);
     } catch (error) {
-        const status = /not found/i.test(error.message) ? 404 : 400;
         console.error('❌ [DELETE /api/invoices/:id]', error.message);
-        res.status(status).json({ success: false, message: error.message });
+        res.status(classifyError(error)).json({ success: false, message: error.message });
     }
 });
 
 // =============================================
-// POST /api/invoices/:id/payments
+// POST /api/invoices/:id/payments — OWNER / ADMIN / MANAGER / CASHIER
 // =============================================
-router.post('/:id/payments', invalidateAfterWrite, async (req, res) => {
+router.post('/:id/payments', requireRole(...PAYMENT_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const businessId = req.user.businessId;
         const userId = req.user.id;
@@ -226,9 +233,7 @@ router.post('/:id/payments', invalidateAfterWrite, async (req, res) => {
 
         const result = await recordInvoicePaymentUseCase.execute({
             invoiceId: parseInt(id, 10),
-            businessId,
-            userId,
-            amount,
+            businessId, userId, amount,
             paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
             notes: notes || '',
             paymentMethod: paymentMethod || 'CASH',
@@ -236,13 +241,8 @@ router.post('/:id/payments', invalidateAfterWrite, async (req, res) => {
 
         res.status(201).json(result);
     } catch (error) {
-        const status =
-            /not found/i.test(error.message) ? 404 :
-            /access denied/i.test(error.message) ? 403 :
-            /already|exceeds|cannot|DRAFT|CANCELLED/i.test(error.message) ? 400 :
-            500;
         console.error('❌ [POST /api/invoices/:id/payments]', error.message);
-        res.status(status).json({ success: false, message: error.message });
+        res.status(classifyError(error)).json({ success: false, message: error.message });
     }
 });
 

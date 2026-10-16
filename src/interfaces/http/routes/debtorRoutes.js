@@ -1,6 +1,7 @@
 // src/interfaces/http/routes/debtorRoutes.js
-// v1.2.0-prod — Accepts ?search= query param. Passes through to
-//               findByFilters + countByBusinessId (server-side search).
+// v1.3.1-prod — Error classification: user errors return 400/404/409, not 500.
+// v1.3.0-prod — Write routes require OWNER/ADMIN/MANAGER. Payment adds CASHIER.
+// v1.2.0-prod — Accepts ?search= query param.
 // v1.1.0-prod — Pagination on GET /.
 
 const express = require('express');
@@ -10,6 +11,7 @@ const PaymentRepository = require('../../../infrastructure/database/sqlite/repos
 const TransactionRepository = require('../../../infrastructure/database/sqlite/repositories/TransactionRepository');
 const RecordDebtorPaymentUseCase = require('../../../application/useCases/debtors/RecordDebtorPaymentUseCase');
 const { authMiddleware } = require('../middleware/authMiddleware');
+const { requireRole } = require('../middleware/requireRole');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
 const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 
@@ -24,6 +26,18 @@ const recordDebtorPaymentUseCase = new RecordDebtorPaymentUseCase({
 });
 
 router.use(authMiddleware);
+
+const WRITE_ROLES = ['OWNER', 'ADMIN', 'MANAGER'];
+const PAYMENT_ROLES = ['OWNER', 'ADMIN', 'MANAGER', 'CASHIER'];
+
+function classifyError(error) {
+  const msg = String(error?.message || '');
+  if (/not found|does not exist/i.test(msg)) return 404;
+  if (/access denied|forbidden|permission/i.test(msg)) return 403;
+  if (/already exists|duplicate/i.test(msg)) return 409;
+  if (/required|invalid|must be|cannot|exceed|only whitespace|too long/i.test(msg)) return 400;
+  return 500;
+}
 
 // =============================================
 // GET /api/debtors?page=1&limit=50&search=YGY
@@ -43,19 +57,10 @@ router.get('/', async (req, res) => {
 
         const [debtors, total, summary, totalOutstanding, overdue] = await Promise.all([
             debtorRepo.findByFilters({
-                businessId,
-                userId,
-                status,
-                customerType,
-                search: searchTerm,
-                limit,
-                offset,
+                businessId, userId, status, customerType,
+                search: searchTerm, limit, offset,
             }),
-            debtorRepo.countByBusinessId(businessId, {
-                status,
-                customerType,
-                search: searchTerm,
-            }),
+            debtorRepo.countByBusinessId(businessId, { status, customerType, search: searchTerm }),
             debtorRepo.getSummary(businessId),
             debtorRepo.getTotalOutstanding(businessId),
             debtorRepo.findOverdue(businessId),
@@ -75,10 +80,7 @@ router.get('/', async (req, res) => {
         });
     } catch (error) {
         console.error('❌ Error fetching debtors:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to fetch debtors'
-        });
+        res.status(classifyError(error)).json({ success: false, message: error.message || 'Failed to fetch debtors' });
     }
 });
 
@@ -96,18 +98,11 @@ router.get('/active', async (req, res) => {
 
         res.json({
             success: true,
-            data: {
-                debtors: debtors || [],
-                totalOutstanding,
-                count: debtors.length
-            }
+            data: { debtors: debtors || [], totalOutstanding, count: debtors.length }
         });
     } catch (error) {
         console.error('❌ Error fetching active debtors:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to fetch active debtors'
-        });
+        res.status(classifyError(error)).json({ success: false, message: error.message || 'Failed to fetch active debtors' });
     }
 });
 
@@ -125,18 +120,11 @@ router.get('/overdue', async (req, res) => {
 
         res.json({
             success: true,
-            data: {
-                debtors: debtors || [],
-                totalOverdue,
-                count: debtors.length
-            }
+            data: { debtors: debtors || [], totalOverdue, count: debtors.length }
         });
     } catch (error) {
         console.error('❌ Error fetching overdue debtors:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to fetch overdue debtors'
-        });
+        res.status(classifyError(error)).json({ success: false, message: error.message || 'Failed to fetch overdue debtors' });
     }
 });
 
@@ -155,18 +143,11 @@ router.get('/summary', async (req, res) => {
 
         res.json({
             success: true,
-            data: {
-                ...summary,
-                totalOutstanding,
-                overdueCount: overdue.length,
-            }
+            data: { ...summary, totalOutstanding, overdueCount: overdue.length }
         });
     } catch (error) {
         console.error('❌ Error fetching debtor summary:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to fetch debtor summary'
-        });
+        res.status(classifyError(error)).json({ success: false, message: error.message || 'Failed to fetch debtor summary' });
     }
 });
 
@@ -188,7 +169,6 @@ router.get('/:id', async (req, res) => {
         if (!debtor) {
             return res.status(404).json({ success: false, message: 'Debtor not found' });
         }
-
         if (debtor.business_id !== businessId && debtor.user_id !== userId) {
             return res.status(403).json({ success: false, message: 'Access denied' });
         }
@@ -196,17 +176,14 @@ router.get('/:id', async (req, res) => {
         res.json({ success: true, data: debtor });
     } catch (error) {
         console.error('❌ Error fetching debtor:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to fetch debtor'
-        });
+        res.status(classifyError(error)).json({ success: false, message: error.message || 'Failed to fetch debtor' });
     }
 });
 
 // =============================================
-// POST /api/debtors - Create debtor
+// POST /api/debtors — OWNER / ADMIN / MANAGER
 // =============================================
-router.post('/', invalidateAfterWrite, async (req, res) => {
+router.post('/', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const userId = req.user.id;
         const businessId = req.user.businessId;
@@ -243,17 +220,14 @@ router.post('/', invalidateAfterWrite, async (req, res) => {
         });
     } catch (error) {
         console.error('❌ Error creating debtor:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to create debtor'
-        });
+        res.status(classifyError(error)).json({ success: false, message: error.message || 'Failed to create debtor' });
     }
 });
 
 // =============================================
-// POST /api/debtors/:id/payment - Record payment
+// POST /api/debtors/:id/payment — OWNER / ADMIN / MANAGER / CASHIER
 // =============================================
-router.post('/:id/payment', invalidateAfterWrite, async (req, res) => {
+router.post('/:id/payment', requireRole(...PAYMENT_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
@@ -273,13 +247,8 @@ router.post('/:id/payment', invalidateAfterWrite, async (req, res) => {
         }
 
         const result = await recordDebtorPaymentUseCase.execute({
-            userId,
-            businessId,
-            debtorId,
-            amount,
-            paymentDate: new Date(),
-            notes,
-            paymentMethod,
+            userId, businessId, debtorId, amount,
+            paymentDate: new Date(), notes, paymentMethod,
         });
 
         res.json({
@@ -293,17 +262,14 @@ router.post('/:id/payment', invalidateAfterWrite, async (req, res) => {
         });
     } catch (error) {
         console.error('❌ Error recording debtor payment:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to record payment'
-        });
+        res.status(classifyError(error)).json({ success: false, message: error.message || 'Failed to record payment' });
     }
 });
 
 // =============================================
-// DELETE /api/debtors/:id
+// DELETE /api/debtors/:id — OWNER / ADMIN / MANAGER
 // =============================================
-router.delete('/:id', invalidateAfterWrite, async (req, res) => {
+router.delete('/:id', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
@@ -332,10 +298,7 @@ router.delete('/:id', invalidateAfterWrite, async (req, res) => {
         res.json({ success: true, message: 'Debtor deleted successfully' });
     } catch (error) {
         console.error('❌ Error deleting debtor:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to delete debtor'
-        });
+        res.status(classifyError(error)).json({ success: false, message: error.message || 'Failed to delete debtor' });
     }
 });
 
