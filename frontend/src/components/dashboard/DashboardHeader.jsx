@@ -1,16 +1,19 @@
 // frontend/src/components/dashboard/DashboardHeader.jsx
+// v1.2.0 — Replaces inline profile dropdown with shared <UserMenu />.
+//          Adds role badge next to name. Notification bell, theme toggle,
+//          plan badge, and industry pill unchanged.
 // v1.1.0 — Adds EmailStatusBadge (compact) in the avatar dropdown.
 // v1.0.0 — Initial.
 
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Menu, X, Bell, Sun, Moon, User, CreditCard, Settings, LogOut, ChevronDown,
+  Menu, X, Bell, Sun, Moon, ChevronDown,
 } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { usePlan } from '../../hooks/usePlan';
-import EmailStatusBadge from '../common/EmailStatusBadge';
+import RoleBadge from '../common/RoleBadge';
 
 const DashboardHeader = ({
   user,
@@ -24,16 +27,24 @@ const DashboardHeader = ({
   const { planId, planName, isTrial, isReadOnly, daysRemaining } = usePlan();
 
   const [openDropdown, setOpenDropdown] = useState(null);
+  const [profileOpen, setProfileOpen] = useState(false);
   const containerRef = useRef(null);
+  const profileRef = useRef(null);
 
   useEffect(() => {
     const onClick = (e) => {
       if (containerRef.current && !containerRef.current.contains(e.target)) {
         setOpenDropdown(null);
       }
+      if (profileRef.current && !profileRef.current.contains(e.target)) {
+        setProfileOpen(false);
+      }
     };
     const onKey = (e) => {
-      if (e.key === 'Escape') setOpenDropdown(null);
+      if (e.key === 'Escape') {
+        setOpenDropdown(null);
+        setProfileOpen(false);
+      }
     };
     document.addEventListener('mousedown', onClick);
     document.addEventListener('keydown', onKey);
@@ -87,10 +98,14 @@ const DashboardHeader = ({
   };
 
   const handleLogout = () => {
-    setOpenDropdown(null);
+    setProfileOpen(false);
     logout();
     window.location.href = '/';
   };
+
+  const displayName = user?.fullName || 'User';
+  const initials = displayName.charAt(0).toUpperCase();
+  const canAccessSettings = ['OWNER', 'ADMIN'].includes(user?.role);
 
   return (
     <header className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border-b border-gray-200 dark:border-slate-700 px-4 sm:px-6 py-3 sticky top-0 z-30">
@@ -128,6 +143,7 @@ const DashboardHeader = ({
             <span>{industryConfig.label}</span>
           </div>
 
+          {/* Notifications — unchanged */}
           <div className="relative">
             <button
               onClick={() => toggleDropdown('notifications')}
@@ -171,67 +187,74 @@ const DashboardHeader = ({
             )}
           </button>
 
-          <div className="relative">
+          {/* Profile dropdown — now shows role badge */}
+          <div className="relative" ref={profileRef}>
             <button
-              onClick={() => toggleDropdown('profile')}
+              onClick={() => setProfileOpen((o) => !o)}
               className="flex items-center space-x-2 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition"
               aria-label="Account menu"
-              aria-expanded={openDropdown === 'profile'}
+              aria-expanded={profileOpen}
             >
               <div className="w-8 h-8 rounded-full bg-primary-600 text-white flex items-center justify-center text-sm font-medium">
-                {user?.fullName?.charAt(0)?.toUpperCase() || 'U'}
+                {initials}
               </div>
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300 hidden lg:block">
-                {user?.fullName || 'User'}
-              </span>
+              <div className="hidden lg:flex flex-col items-start leading-tight">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-200 max-w-[120px] truncate">
+                  {displayName}
+                </span>
+                <RoleBadge role={user?.role} size="xs" />
+              </div>
               <ChevronDown className="w-4 h-4 text-gray-500 hidden lg:block" />
             </button>
 
-            {openDropdown === 'profile' && (
+            {profileOpen && (
               <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-gray-200 dark:border-slate-700 z-50">
                 <div className="px-4 py-3 border-b border-gray-200 dark:border-slate-700">
                   <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
-                    {user?.fullName || 'User'}
+                    {displayName}
                   </p>
                   <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
                     {user?.email || ''}
                   </p>
-                  <div className="mt-1.5">
-                    <EmailStatusBadge variant="compact" showResend={false} />
+                  <div className="mt-2 flex items-center gap-2">
+                    <RoleBadge role={user?.role} size="xs" />
+                    {user?.businessName && (
+                      <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                        · {user.businessName}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="py-1">
                   <Link
                     to="/settings"
-                    onClick={() => setOpenDropdown(null)}
-                    className="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 transition"
+                    onClick={() => setProfileOpen(false)}
+                    className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 transition"
                   >
-                    <User className="w-4 h-4" />
                     Profile Settings
                   </Link>
                   <Link
                     to="/subscription"
-                    onClick={() => setOpenDropdown(null)}
-                    className="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 transition"
+                    onClick={() => setProfileOpen(false)}
+                    className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 transition"
                   >
-                    <CreditCard className="w-4 h-4" />
                     Subscription
                   </Link>
-                  <Link
-                    to="/settings"
-                    onClick={() => setOpenDropdown(null)}
-                    className="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 transition"
-                  >
-                    <Settings className="w-4 h-4" />
-                    Settings
-                  </Link>
+                  {canAccessSettings && (
+                    <Link
+                      to="/settings"
+                      onClick={() => setProfileOpen(false)}
+                      className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 transition"
+                    >
+                      Settings
+                    </Link>
+                  )}
                 </div>
                 <div className="border-t border-gray-200 dark:border-slate-700 py-1">
                   <button
                     onClick={handleLogout}
-                    className="flex items-center gap-3 px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition w-full"
+                    className="block w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition"
                   >
-                    <LogOut className="w-4 h-4" />
                     Logout
                   </button>
                 </div>
@@ -249,7 +272,7 @@ const DashboardHeader = ({
             : new Date().getHours() < 17
               ? 'afternoon'
               : 'evening'}
-          , {user?.fullName || 'User'} 👋
+          , {displayName} 👋
         </p>
       </div>
     </header>

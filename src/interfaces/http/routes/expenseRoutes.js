@@ -1,6 +1,6 @@
 // src/interfaces/http/routes/expenseRoutes.js
-// v1.1.0-prod — Pagination on GET /. Filters always honored, always bounded.
-//               Adds data.pagination to response. Everything else unchanged.
+// v1.2.0-prod — PUT/DELETE require OWNER/ADMIN/MANAGER. POST requires same.
+// v1.1.0-prod — Pagination on GET /.
 
 const express = require('express');
 const router = express.Router();
@@ -8,6 +8,7 @@ const ExpenseRepository = require('../../../infrastructure/database/sqlite/repos
 const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository');
 const RecordExpenseUseCase = require('../../../application/useCases/expenses/RecordExpenseUseCase');
 const { authMiddleware } = require('../middleware/authMiddleware');
+const { requireRole } = require('../middleware/requireRole');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
 const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 
@@ -128,46 +129,51 @@ router.get('/summary', async (req, res) => {
 });
 
 // =============================================
-// POST /api/expenses
+// POST /api/expenses — OWNER / ADMIN / MANAGER
 // =============================================
-router.post('/', invalidateAfterWrite, async (req, res) => {
-    try {
-        const userId = req.user.id;
-        const businessId = req.user.businessId;
-        const { category, amount, description, date } = req.body;
+router.post(
+    '/',
+    requireRole('OWNER', 'ADMIN', 'MANAGER'),
+    invalidateAfterWrite,
+    async (req, res) => {
+        try {
+            const userId = req.user.id;
+            const businessId = req.user.businessId;
+            const { category, amount, description, date } = req.body;
 
-        if (!businessId) {
-            return res.status(400).json({ success: false, message: 'Business context required' });
-        }
-        if (!category) {
-            return res.status(400).json({ success: false, message: 'Category is required' });
-        }
-        if (!amount || amount <= 0) {
-            return res.status(400).json({ success: false, message: 'Amount must be greater than 0' });
-        }
+            if (!businessId) {
+                return res.status(400).json({ success: false, message: 'Business context required' });
+            }
+            if (!category) {
+                return res.status(400).json({ success: false, message: 'Category is required' });
+            }
+            if (!amount || amount <= 0) {
+                return res.status(400).json({ success: false, message: 'Amount must be greater than 0' });
+            }
 
-        const result = await recordExpenseUseCase.execute({
-            userId,
-            businessId,
-            category,
-            amount,
-            description: description || '',
-            date: date || new Date(),
-        });
+            const result = await recordExpenseUseCase.execute({
+                userId,
+                businessId,
+                category,
+                amount,
+                description: description || '',
+                date: date || new Date(),
+            });
 
-        res.status(201).json({
-            success: true,
-            message: 'Expense recorded successfully',
-            data: result
-        });
-    } catch (error) {
-        console.error('❌ Error recording expense:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to record expense'
-        });
+            res.status(201).json({
+                success: true,
+                message: 'Expense recorded successfully',
+                data: result
+            });
+        } catch (error) {
+            console.error('❌ Error recording expense:', error);
+            res.status(500).json({
+                success: false,
+                message: error.message || 'Failed to record expense'
+            });
+        }
     }
-});
+);
 
 // =============================================
 // GET /api/expenses/:id
@@ -194,62 +200,72 @@ router.get('/:id', async (req, res) => {
 });
 
 // =============================================
-// PUT /api/expenses/:id
+// PUT /api/expenses/:id — OWNER / ADMIN / MANAGER
 // =============================================
-router.put('/:id', invalidateAfterWrite, async (req, res) => {
-    try {
-        const { id } = req.params;
-        const userId = req.user.id;
-        const businessId = req.user.businessId;
-        const { category, amount, description, date } = req.body;
+router.put(
+    '/:id',
+    requireRole('OWNER', 'ADMIN', 'MANAGER'),
+    invalidateAfterWrite,
+    async (req, res) => {
+        try {
+            const { id } = req.params;
+            const userId = req.user.id;
+            const businessId = req.user.businessId;
+            const { category, amount, description, date } = req.body;
 
-        const existing = await expenseRepo.findById(parseInt(id));
-        if (!existing) {
-            return res.status(404).json({ success: false, message: 'Expense record not found' });
+            const existing = await expenseRepo.findById(parseInt(id));
+            if (!existing) {
+                return res.status(404).json({ success: false, message: 'Expense record not found' });
+            }
+            if (existing.business_id !== businessId && existing.user_id !== userId) {
+                return res.status(403).json({ success: false, message: 'Access denied' });
+            }
+
+            const updateData = {};
+            if (category !== undefined) updateData.category = category;
+            if (amount !== undefined) updateData.amount = amount;
+            if (description !== undefined) updateData.description = description;
+            if (date !== undefined) updateData.date = date;
+
+            const updated = await expenseRepo.update(parseInt(id), updateData);
+
+            res.json({ success: true, message: 'Expense updated successfully', data: updated });
+        } catch (error) {
+            console.error('❌ Error updating expense:', error);
+            res.status(500).json({ success: false, message: error.message || 'Failed to update expense' });
         }
-        if (existing.business_id !== businessId && existing.user_id !== userId) {
-            return res.status(403).json({ success: false, message: 'Access denied' });
-        }
-
-        const updateData = {};
-        if (category !== undefined) updateData.category = category;
-        if (amount !== undefined) updateData.amount = amount;
-        if (description !== undefined) updateData.description = description;
-        if (date !== undefined) updateData.date = date;
-
-        const updated = await expenseRepo.update(parseInt(id), updateData);
-
-        res.json({ success: true, message: 'Expense updated successfully', data: updated });
-    } catch (error) {
-        console.error('❌ Error updating expense:', error);
-        res.status(500).json({ success: false, message: error.message || 'Failed to update expense' });
     }
-});
+);
 
 // =============================================
-// DELETE /api/expenses/:id
+// DELETE /api/expenses/:id — OWNER / ADMIN / MANAGER
 // =============================================
-router.delete('/:id', invalidateAfterWrite, async (req, res) => {
-    try {
-        const { id } = req.params;
-        const userId = req.user.id;
-        const businessId = req.user.businessId;
+router.delete(
+    '/:id',
+    requireRole('OWNER', 'ADMIN', 'MANAGER'),
+    invalidateAfterWrite,
+    async (req, res) => {
+        try {
+            const { id } = req.params;
+            const userId = req.user.id;
+            const businessId = req.user.businessId;
 
-        const existing = await expenseRepo.findById(parseInt(id));
-        if (!existing) {
-            return res.status(404).json({ success: false, message: 'Expense record not found' });
+            const existing = await expenseRepo.findById(parseInt(id));
+            if (!existing) {
+                return res.status(404).json({ success: false, message: 'Expense record not found' });
+            }
+            if (existing.business_id !== businessId && existing.user_id !== userId) {
+                return res.status(403).json({ success: false, message: 'Access denied' });
+            }
+
+            await expenseRepo.delete(parseInt(id));
+
+            res.json({ success: true, message: 'Expense record deleted successfully' });
+        } catch (error) {
+            console.error('❌ Error deleting expense:', error);
+            res.status(500).json({ success: false, message: error.message || 'Failed to delete expense' });
         }
-        if (existing.business_id !== businessId && existing.user_id !== userId) {
-            return res.status(403).json({ success: false, message: 'Access denied' });
-        }
-
-        await expenseRepo.delete(parseInt(id));
-
-        res.json({ success: true, message: 'Expense record deleted successfully' });
-    } catch (error) {
-        console.error('❌ Error deleting expense:', error);
-        res.status(500).json({ success: false, message: error.message || 'Failed to delete expense' });
     }
-});
+);
 
 module.exports = router;

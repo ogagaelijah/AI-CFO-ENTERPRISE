@@ -1,14 +1,6 @@
 // src/infrastructure/services/email/ResendService.js
+// v1.1.0-prod — Adds sendTeamInvite for staff invitations.
 // v1.0.0-prod — Wraps the Resend SDK for transactional email.
-//
-// Env vars:
-//   RESEND_API_KEY    — Resend API key (re_...)
-//   EMAIL_FROM        — e.g. "AI CFO Enterprise <noreply@aicfotechnologies.com>"
-//   FRONTEND_URL      — e.g. "https://aicfotechnologies.com" (used to build email links)
-//
-// Usage:
-//   const emailService = require('../email/ResendService');
-//   await emailService.sendVerification({ to: 'user@x.com', fullName: 'Jane Doe', token: 'abc123' });
 
 const { Resend } = require('resend');
 const logger = require('../../../shared/utils/logger');
@@ -16,6 +8,7 @@ const logger = require('../../../shared/utils/logger');
 const buildVerificationEmail = require('./templates/verifyEmail');
 const buildResetPasswordEmail = require('./templates/resetPassword');
 const buildReceiptEmail = require('./templates/receipt');
+const buildTeamInviteEmail = require('./templates/teamInvite');   // ★ NEW
 
 const VERIFICATION_TTL_HOURS = 24;
 const RESET_TTL_MINUTES = 30;
@@ -24,7 +17,6 @@ class ResendService {
   constructor() {
     const apiKey = process.env.RESEND_API_KEY;
     if (!apiKey) {
-      // Fail loudly at startup so misconfiguration is caught immediately.
       throw new Error('RESEND_API_KEY is required for ResendService');
     }
 
@@ -98,10 +90,21 @@ class ResendService {
 
     return this._send({ to, subject, html, text, tag: 'receipt' });
   }
+
+  // ★ NEW
+  async sendTeamInvite({ to, businessName, inviterName, role, acceptUrl, expiresAt }) {
+    const { subject, html, text } = buildTeamInviteEmail({
+      businessName,
+      inviterName,
+      role,
+      acceptUrl,
+      expiresAt,
+    });
+
+    return this._send({ to, subject, html, text, tag: 'team-invite' });
+  }
 }
 
-// Export a lazy singleton so the module doesn't throw at import time
-// if env vars are missing during tests or migrations.
 let instance = null;
 function getInstance() {
   if (!instance) instance = new ResendService();
@@ -114,4 +117,5 @@ module.exports = {
   sendVerification: (args) => getInstance().sendVerification(args),
   sendPasswordReset: (args) => getInstance().sendPasswordReset(args),
   sendReceipt: (args) => getInstance().sendReceipt(args),
+  sendTeamInvite: (args) => getInstance().sendTeamInvite(args),   // ★ NEW
 };

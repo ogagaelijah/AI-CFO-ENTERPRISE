@@ -1,6 +1,11 @@
 // frontend/src/components/dashboard/DashboardSidebar.jsx
+// v1.1.0 — Filters nav items by role. Items without a `roles` array
+//          render for all authenticated users.
+// v1.0.0 — Initial.
+
 import { Link } from 'react-router-dom';
-import { X, LogOut, Home } from 'lucide-react';
+import { X, LogOut } from 'lucide-react';
+import useRole from '../../hooks/useRole';
 
 const getSectionStyles = (label) => {
   if (label.includes('TRANSACTIONS')) {
@@ -24,7 +29,7 @@ const getSectionStyles = (label) => {
   return { color: 'text-gray-400 dark:text-gray-500', bg: 'bg-transparent' };
 };
 
-const NavItem = ({ item, onClick, isMobile = false }) => {
+const NavItem = ({ item, onClick }) => {
   if (item.type === 'section') {
     const styles = getSectionStyles(item.label);
     return (
@@ -58,7 +63,39 @@ const DashboardSidebar = ({
   onMobileClose,
   onLogout,
 }) => {
-  // Desktop sidebar
+  const { role } = useRole();
+
+  // Filter by role. Items without a `roles` field are always visible.
+  // Section headers render only if at least one item in the section is visible.
+  const visibleItems = (() => {
+    const out = [];
+    let lastSection = null;
+    let sectionHasVisibleChildren = false;
+
+    for (const item of navItems) {
+      if (item.type === 'section') {
+        // Flush previous section if it had no children
+        if (lastSection && !sectionHasVisibleChildren) {
+          out.pop();
+        }
+        out.push(item);
+        lastSection = item;
+        sectionHasVisibleChildren = false;
+      } else {
+        const allowed = !item.roles || item.roles.includes(role);
+        if (allowed) {
+          out.push(item);
+          sectionHasVisibleChildren = true;
+        }
+      }
+    }
+    // Flush the last section if empty
+    if (lastSection && !sectionHasVisibleChildren) {
+      out.pop();
+    }
+    return out;
+  })();
+
   const DesktopSidebar = (
     <aside className="hidden md:flex flex-col w-64 bg-white dark:bg-slate-800 border-r border-gray-200 dark:border-slate-700 p-4 overflow-y-auto fixed h-full z-40">
       <div className="flex items-center space-x-2 mb-6">
@@ -66,7 +103,7 @@ const DashboardSidebar = ({
         <span className="text-xs font-medium text-gray-500 dark:text-gray-400">ENTERPRISE</span>
       </div>
       <nav className="flex-1 space-y-0.5 overflow-y-auto">
-        {navItems.map((item, index) => (
+        {visibleItems.map((item, index) => (
           <NavItem key={index} item={item} />
         ))}
       </nav>
@@ -82,12 +119,8 @@ const DashboardSidebar = ({
     </aside>
   );
 
-  // Mobile sidebar
   const MobileSidebar = isMobileOpen ? (
-    <div
-      className="md:hidden fixed inset-0 z-50 bg-black/50"
-      onClick={onMobileClose}
-    >
+    <div className="md:hidden fixed inset-0 z-50 bg-black/50" onClick={onMobileClose}>
       <div
         className="w-72 h-full bg-white dark:bg-slate-800 p-4 overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
@@ -105,8 +138,8 @@ const DashboardSidebar = ({
           </button>
         </div>
         <nav className="space-y-0.5">
-          {navItems.map((item, index) => (
-            <NavItem key={index} item={item} onClick={onMobileClose} isMobile />
+          {visibleItems.map((item, index) => (
+            <NavItem key={index} item={item} onClick={onMobileClose} />
           ))}
         </nav>
         <div className="border-t border-gray-200 dark:border-slate-700 pt-4 mt-4">

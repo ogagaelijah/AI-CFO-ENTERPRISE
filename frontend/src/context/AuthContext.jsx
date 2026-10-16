@@ -1,7 +1,6 @@
 // frontend/src/context/AuthContext.jsx
-// v4.1.0-prod — Merges business.name into user.businessName so consumers
-//               (e.g. receipts) can access it without a second fetch.
-//               Everything else identical to v4.0.0.
+// v4.2.0-prod — Captures user.role and user.businessName from /auth/me.
+// v4.1.0-prod — Merges business.name into user.businessName.
 
 import {
   createContext,
@@ -23,7 +22,6 @@ import { reportError, reportWarning } from '../services/telemetry';
 
 const AuthContext = createContext();
 
-// ── Plan cache (sessionStorage — cleared on tab close)
 const PLAN_CACHE_KEY = 'auth:plan-cache';
 const PLAN_CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -58,7 +56,6 @@ const clearPlanCache = () => {
   }
 };
 
-// ── Fallback plan
 const FALLBACK_PLAN = {
   id: 'basic',
   name: 'Basic',
@@ -76,14 +73,19 @@ const FALLBACK_PLAN = {
   endDate: null,
 };
 
-// Merge business fields into a user object.
-// Only sets fields when present — never overwrites with undefined.
+// Merge business + role fields into the user object.
 const mergeBusinessFields = (userData, business) => {
   if (!userData) return userData;
-  if (!business) return userData;
-  if (business.id) userData.businessId = business.id;
-  if (business.name) userData.businessName = business.name;
-  if (business.industry) userData.industry = business.industry;
+  if (business) {
+    if (business.id) userData.businessId = business.id;
+    if (business.name) userData.businessName = business.name;
+    if (business.industry) userData.industry = business.industry;
+  }
+  // Role is on userData from /me and /login responses.
+  // Keep this here in case role lands in business scope in the future.
+  if (business?.role && !userData.role) {
+    userData.role = business.role;
+  }
   return userData;
 };
 
@@ -168,7 +170,6 @@ export const AuthProvider = ({ children }) => {
     return promise;
   }, []);
 
-  // ── Wire 401 handler
   useEffect(() => {
     setUnauthorizedHandler(() => {
       setUser(null);
@@ -179,7 +180,6 @@ export const AuthProvider = ({ children }) => {
     return () => setUnauthorizedHandler(null);
   }, []);
 
-  // ── Bootstrap
   useEffect(() => {
     let cancelled = false;
 
@@ -203,7 +203,6 @@ export const AuthProvider = ({ children }) => {
         if (err?.response?.status !== 401) {
           reportError(err, { scope: 'AuthContext.bootstrap' });
         } else {
-          // No valid session
           clearStoredToken();
         }
       } finally {
@@ -220,8 +219,6 @@ export const AuthProvider = ({ children }) => {
   const register = async (userData) => {
     const response = await authApi.register(userData);
 
-    // Store the JWT immediately so subsequent requests work
-    // even if the browser blocked the auth cookie.
     if (response.data?.token) {
       setStoredToken(response.data.token);
     }
@@ -270,7 +267,6 @@ export const AuthProvider = ({ children }) => {
   const login = async (credentials) => {
     const response = await authApi.login(credentials);
 
-    // Store the JWT immediately so fetchPlan() below sends it.
     if (response.data?.token) {
       setStoredToken(response.data.token);
     }
@@ -309,6 +305,24 @@ export const AuthProvider = ({ children }) => {
     return planData;
   }, [fetchPlan]);
 
+  // Refresh the current user (e.g. after accept-invite or role change)
+  const refreshUser = useCallback(async () => {
+    try {
+      const response = await authApi.getCurrentUser();
+      if (response.data?.user) {
+        const userData = mergeBusinessFields(
+          response.data.user,
+          response.data.business
+        );
+        setUser((prev) => ({ ...prev, ...userData }));
+        return userData;
+      }
+    } catch (err) {
+      reportError(err, { scope: 'AuthContext.refreshUser' });
+      throw err;
+    }
+  }, []);
+
   const value = {
     user,
     setUser,
@@ -318,6 +332,7 @@ export const AuthProvider = ({ children }) => {
     login,
     logout,
     refreshPlan,
+    refreshUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
