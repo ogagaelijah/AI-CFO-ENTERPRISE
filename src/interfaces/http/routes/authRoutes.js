@@ -1,11 +1,7 @@
 // src/interfaces/http/routes/authRoutes.js
-// v4.0.0-prod — Email duplicate now returns 409 EMAIL_TAKEN with explicit
-//               message (was generic 200 to prevent enumeration). Phone
-//               duplicate already returned 409 PHONE_TAKEN.
-// v3.9.0-prod — Friendly duplicate-phone error, phone normalization,
-//               Postgres 23505 translation in /register catch.
-// v3.8.0-prod — Email verification + password reset wired to Resend.
-// v3.7.1-prod — loginIpLimiter removed from /login (runs at server layer).
+// v5.0.0-prod — Register creates OWNER membership. /me and /login return role.
+// v4.0.0-prod — Email duplicate 409 EMAIL_TAKEN with explicit message.
+// v3.9.0-prod — Friendly duplicate-phone error, phone normalization.
 
 const express = require('express');
 const router = express.Router();
@@ -15,6 +11,7 @@ const jwt = require('jsonwebtoken');
 
 const UserRepository = require('../../../infrastructure/database/sqlite/repositories/UserRepository');
 const BusinessRepository = require('../../../infrastructure/database/sqlite/repositories/BusinessRepository');
+const BusinessMemberRepository = require('../../../infrastructure/database/sqlite/repositories/BusinessMemberRepository');
 const SubscriptionRepository = require('../../../infrastructure/database/sqlite/repositories/SubscriptionRepository');
 const SecurityEventService = require('../../../infrastructure/services/security/SecurityEventService');
 const { withTransaction } = require('../../../infrastructure/database/sqlite/connection');
@@ -36,6 +33,7 @@ const {
 
 const userRepo = new UserRepository();
 const businessRepo = new BusinessRepository();
+const memberRepo = new BusinessMemberRepository();
 const subscriptionRepo = new SubscriptionRepository();
 const securityEvents = new SecurityEventService();
 
@@ -73,18 +71,6 @@ const validatePassword = (password) => {
   return null;
 };
 
-/**
- * Normalize Nigerian phone numbers to canonical 11-digit form: 0XXXXXXXXXX.
- * Accepts (in any order): spaces, dashes, parentheses, leading + or 234 prefix.
- * Returns null if the input is not a plausible Nigerian phone number.
- *
- * Examples that all normalize to "07033621133":
- *   "07033621133"
- *   "0703 362 1133"
- *   "+2347033621133"
- *   "+234 703 362 1133"
- *   "234-703-362-1133"
- */
 const normalizePhone = (input) => {
   if (!input || typeof input !== 'string') return null;
   let s = input.trim().replace(/[^\d+]/g, '');
@@ -120,8 +106,6 @@ const clientUa = (req) => req.headers['user-agent'] || 'unknown';
 
 // ─────────────────────────────────────────────
 // POST /register
-// Limited to 5 per hour per IP (registerLimiter).
-// Creates user + business + trial subscription, sends verification email.
 // ─────────────────────────────────────────────
 router.post('/register', registerLimiter, async (req, res) => {
   try {
@@ -136,7 +120,6 @@ router.post('/register', registerLimiter, async (req, res) => {
       return res.status(400).json({ success: false, message: pwError });
     }
 
-    // Normalize phone if provided
     let normalizedPhone = null;
     if (phone && String(phone).trim().length > 0) {
       normalizedPhone = normalizePhone(phone);
@@ -149,7 +132,6 @@ router.post('/register', registerLimiter, async (req, res) => {
       }
     }
 
-    // ── Duplicate email check (v4.0.0: explicit rejection, matching phone)
     const emailExists = await userRepo.emailExists(email);
     if (emailExists) {
       securityEvents.log({
@@ -165,7 +147,6 @@ router.post('/register', registerLimiter, async (req, res) => {
       });
     }
 
-    // ── Duplicate phone check
     if (normalizedPhone) {
       const phoneExists = await userRepo.phoneExists(normalizedPhone);
       if (phoneExists) {
@@ -211,6 +192,17 @@ router.post('/register', registerLimiter, async (req, res) => {
           industry,
         });
 
+        // ★ NEW: create OWNER membership row
+        await memberRepo.create({
+          businessId: b.id,
+          userId: u.id,
+          role: 'OWNER',
+          status: 'ACTIVE',
+          invitedBy: null,
+          invitedAt: null,
+          acceptedAt: new Date().toISOString(),
+        });
+
         const tpId = plans.getTrialPlan();
         const tp = plans.getPlan(tpId);
         const tDays = plans.getTrialDays(tpId);
@@ -238,7 +230,6 @@ router.post('/register', registerLimiter, async (req, res) => {
         };
       });
 
-    // Send verification email. Never block registration on email failure.
     try {
       await emailService.sendVerification({
         to: user.email,
@@ -275,6 +266,7 @@ router.post('/register', registerLimiter, async (req, res) => {
         phoneNumber: user.phoneNumber,
         industry: business.industry,
         businessId: business.id,
+        role: 'OWNER',   // ★ NEW
         emailVerified: false,
       },
       business: {
@@ -292,8 +284,6 @@ router.post('/register', registerLimiter, async (req, res) => {
   } catch (error) {
     console.error('Register error:', error);
 
-    // Postgres unique-violation (23505). Translate into a friendly message
-    // based on which constraint fired. Safety net for race conditions.
     if (error.code === '23505') {
       const constraint = error.constraint || '';
 
@@ -440,7 +430,27 @@ router.post('/login', loginEmailLimiter, async (req, res) => {
       return res.status(401).json({ success: false, message: 'Invalid email or password' });
     }
 
-    const business = await businessRepo.findByUserIdFirst(user.id);
+    // ★ NEW: resolve primary business via membership (falls back to ownership)
+    const membership = await memberRepo.findFirstActiveByUser(user.id);
+    let business = null;
+
+    if (membership) {
+      business = await businessRepo.findById(membership.businessId);
+    }
+
+    // Legacy fallback: if no membership but user owns a business, log in anyway.
+    // Migration 023 should have prevented this, but safety net.
+    if (!membership) {
+      business = await businessRepo.findByUserIdFirst(user.id);
+    }
+
+    if (!business) {
+      return res.status(403).json({
+        success: false,
+        message: 'No business associated with this account. Please contact support.',
+      });
+    }
+
     const token = signToken(user, business);
     res.cookie('token', token, COOKIE_OPTIONS);
 
@@ -461,13 +471,16 @@ router.post('/login', loginEmailLimiter, async (req, res) => {
         fullName: user.fullName,
         email: user.email,
         phoneNumber: user.phoneNumber,
-        industry: business ? business.industry : null,
-        businessId: business ? business.id : null,
+        industry: business.industry,
+        businessId: business.id,
+        role: membership?.role || 'OWNER',   // ★ NEW
         emailVerified: user.emailVerified,
       },
-      business: business
-        ? { id: business.id, name: business.name, industry: business.industry }
-        : null,
+      business: {
+        id: business.id,
+        name: business.name,
+        industry: business.industry,
+      },
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -492,9 +505,23 @@ router.get('/me', async (req, res) => {
     const user = await userRepo.findById(decoded.id);
     if (!user) return res.status(401).json({ success: false, message: 'User not found' });
 
-    let business = null;
-    if (decoded.businessId) business = await businessRepo.findById(decoded.businessId);
-    if (!business) business = await businessRepo.findByUserIdFirst(user.id);
+    // ★ NEW: resolve membership fresh (strict)
+    let membership = null;
+    if (decoded.businessId) {
+      membership = await memberRepo.findByBusinessAndUser(decoded.businessId, user.id);
+    }
+    if (!membership) {
+      membership = await memberRepo.findFirstActiveByUser(user.id);
+    }
+
+    if (!membership || membership.status !== 'ACTIVE') {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have access to this business. Contact the owner.',
+      });
+    }
+
+    const business = await businessRepo.findById(membership.businessId);
 
     return res.json({
       success: true,
@@ -505,6 +532,7 @@ router.get('/me', async (req, res) => {
         phoneNumber: user.phoneNumber,
         industry: business ? business.industry : null,
         businessId: business ? business.id : null,
+        role: membership.role,   // ★ NEW
         emailVerified: user.emailVerified,
       },
       business: business

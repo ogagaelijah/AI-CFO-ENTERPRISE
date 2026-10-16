@@ -1,4 +1,5 @@
 // src/interfaces/http/server.js
+// v2.16.0-prod — Mounts /api/team (staff login + invites).
 // v2.15.0-prod — Adds /api/chat (DeepSeek-backed FAQ assistant).
 // v2.14.0-prod — Sentry v8+, structured logging, plan gating, PORT compatible (Render)
 //               Adds Consultancy routes: /api/projects, /api/time-entries, /api/invoices
@@ -11,14 +12,8 @@
 //               v2.10.0: Paystack webhook retry sweep scheduled on startup
 //               v2.11.0: Auth rate limiters moved into authRoutes.js
 //               v2.12.0: loginIpLimiter mounted BEFORE express.json()
-//               v2.13.0: loginIpLimiter mounted BEFORE pino-http as well, so
-//                        IP-rate-limited floods don't produce one log line
-//                        per rejected request. At 500 req/s, this is the
-//                        difference between ~30k log writes per minute and
-//                        ~30k fast rejections with ~8 log lines.
-//               v2.14.0: warmPool() on startup to remove first-request
-//                        cold-start penalty to Supabase. /api/health now
-//                        reports DB pool stats for observability.
+//               v2.13.0: loginIpLimiter mounted BEFORE pino-http as well
+//               v2.14.0: warmPool() on startup; /api/health reports DB pool stats
 
 const { initSentry, Sentry } = require('../../shared/utils/sentry');
 initSentry();
@@ -67,8 +62,6 @@ app.use(cors({
 }));
 
 // ── loginIpLimiter mounted FIRST (after CORS, before pino-http).
-//    Rejected login floods never reach the logger or the body parser.
-//    Email limiter still runs inside authRoutes.js where req.body exists.
 app.use('/api/auth/login', loginIpLimiter);
 
 // ── Paystack webhook MUST be mounted BEFORE express.json() for raw body
@@ -141,13 +134,18 @@ const feeRoutes = require('./routes/feeRoutes');
 const pledgeRoutes = require('./routes/pledgeRoutes');
 const donationRoutes = require('./routes/donationRoutes');
 const chatRoutes = require('./routes/chatRoutes');
+const teamRoutes = require('./routes/teamRoutes');   // ★ NEW
 
 // ── Auth routes carry loginEmailLimiter + registerLimiter + forgot + reset.
-//    (loginIpLimiter already ran at the server layer above.)
 app.use('/api/auth', authRoutes);
 
 // ── Public chat (no auth — marketing-site widget)
 app.use('/api/chat', chatRoutes);
+
+// ── Team management (invite, accept, list, role, remove).
+//    Some routes are public (accept, GET invite), some require auth (see teamRoutes.js).
+//    No planGuard — team access is available on every plan.
+app.use('/api/team', standardLimiter, teamRoutes);   // ★ NEW
 
 app.use('/api/subscription', standardLimiter, subscriptionRoutes);
 app.use('/api/payment', standardLimiter, paymentRoutes);
@@ -243,9 +241,6 @@ const server = app.listen(PORT, () => {
     process.env.DEEPSEEK_API_KEY ? 'chat: enabled' : 'chat: disabled (no DEEPSEEK_API_KEY)'
   );
 
-  // ── Warm the DB pool so the first real request doesn't pay
-  //    TCP + TLS + auth handshake to Supabase. Non-blocking:
-  //    a warm-up failure does not prevent the server from serving.
   warmPool().catch((err) => {
     logger.error({ err: err.message }, 'db: warmPool failed');
   });

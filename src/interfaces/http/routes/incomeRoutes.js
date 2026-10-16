@@ -1,4 +1,7 @@
 // src/interfaces/http/routes/incomeRoutes.js
+// v1.1.0-prod — Income is append-only: PUT and DELETE always return 405.
+//               POST requires OWNER/ADMIN/MANAGER.
+// v1.0.0-prod — Initial.
 
 const express = require('express');
 const router = express.Router();
@@ -6,6 +9,7 @@ const IncomeRepository = require('../../../infrastructure/database/sqlite/reposi
 const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository');
 const RecordIncomeUseCase = require('../../../application/useCases/income/RecordIncomeUseCase');
 const { authMiddleware } = require('../middleware/authMiddleware');
+const { requireRole } = require('../middleware/requireRole');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
 
 const incomeRepo = new IncomeRepository();
@@ -132,46 +136,51 @@ router.get('/summary', async (req, res) => {
 });
 
 // =============================================
-// POST /api/income
+// POST /api/income — OWNER / ADMIN / MANAGER
 // =============================================
-router.post('/', invalidateAfterWrite, async (req, res) => {
-    try {
-        const userId = req.user.id;
-        const businessId = req.user.businessId;
-        const { source, amount, description, date } = req.body;
+router.post(
+    '/',
+    requireRole('OWNER', 'ADMIN', 'MANAGER'),
+    invalidateAfterWrite,
+    async (req, res) => {
+        try {
+            const userId = req.user.id;
+            const businessId = req.user.businessId;
+            const { source, amount, description, date } = req.body;
 
-        if (!businessId) {
-            return res.status(400).json({ success: false, message: 'Business context required' });
-        }
-        if (!source) {
-            return res.status(400).json({ success: false, message: 'Source is required' });
-        }
-        if (!amount || amount <= 0) {
-            return res.status(400).json({ success: false, message: 'Amount must be greater than 0' });
-        }
+            if (!businessId) {
+                return res.status(400).json({ success: false, message: 'Business context required' });
+            }
+            if (!source) {
+                return res.status(400).json({ success: false, message: 'Source is required' });
+            }
+            if (!amount || amount <= 0) {
+                return res.status(400).json({ success: false, message: 'Amount must be greater than 0' });
+            }
 
-        const result = await recordIncomeUseCase.execute({
-            userId,
-            businessId,
-            source,
-            amount,
-            description: description || '',
-            date: date || new Date(),
-        });
+            const result = await recordIncomeUseCase.execute({
+                userId,
+                businessId,
+                source,
+                amount,
+                description: description || '',
+                date: date || new Date(),
+            });
 
-        res.status(201).json({
-            success: true,
-            message: 'Income recorded successfully',
-            data: result
-        });
-    } catch (error) {
-        console.error('❌ Error recording income:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to record income'
-        });
+            res.status(201).json({
+                success: true,
+                message: 'Income recorded successfully',
+                data: result
+            });
+        } catch (error) {
+            console.error('❌ Error recording income:', error);
+            res.status(500).json({
+                success: false,
+                message: error.message || 'Failed to record income'
+            });
+        }
     }
-});
+);
 
 // =============================================
 // GET /api/income/:id
@@ -198,62 +207,23 @@ router.get('/:id', async (req, res) => {
 });
 
 // =============================================
-// PUT /api/income/:id
+// PUT /api/income/:id — BLOCKED (append-only)
 // =============================================
-router.put('/:id', invalidateAfterWrite, async (req, res) => {
-    try {
-        const { id } = req.params;
-        const userId = req.user.id;
-        const businessId = req.user.businessId;
-        const { source, amount, description, date } = req.body;
-
-        const existing = await incomeRepo.findById(parseInt(id));
-        if (!existing) {
-            return res.status(404).json({ success: false, message: 'Income record not found' });
-        }
-        if (existing.business_id !== businessId && existing.user_id !== userId) {
-            return res.status(403).json({ success: false, message: 'Access denied' });
-        }
-
-        const updateData = {};
-        if (source !== undefined) updateData.source = source;
-        if (amount !== undefined) updateData.amount = amount;
-        if (description !== undefined) updateData.description = description;
-        if (date !== undefined) updateData.date = date;
-
-        const updated = await incomeRepo.update(parseInt(id), updateData);
-
-        res.json({ success: true, message: 'Income updated successfully', data: updated });
-    } catch (error) {
-        console.error('❌ Error updating income:', error);
-        res.status(500).json({ success: false, message: error.message || 'Failed to update income' });
-    }
+router.put('/:id', (req, res) => {
+    res.status(405).json({
+        success: false,
+        message: 'Income entries cannot be edited. Record a reversal entry instead.',
+    });
 });
 
 // =============================================
-// DELETE /api/income/:id
+// DELETE /api/income/:id — BLOCKED (append-only)
 // =============================================
-router.delete('/:id', invalidateAfterWrite, async (req, res) => {
-    try {
-        const { id } = req.params;
-        const userId = req.user.id;
-        const businessId = req.user.businessId;
-
-        const existing = await incomeRepo.findById(parseInt(id));
-        if (!existing) {
-            return res.status(404).json({ success: false, message: 'Income record not found' });
-        }
-        if (existing.business_id !== businessId && existing.user_id !== userId) {
-            return res.status(403).json({ success: false, message: 'Access denied' });
-        }
-
-        await incomeRepo.delete(parseInt(id));
-
-        res.json({ success: true, message: 'Income record deleted successfully' });
-    } catch (error) {
-        console.error('❌ Error deleting income:', error);
-        res.status(500).json({ success: false, message: error.message || 'Failed to delete income' });
-    }
+router.delete('/:id', (req, res) => {
+    res.status(405).json({
+        success: false,
+        message: 'Income entries cannot be deleted. Record a reversal entry instead.',
+    });
 });
 
 module.exports = router;

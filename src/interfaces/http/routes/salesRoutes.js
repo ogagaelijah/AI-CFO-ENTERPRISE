@@ -1,6 +1,7 @@
 // src/interfaces/http/routes/salesRoutes.js
-// v2.2.0-prod — Adds pagination to GET /. Response now includes data.pagination.
-//               Backwards-compatible: data.sales and data.count still present.
+// v2.3.0-prod — Sales are append-only: PUT and DELETE always return 405.
+//               POST requires OWNER/ADMIN/MANAGER/CASHIER.
+// v2.2.0-prod — Adds pagination to GET /.
 // v2.1.0-prod — multi-tenant aware + 30s read cache for GET /
 
 const express = require('express');
@@ -12,6 +13,7 @@ const DebtorRepository = require('../../../infrastructure/database/sqlite/reposi
 const CustomerRepository = require('../../../infrastructure/database/sqlite/repositories/CustomerRepository');
 const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository');
 const { authMiddleware } = require('../middleware/authMiddleware');
+const { requireRole } = require('../middleware/requireRole');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
 const { cacheService } = require('../../../infrastructure/services/cache/CacheService');
 const {
@@ -82,76 +84,81 @@ router.get('/', async (req, res) => {
 });
 
 // =============================================
-// POST /api/sales
+// POST /api/sales — OWNER / ADMIN / MANAGER / CASHIER
 // =============================================
-router.post('/', invalidateAfterWrite, async (req, res) => {
-    try {
-        const userId = req.user.id;
-        const businessId = req.user.businessId;
+router.post(
+    '/',
+    requireRole('OWNER', 'ADMIN', 'MANAGER', 'CASHIER'),
+    invalidateAfterWrite,
+    async (req, res) => {
+        try {
+            const userId = req.user.id;
+            const businessId = req.user.businessId;
 
-        if (!businessId) {
-            return res.status(400).json({ success: false, message: 'Business context missing' });
+            if (!businessId) {
+                return res.status(400).json({ success: false, message: 'Business context missing' });
+            }
+
+            const {
+                itemName,
+                quantity,
+                unitPrice,
+                customerName,
+                customerId = null,
+                customerType = 'CUSTOMER',
+                paymentStatus = 'UNPAID',
+                amountPaid = 0,
+                skipInventory = false,
+                inventoryId = null,
+                saleDate = new Date(),
+                items = [],
+                totalCost = 0,
+                totalRevenue = 0,
+                totalProfit = 0,
+                notes = '',
+            } = req.body;
+
+            const result = await recordSaleUseCase.execute({
+                userId,
+                businessId,
+                itemName,
+                quantity: quantity || (items.length > 0 ? items[0]?.quantity : 0),
+                unitPrice: unitPrice || (items.length > 0 ? items[0]?.sellingPrice : 0),
+                customerName,
+                customerId,
+                customerType,
+                paymentStatus,
+                amountPaid,
+                skipInventory,
+                inventoryId,
+                saleDate: saleDate || new Date(),
+                items,
+                totalCost,
+                totalRevenue,
+                totalProfit,
+                notes: notes || '',
+            });
+
+            const allSales = await saleRepo.findByBusinessId(businessId);
+
+            res.status(201).json({
+                success: true,
+                message: 'Sale recorded successfully',
+                data: {
+                    sale: result,
+                    allSales,
+                    count: allSales.length,
+                },
+            });
+        } catch (error) {
+            console.error('[salesRoutes] POST error:', error.message);
+            res.status(500).json({
+                success: false,
+                message: error.message || 'Failed to record sale',
+            });
         }
-
-        const {
-            itemName,
-            quantity,
-            unitPrice,
-            customerName,
-            customerId = null,
-            customerType = 'CUSTOMER',
-            paymentStatus = 'UNPAID',
-            amountPaid = 0,
-            skipInventory = false,
-            inventoryId = null,
-            saleDate = new Date(),
-            items = [],
-            totalCost = 0,
-            totalRevenue = 0,
-            totalProfit = 0,
-            notes = '',
-        } = req.body;
-
-        const result = await recordSaleUseCase.execute({
-            userId,
-            businessId,
-            itemName,
-            quantity: quantity || (items.length > 0 ? items[0]?.quantity : 0),
-            unitPrice: unitPrice || (items.length > 0 ? items[0]?.sellingPrice : 0),
-            customerName,
-            customerId,
-            customerType,
-            paymentStatus,
-            amountPaid,
-            skipInventory,
-            inventoryId,
-            saleDate: saleDate || new Date(),
-            items,
-            totalCost,
-            totalRevenue,
-            totalProfit,
-            notes: notes || '',
-        });
-
-        const allSales = await saleRepo.findByBusinessId(businessId);
-
-        res.status(201).json({
-            success: true,
-            message: 'Sale recorded successfully',
-            data: {
-                sale: result,
-                allSales,
-                count: allSales.length,
-            },
-        });
-    } catch (error) {
-        console.error('[salesRoutes] POST error:', error.message);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to record sale',
-        });
     }
-});
+);
 
 // =============================================
 // GET /api/sales/:id
@@ -183,6 +190,26 @@ router.get('/:id', async (req, res) => {
             message: error.message || 'Failed to fetch sale',
         });
     }
+});
+
+// =============================================
+// PUT /api/sales/:id — BLOCKED (append-only)
+// =============================================
+router.put('/:id', (req, res) => {
+    res.status(405).json({
+        success: false,
+        message: 'Sales records cannot be edited. Record a reversal entry instead.',
+    });
+});
+
+// =============================================
+// DELETE /api/sales/:id — BLOCKED (append-only)
+// =============================================
+router.delete('/:id', (req, res) => {
+    res.status(405).json({
+        success: false,
+        message: 'Sales records cannot be deleted. Record a reversal entry instead.',
+    });
 });
 
 module.exports = router;
