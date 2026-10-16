@@ -1,4 +1,6 @@
 // src/interfaces/http/routes/purchaseRoutes.js
+// v2.3.0-prod — Purchases are append-only: PUT and DELETE always return 405.
+//               POST requires OWNER/ADMIN/MANAGER.
 // v2.2.0-prod — Backend-enforced confirmation
 
 const express = require('express');
@@ -11,6 +13,7 @@ const SupplierRepository = require('../../../infrastructure/database/sqlite/repo
 const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository');
 const RecordPurchaseUseCase = require('../../../application/useCases/purchases/RecordPurchaseUseCase');
 const { authMiddleware } = require('../middleware/authMiddleware');
+const { requireRole } = require('../middleware/requireRole');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
 
 const purchaseRepo = new PurchaseRepository();
@@ -141,98 +144,102 @@ router.get('/summary', async (req, res) => {
 });
 
 // =============================================
-// POST /api/purchases  — REQUIRES confirmed: true
+// POST /api/purchases — REQUIRES confirmed: true — OWNER / ADMIN / MANAGER
 // =============================================
-router.post('/', invalidateAfterWrite, async (req, res) => {
-    try {
-        const userId = req.user.id;
-        const businessId = req.user.businessId;
+router.post(
+    '/',
+    requireRole('OWNER', 'ADMIN', 'MANAGER'),
+    invalidateAfterWrite,
+    async (req, res) => {
+        try {
+            const userId = req.user.id;
+            const businessId = req.user.businessId;
 
-        if (!businessId) {
-            return res.status(400).json({ success: false, message: 'Business context missing' });
-        }
+            if (!businessId) {
+                return res.status(400).json({ success: false, message: 'Business context missing' });
+            }
 
-        const {
-            supplierName,
-            supplierPhone,
-            supplierEmail,
-            itemName,
-            quantity,
-            unitCost,
-            totalCost,
-            paymentStatus = 'UNPAID',
-            amountPaid = 0,
-            dueDate = null,
-            notes = '',
-            purchaseDate = new Date(),
-            items = [],
-            confirmed,
-        } = req.body;
+            const {
+                supplierName,
+                supplierPhone,
+                supplierEmail,
+                itemName,
+                quantity,
+                unitCost,
+                totalCost,
+                paymentStatus = 'UNPAID',
+                amountPaid = 0,
+                dueDate = null,
+                notes = '',
+                purchaseDate = new Date(),
+                items = [],
+                confirmed,
+            } = req.body;
 
-        // 🔒 Backend enforcement: nothing records without explicit confirmation.
-        if (confirmed !== true) {
-            return res.status(400).json({
-                success: false,
-                message: 'Purchase not confirmed. Set "confirmed": true to record.',
-                code: 'CONFIRMATION_REQUIRED',
-            });
-        }
+            if (confirmed !== true) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Purchase not confirmed. Set "confirmed": true to record.',
+                    code: 'CONFIRMATION_REQUIRED',
+                });
+            }
 
-        const hasItems = items && items.length > 0;
-        const hasSingleItem = itemName && quantity && unitCost;
+            const hasItems = items && items.length > 0;
+            const hasSingleItem = itemName && quantity && unitCost;
 
-        if (!hasItems && !hasSingleItem) {
-            return res.status(400).json({
-                success: false,
-                message: 'Either "items" array or (itemName, quantity, unitCost) is required',
-            });
-        }
+            if (!hasItems && !hasSingleItem) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Either "items" array or (itemName, quantity, unitCost) is required',
+                });
+            }
 
-        if (hasItems) {
-            for (const item of items) {
-                if (!item.name || !item.name.trim()) {
-                    return res.status(400).json({ success: false, message: 'All items must have a name' });
-                }
-                if (!item.quantity || item.quantity <= 0) {
-                    return res.status(400).json({ success: false, message: `Quantity for "${item.name}" must be greater than 0` });
-                }
-                if (!item.unitCost || item.unitCost <= 0) {
-                    return res.status(400).json({ success: false, message: `Unit cost for "${item.name}" must be greater than 0` });
+            if (hasItems) {
+                for (const item of items) {
+                    if (!item.name || !item.name.trim()) {
+                        return res.status(400).json({ success: false, message: 'All items must have a name' });
+                    }
+                    if (!item.quantity || item.quantity <= 0) {
+                        return res.status(400).json({ success: false, message: `Quantity for "${item.name}" must be greater than 0` });
+                    }
+                    if (!item.unitCost || item.unitCost <= 0) {
+                        return res.status(400).json({ success: false, message: `Unit cost for "${item.name}" must be greater than 0` });
+                    }
                 }
             }
+
+            const result = await recordPurchaseUseCase.execute({
+                userId,
+                businessId,
+                supplierName,
+                supplierPhone,
+                supplierEmail,
+                itemName,
+                quantity,
+                unitCost,
+                totalCost,
+                paymentStatus,
+                amountPaid,
+                dueDate,
+                notes,
+                purchaseDate,
+                items: hasItems ? items : [],
+            });
+
+            res.status(201).json({
+                success: true,
+                message: 'Purchase recorded successfully',
+                data: result,
+            });
+        } catch (error) {
+            console.error('[purchaseRoutes] POST error:', error.message);
+            res.status(500).json({
+                success: false,
+                message: error.message || 'Failed to record purchase',
+            });
         }
-
-        const result = await recordPurchaseUseCase.execute({
-            userId,
-            businessId,
-            supplierName,
-            supplierPhone,
-            supplierEmail,
-            itemName,
-            quantity,
-            unitCost,
-            totalCost,
-            paymentStatus,
-            amountPaid,
-            dueDate,
-            notes,
-            purchaseDate,
-            items: hasItems ? items : [],
-        });
-
-        res.status(201).json({
-            success: true,
-            message: 'Purchase recorded successfully',
-            data: result,
-        });
-    } catch (error) {
-        console.error('[purchaseRoutes] POST error:', error.message);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to record purchase',
-        });
     }
-});
+);
 
 // =============================================
 // GET /api/purchases/:id
@@ -259,64 +266,23 @@ router.get('/:id', async (req, res) => {
 });
 
 // =============================================
-// PUT /api/purchases/:id
+// PUT /api/purchases/:id — BLOCKED (append-only)
 // =============================================
-router.put('/:id', invalidateAfterWrite, async (req, res) => {
-    try {
-        const { id } = req.params;
-        const businessId = req.user.businessId;
-        const { supplierName, itemName, quantity, unitCost, totalCost, paymentStatus, amountPaid, dueDate } = req.body;
-
-        const existing = await purchaseRepo.findById(parseInt(id));
-        if (!existing) {
-            return res.status(404).json({ success: false, message: 'Purchase record not found' });
-        }
-        if (existing.business_id !== businessId) {
-            return res.status(403).json({ success: false, message: 'Access denied' });
-        }
-
-        const updateData = {};
-        if (supplierName !== undefined) updateData.supplier_name = supplierName;
-        if (itemName !== undefined) updateData.item_name = itemName;
-        if (quantity !== undefined) updateData.quantity = quantity;
-        if (unitCost !== undefined) updateData.unit_cost = unitCost;
-        if (totalCost !== undefined) updateData.total_cost = totalCost;
-        if (paymentStatus !== undefined) updateData.payment_status = paymentStatus;
-        if (amountPaid !== undefined) updateData.amount_paid = amountPaid;
-        if (dueDate !== undefined) updateData.due_date = dueDate;
-
-        const updated = await purchaseRepo.update(parseInt(id), updateData);
-
-        res.json({ success: true, message: 'Purchase updated successfully', data: updated });
-    } catch (error) {
-        console.error('[purchaseRoutes] PUT error:', error.message);
-        res.status(500).json({ success: false, message: error.message || 'Failed to update purchase' });
-    }
+router.put('/:id', (req, res) => {
+    res.status(405).json({
+        success: false,
+        message: 'Purchase records cannot be edited. Record a reversal entry instead.',
+    });
 });
 
 // =============================================
-// DELETE /api/purchases/:id
+// DELETE /api/purchases/:id — BLOCKED (append-only)
 // =============================================
-router.delete('/:id', invalidateAfterWrite, async (req, res) => {
-    try {
-        const { id } = req.params;
-        const businessId = req.user.businessId;
-
-        const existing = await purchaseRepo.findById(parseInt(id));
-        if (!existing) {
-            return res.status(404).json({ success: false, message: 'Purchase record not found' });
-        }
-        if (existing.business_id !== businessId) {
-            return res.status(403).json({ success: false, message: 'Access denied' });
-        }
-
-        await purchaseRepo.delete(parseInt(id));
-
-        res.json({ success: true, message: 'Purchase record deleted successfully' });
-    } catch (error) {
-        console.error('[purchaseRoutes] DELETE error:', error.message);
-        res.status(500).json({ success: false, message: error.message || 'Failed to delete purchase' });
-    }
+router.delete('/:id', (req, res) => {
+    res.status(405).json({
+        success: false,
+        message: 'Purchase records cannot be deleted. Record a reversal entry instead.',
+    });
 });
 
 module.exports = router;

@@ -1,13 +1,18 @@
 // src/interfaces/http/middleware/authMiddleware.js
-// v3.1.0-prod — Stateless auth + session revocation
+// v4.0.0-prod — Strict multi-tenant auth. Role resolved fresh from
+//               business_members on every request. No fallback to
+//               businesses.user_id. Removed users get 403 immediately.
+// v3.1.0-prod — Stateless auth + session revocation.
 
 const jwt = require('jsonwebtoken');
 const UserRepository = require('../../../infrastructure/database/sqlite/repositories/UserRepository');
 const BusinessRepository = require('../../../infrastructure/database/sqlite/repositories/BusinessRepository');
+const BusinessMemberRepository = require('../../../infrastructure/database/sqlite/repositories/BusinessMemberRepository');
 const logger = require('../../../shared/utils/logger');
 
 const userRepo = new UserRepository();
 const businessRepo = new BusinessRepository();
+const memberRepo = new BusinessMemberRepository();
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -51,6 +56,7 @@ const authMiddleware = async (req, res, next) => {
       });
     }
 
+    // Password change invalidates older tokens
     if (user.passwordChangedAt) {
       const passwordChangedAtSeconds = Math.floor(
         new Date(user.passwordChangedAt).getTime() / 1000
@@ -63,27 +69,47 @@ const authMiddleware = async (req, res, next) => {
       }
     }
 
-    // Fast path: JWT carries businessId
+    // ── Resolve membership (strict, DB-fresh on every request) ──
+    let membership = null;
+
     if (decoded.businessId) {
-      req.user = {
-        id: decoded.id,
-        email: decoded.email,
-        businessId: decoded.businessId,
-        industry: decoded.industry || null,
-        emailVerified: user.emailVerified,
-      };
-      return next();
+      // Normal path: JWT carries businessId → look up that specific membership
+      membership = await memberRepo.findByBusinessAndUser(
+        decoded.businessId,
+        user.id
+      );
+    } else {
+      // Legacy token path: JWT has no businessId → resolve first active membership
+      membership = await memberRepo.findFirstActiveByUser(user.id);
     }
 
-    // Slow path (legacy tokens): resolve businessId from DB
-    const business = await businessRepo.findByUserIdFirst(user.id);
+    // No active membership → 403 (not 401 — user is authenticated, just unauthorized)
+    if (!membership || membership.status !== 'ACTIVE') {
+      logger.warn(
+        {
+          userId: user.id,
+          requestedBusinessId: decoded.businessId || null,
+          path: req.originalUrl,
+        },
+        'auth: no active business membership'
+      );
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have access to this business. Contact the owner.',
+      });
+    }
+
+    // Load the business (needed for industry + as tenant anchor)
+    const business = await businessRepo.findById(membership.businessId);
 
     req.user = {
       id: user.id,
       email: user.email,
       fullName: user.fullName,
-      businessId: business?.id || null,
+      businessId: membership.businessId,
       industry: business?.industry || null,
+      role: membership.role,
+      memberId: membership.id,
       emailVerified: user.emailVerified,
     };
 

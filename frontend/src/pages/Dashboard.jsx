@@ -1,12 +1,14 @@
 // frontend/src/pages/Dashboard.jsx
-// v2.3.0-prod — Mounts VerifyEmailBanner above WelcomeBanner when
-//               user.emailVerified is false.
-// v2.2.1-prod — Regex fix: handles '/' in industry names (NGO / Non-Profit).
+// v2.4.0-prod — Uses useRole for widget + nav gating. DashboardSidebar
+//               handles role-filtering of nav items via industryConfig roles.
+// v2.3.0-prod — Mounts VerifyEmailBanner above WelcomeBanner.
+// v2.2.1-prod — Regex fix: handles '/' in industry names.
 
 import { useState } from 'react';
 import { Home } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { usePlan } from '../hooks/usePlan';
+import useRole from '../hooks/useRole';
 import { INDUSTRY_CONFIGS } from '../config/industryConfig';
 import { useDashboardData } from '../hooks/useDashboardData';
 
@@ -23,17 +25,6 @@ import WelcomeMessage from '../components/dashboard/WelcomeMessage';
 import TrialBanner from '../components/subscription/TrialBanner';
 import ReadOnlyBanner from '../components/subscription/ReadOnlyBanner';
 import VerifyEmailBanner from '../components/dashboard/VerifyEmailBanner';
-
-const TRANSACTION_LABELS = new Set([
-  'Sales', 'Income', 'Expenses', 'Purchases',
-  'Inventory', 'Debtors', 'Creditors',
-  'Customers', 'Suppliers', 'Projects',
-  'Trips', 'Vehicles', 'Drivers', 'Properties',
-  'Tenants', 'Rent', 'Students', 'Classes',
-  'Fees', 'Visits', 'Patients', 'Clients', 'Hours',
-  'Raw Materials', 'Production', 'Materials',
-  'Donations', 'Pledges', 'Donors',
-]);
 
 const normalizeIndustry = (industry) => {
   if (!industry) return 'RETAIL';
@@ -61,6 +52,7 @@ const normalizeIndustry = (industry) => {
 const Dashboard = () => {
   const { user, logout } = useAuth();
   const { can, isTrial, isReadOnly, daysRemaining, planName } = usePlan();
+  const { canViewFinancialWidgets } = useRole();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const userIndustry = normalizeIndustry(user?.industry || 'RETAIL');
@@ -77,33 +69,11 @@ const Dashboard = () => {
     refresh,
   } = useDashboardData();
 
-  const rawNavItems = [
+  // Build nav items. DashboardSidebar filters by role using each item's `roles`.
+  const navItems = [
     { icon: Home, label: 'Dashboard', href: '/dashboard', active: true },
     ...(industryConfig.sidebar || []),
   ];
-
-  const filtered = rawNavItems.filter((item) => {
-    if (item.type === 'section') return true;
-    if (item.label === 'Dashboard') return true;
-    if (TRANSACTION_LABELS.has(item.label)) return true;
-
-    if (item.label === 'Analytics' || item.label === 'Analytics Dashboard')
-      return can('analytics');
-    if (item.label === 'Reports') return true;
-    if (item.label === 'Forecast') return can('forecast');
-    if (item.label === 'Risk') return can('risk');
-    if (item.label === 'Decisions') return can('decisions');
-    if (item.label === 'AI Assistant') return can('ai_advisor');
-    if (item.label === 'Subscription' || item.label === 'Settings') return true;
-
-    return true;
-  });
-
-  const navItems = filtered.filter((item, i) => {
-    if (item.type !== 'section') return true;
-    const next = filtered[i + 1];
-    return next && next.type !== 'section';
-  });
 
   const handleLogout = () => {
     logout();
@@ -111,6 +81,11 @@ const Dashboard = () => {
   };
 
   const closeMenu = () => setIsMobileMenuOpen(false);
+
+  // Show health/risk/decisions cards only if:
+  //   1. Plan includes the analytics feature, AND
+  //   2. User's role allows financial widgets
+  const showIntelligenceWidgets = can('analytics') && canViewFinancialWidgets;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-900 transition-colors duration-300 flex overflow-x-hidden">
@@ -165,7 +140,7 @@ const Dashboard = () => {
             <>
               <StatsGrid industryConfig={industryConfig} kpis={kpis} />
 
-              {can('analytics') && (
+              {showIntelligenceWidgets && (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
                   <HealthScoreCard healthScore={healthScore} />
                   <TopRisksCard risks={topRisks} />

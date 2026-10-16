@@ -1,8 +1,10 @@
 // frontend/src/components/dashboard/StatsGrid.jsx
+// v1.6.0-prod — Filters stat cards by role (hides profit/revenue from Cashier).
 // v1.5.0-prod — adds cash_in / cash_out (today's cash movements).
 
 import { Link } from 'react-router-dom';
 import { STAT_COLORS } from '../../config/industryConfig';
+import useRole from '../../hooks/useRole';
 
 const DAILY_KEYS = new Set(['revenue', 'sales', 'profit', 'expenses', 'cash_in', 'cash_out']);
 const BALANCE_KEYS = new Set([
@@ -39,13 +41,23 @@ const formatCurrency = (n) => `₦${Math.round(Number(n) || 0).toLocaleString()}
 const formatNumber = (n) => Math.round(Number(n) || 0).toLocaleString();
 
 const StatsGrid = ({ industryConfig, kpis }) => {
+  const { role } = useRole();
+
   if (!industryConfig?.stats || industryConfig.stats.length === 0) {
     return null;
   }
 
+  // Filter stats by role. Stats without a `roles` field are shown to everyone.
+  const visibleStats = industryConfig.stats.filter((stat) => {
+    if (!stat.roles) return true;
+    return stat.roles.includes(role);
+  });
+
+  if (visibleStats.length === 0) return null;
+
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 w-full">
-      {industryConfig.stats.map((stat, index) => {
+      {visibleStats.map((stat, index) => {
         const kpi = kpis?.[stat.key] || {};
         const StatIcon = stat.icon;
         const colorClass = STAT_COLORS[stat.color] || STAT_COLORS.primary;
@@ -61,7 +73,6 @@ const StatsGrid = ({ industryConfig, kpis }) => {
           primaryValue = Number(
             kpi.today ?? kpi.month ?? kpi.total ?? kpi.current ?? 0
           );
-          // Config label wins over API label — industry config is the SSOT.
           displayLabel = stat.label || kpi.label || `${stat.label} Today`;
 
           const monthNum = Number(kpi.month ?? 0);
@@ -75,13 +86,11 @@ const StatsGrid = ({ industryConfig, kpis }) => {
           primaryValue = Number(
             kpi.total ?? kpi.current ?? kpi.month ?? kpi.today ?? 0
           );
-          // Config label wins over API label.
           displayLabel = stat.label || kpi.label || stat.label;
         } else {
           primaryValue = Number(
             kpi.month ?? kpi.total ?? kpi.current ?? kpi.today ?? 0
           );
-          // Config label wins over API label.
           displayLabel = stat.label || kpi.label || stat.label;
         }
 

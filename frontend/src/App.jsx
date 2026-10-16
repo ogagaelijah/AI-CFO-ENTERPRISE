@@ -1,9 +1,8 @@
 // frontend/src/App.jsx
-// v2.5.0 — Removes global <ChatWidget />. Chat widget now lives inside
-//           Landing.jsx only (previously appeared on every route).
+// v2.6.0 — Adds /accept-invite public route.
+// v2.5.0 — Removes global <ChatWidget />.
 // v2.4.0 — Adds route-level code splitting via React.lazy + Suspense.
 // v2.3.0 — Adds /verify-email, /forgot-password, /reset-password routes.
-// v2.2.0 — Mounts <ChatWidget /> globally inside BrowserRouter.
 
 import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
@@ -18,16 +17,15 @@ import Login from './pages/Login';
 import VerifyEmail from './pages/VerifyEmail';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
+import AcceptInvite from './pages/AcceptInvite';   // ★ NEW
 
 // ── Lazy pages (loaded on demand) ───────────────────────────────────────
-// Authenticated / dashboard
 const Dashboard       = lazy(() => import('./pages/Dashboard'));
 const AdminDashboard  = lazy(() => import('./pages/AdminDashboard'));
 const Settings        = lazy(() => import('./pages/Settings'));
 const Subscription    = lazy(() => import('./pages/Subscription'));
 const PaymentSuccess  = lazy(() => import('./pages/PaymentSuccess'));
 
-// Core business
 const Sales           = lazy(() => import('./pages/Sales'));
 const Expenses        = lazy(() => import('./pages/Expenses'));
 const Income          = lazy(() => import('./pages/Income'));
@@ -39,32 +37,26 @@ const Suppliers       = lazy(() => import('./pages/Suppliers'));
 const Customers       = lazy(() => import('./pages/Customers'));
 const Invoices        = lazy(() => import('./pages/Invoices'));
 
-// Education vertical
 const Students        = lazy(() => import('./pages/Students'));
 const Classes         = lazy(() => import('./pages/Classes'));
 const Enrollments     = lazy(() => import('./pages/Enrollments'));
 const Terms           = lazy(() => import('./pages/Terms'));
 const Fees            = lazy(() => import('./pages/Fees'));
 
-// NGO vertical
 const Pledges         = lazy(() => import('./pages/Pledges'));
 const Donations       = lazy(() => import('./pages/Donations'));
 
-// Consultancy vertical
 const Projects        = lazy(() => import('./pages/Projects'));
 const TimeEntries     = lazy(() => import('./pages/TimeEntries'));
 
-// Intelligence layer
 const Analytics       = lazy(() => import('./pages/Analytics'));
 const Forecast        = lazy(() => import('./pages/Forecast'));
 const Risk            = lazy(() => import('./pages/Risk'));
 const Decisions       = lazy(() => import('./pages/Decisions'));
 const Advisor         = lazy(() => import('./pages/Advisor'));
 
-// Reports
 const Reports         = lazy(() => import('./pages/Reports'));
 
-// ── Loading fallback ────────────────────────────────────────────────────
 function PageLoader() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-slate-900">
@@ -90,6 +82,7 @@ function App() {
               <Route path="/verify-email" element={<VerifyEmail />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="/accept-invite" element={<AcceptInvite />} />  {/* ★ NEW */}
               <Route path="/payment/success" element={<PaymentSuccess />} />
 
               {/* Protected Routes - Regular Users */}
