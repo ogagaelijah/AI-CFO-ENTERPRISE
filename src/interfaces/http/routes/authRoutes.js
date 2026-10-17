@@ -1,7 +1,5 @@
 // src/interfaces/http/routes/authRoutes.js
-// v5.0.0-prod — Register creates OWNER membership. /me and /login return role.
-// v4.0.0-prod — Email duplicate 409 EMAIL_TAKEN with explicit message.
-// v3.9.0-prod — Friendly duplicate-phone error, phone normalization.
+// v5.3.0-prod — Fully refactored to use LoginUseCase. Added 2FA (TOTP) endpoints including Disable.
 
 const express = require('express');
 const router = express.Router();
@@ -17,9 +15,14 @@ const SecurityEventService = require('../../../infrastructure/services/security/
 const { withTransaction } = require('../../../infrastructure/database/sqlite/connection');
 const plans = require('../../../config/plans');
 
+const LoginUseCase = require('../../../application/useCases/auth/LoginUseCase');
 const VerifyEmailUseCase = require('../../../application/useCases/auth/VerifyEmailUseCase');
 const ForgotPasswordUseCase = require('../../../application/useCases/auth/ForgotPasswordUseCase');
 const ResetPasswordUseCase = require('../../../application/useCases/auth/ResetPasswordUseCase');
+const Setup2FAUseCase = require('../../../application/useCases/auth/Setup2FAUseCase');
+const Enable2FAUseCase = require('../../../application/useCases/auth/Enable2FAUseCase');
+const Verify2FALoginUseCase = require('../../../application/useCases/auth/Verify2FALoginUseCase');
+const Disable2FAUseCase = require('../../../application/useCases/auth/Disable2FAUseCase'); // ★ NEW
 
 const emailService = require('../../../infrastructure/services/email/ResendService');
 const logger = require('../../../shared/utils/logger');
@@ -37,9 +40,15 @@ const memberRepo = new BusinessMemberRepository();
 const subscriptionRepo = new SubscriptionRepository();
 const securityEvents = new SecurityEventService();
 
+// Initialize Use Cases
+const loginUseCase = new LoginUseCase(userRepo, memberRepo, businessRepo);
 const verifyEmailUseCase = new VerifyEmailUseCase({ userRepository: userRepo });
 const forgotPasswordUseCase = new ForgotPasswordUseCase(userRepo, { emailService });
 const resetPasswordUseCase = new ResetPasswordUseCase(userRepo);
+const setup2FAUseCase = new Setup2FAUseCase(userRepo);
+const enable2FAUseCase = new Enable2FAUseCase(userRepo);
+const verify2FALoginUseCase = new Verify2FALoginUseCase(userRepo);
+const disable2FAUseCase = new Disable2FAUseCase(userRepo); // ★ NEW
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 const JWT_EXPIRES_IN = '7d';
@@ -53,21 +62,14 @@ const COOKIE_OPTIONS = {
 };
 
 const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
-
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_MAX_BYTES = 72;
 
 const validatePassword = (password) => {
   if (typeof password !== 'string') return 'Password must be a string';
-  if (password.length < PASSWORD_MIN_LENGTH) {
-    return `Password must be at least ${PASSWORD_MIN_LENGTH} characters`;
-  }
-  if (password.trim().length === 0) {
-    return 'Password cannot be only whitespace';
-  }
-  if (Buffer.byteLength(password, 'utf8') > PASSWORD_MAX_BYTES) {
-    return `Password is too long (max ${PASSWORD_MAX_BYTES} bytes)`;
-  }
+  if (password.length < PASSWORD_MIN_LENGTH) return `Password must be at least ${PASSWORD_MIN_LENGTH} characters`;
+  if (password.trim().length === 0) return 'Password cannot be only whitespace';
+  if (Buffer.byteLength(password, 'utf8') > PASSWORD_MAX_BYTES) return `Password is too long (max ${PASSWORD_MAX_BYTES} bytes)`;
   return null;
 };
 
@@ -75,34 +77,32 @@ const normalizePhone = (input) => {
   if (!input || typeof input !== 'string') return null;
   let s = input.trim().replace(/[^\d+]/g, '');
   if (s.startsWith('+')) s = s.slice(1);
-  if (s.startsWith('234') && s.length === 13) {
-    s = '0' + s.slice(3);
-  }
+  if (s.startsWith('234') && s.length === 13) s = '0' + s.slice(3);
   if (!/^0\d{10}$/.test(s)) return null;
   return s;
 };
 
 const signToken = (user, business) =>
   jwt.sign(
-    {
-      id: user.id,
-      email: user.email,
-      businessId: business?.id || null,
-      industry: business?.industry || null,
-    },
+    { id: user.id, email: user.email, businessId: business?.id || null, industry: business?.industry || null },
     JWT_SECRET,
     { expiresIn: JWT_EXPIRES_IN }
   );
 
-const hashToken = (raw) =>
-  crypto.createHash('sha256').update(raw).digest('hex');
-
-const clientIp = (req) =>
-  (req.headers['x-forwarded-for'] || '').split(',')[0].trim() ||
-  req.socket?.remoteAddress ||
-  'unknown';
-
+const hashToken = (raw) => crypto.createHash('sha256').update(raw).digest('hex');
+const clientIp = (req) => (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || 'unknown';
 const clientUa = (req) => req.headers['user-agent'] || 'unknown';
+
+const authenticateToken = (req, res, next) => {
+  const token = req.cookies.token || (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : null);
+  if (!token) return res.status(401).json({ success: false, message: 'Not authenticated' });
+  try {
+    req.user = jwt.verify(token, JWT_SECRET);
+    next();
+  } catch (err) {
+    return res.status(401).json({ success: false, message: 'Invalid token' });
+  }
+};
 
 // ─────────────────────────────────────────────
 // POST /register
@@ -110,209 +110,64 @@ const clientUa = (req) => req.headers['user-agent'] || 'unknown';
 router.post('/register', registerLimiter, async (req, res) => {
   try {
     const { fullName, email, phone, password, businessName, industry } = req.body;
-
-    if (!fullName || !email || !password || !businessName || !industry) {
-      return res.status(400).json({ success: false, message: 'Missing required fields' });
-    }
+    if (!fullName || !email || !password || !businessName || !industry) return res.status(400).json({ success: false, message: 'Missing required fields' });
 
     const pwError = validatePassword(password);
-    if (pwError) {
-      return res.status(400).json({ success: false, message: pwError });
-    }
+    if (pwError) return res.status(400).json({ success: false, message: pwError });
 
     let normalizedPhone = null;
     if (phone && String(phone).trim().length > 0) {
       normalizedPhone = normalizePhone(phone);
-      if (!normalizedPhone) {
-        return res.status(400).json({
-          success: false,
-          code: 'INVALID_PHONE',
-          message: 'Please enter a valid Nigerian phone number (e.g. 07033621133).',
-        });
-      }
+      if (!normalizedPhone) return res.status(400).json({ success: false, code: 'INVALID_PHONE', message: 'Please enter a valid Nigerian phone number.' });
     }
 
-    const emailExists = await userRepo.emailExists(email);
-    if (emailExists) {
-      securityEvents.log({
-        eventType: 'REGISTER_DUPLICATE_EMAIL',
-        email,
-        ipAddress: clientIp(req),
-        userAgent: clientUa(req),
-      });
-      return res.status(409).json({
-        success: false,
-        code: 'EMAIL_TAKEN',
-        message: 'This email is already registered. Please log in or use a different email.',
-      });
+    if (await userRepo.emailExists(email)) {
+      securityEvents.log({ eventType: 'REGISTER_DUPLICATE_EMAIL', email, ipAddress: clientIp(req), userAgent: clientUa(req) });
+      return res.status(409).json({ success: false, code: 'EMAIL_TAKEN', message: 'This email is already registered.' });
     }
 
-    if (normalizedPhone) {
-      const phoneExists = await userRepo.phoneExists(normalizedPhone);
-      if (phoneExists) {
-        securityEvents.log({
-          eventType: 'REGISTER_DUPLICATE_PHONE',
-          phone: normalizedPhone,
-          ipAddress: clientIp(req),
-          userAgent: clientUa(req),
-        });
-        return res.status(409).json({
-          success: false,
-          code: 'PHONE_TAKEN',
-          message: 'This phone number is already registered. Please use a different one or log in.',
-        });
-      }
+    if (normalizedPhone && await userRepo.phoneExists(normalizedPhone)) {
+      securityEvents.log({ eventType: 'REGISTER_DUPLICATE_PHONE', phone: normalizedPhone, ipAddress: clientIp(req), userAgent: clientUa(req) });
+      return res.status(409).json({ success: false, code: 'PHONE_TAKEN', message: 'This phone number is already registered.' });
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
     const uniqueTelegramId = `web_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
-
     const rawVerifyToken = crypto.randomBytes(32).toString('hex');
     const hashedVerifyToken = hashToken(rawVerifyToken);
     const verifyExpiry = new Date(Date.now() + EMAIL_VERIFICATION_TTL_MS).toISOString();
 
-    const { user, business, trialPlanId, trialPlan, trialDays, trialEndDate } =
-      await withTransaction(async () => {
-        const u = await userRepo.create({
-          telegramId: uniqueTelegramId,
-          email,
-          phoneNumber: normalizedPhone,
-          fullName,
-          passwordHash,
-          emailVerified: false,
-          phoneVerified: false,
-          emailVerificationToken: hashedVerifyToken,
-          emailVerificationExpiry: verifyExpiry,
-          passwordChangedAt: new Date().toISOString(),
-        });
-
-        const b = await businessRepo.create({
-          userId: u.id,
-          name: businessName,
-          industry,
-        });
-
-        // ★ NEW: create OWNER membership row
-        await memberRepo.create({
-          businessId: b.id,
-          userId: u.id,
-          role: 'OWNER',
-          status: 'ACTIVE',
-          invitedBy: null,
-          invitedAt: null,
-          acceptedAt: new Date().toISOString(),
-        });
-
-        const tpId = plans.getTrialPlan();
-        const tp = plans.getPlan(tpId);
-        const tDays = plans.getTrialDays(tpId);
-        const tEnd = new Date();
-        tEnd.setDate(tEnd.getDate() + tDays);
-
-        await subscriptionRepo.create({
-          businessId: b.id,
-          planId: tpId,
-          status: 'trial',
-          billingCycle: 'trial',
-          startDate: new Date(),
-          endDate: null,
-          trialEndDate: tEnd,
-          features: tp.features,
-        });
-
-        return {
-          user: u,
-          business: b,
-          trialPlanId: tpId,
-          trialPlan: tp,
-          trialDays: tDays,
-          trialEndDate: tEnd,
-        };
-      });
-
-    try {
-      await emailService.sendVerification({
-        to: user.email,
-        fullName: user.fullName,
-        token: rawVerifyToken,
-      });
-    } catch (emailErr) {
-      logger.error(
-        { err: emailErr.message, userId: user.id, email: user.email },
-        'register: verification email send failed'
-      );
-    }
-
-    securityEvents.log({
-      eventType: 'REGISTER_SUCCESS',
-      userId: user.id,
-      email,
-      ipAddress: clientIp(req),
-      userAgent: clientUa(req),
-      metadata: { businessId: business.id, trialPlanId, trialDays },
+    const { user, business, trialPlanId, trialPlan, trialDays, trialEndDate } = await withTransaction(async () => {
+      const u = await userRepo.create({ telegramId: uniqueTelegramId, email, phoneNumber: normalizedPhone, fullName, passwordHash, emailVerified: false, phoneVerified: false, emailVerificationToken: hashedVerifyToken, emailVerificationExpiry: verifyExpiry, passwordChangedAt: new Date().toISOString() });
+      const b = await businessRepo.create({ userId: u.id, name: businessName, industry });
+      await memberRepo.create({ businessId: b.id, userId: u.id, role: 'OWNER', status: 'ACTIVE', invitedBy: null, invitedAt: null, acceptedAt: new Date().toISOString() });
+      const tpId = plans.getTrialPlan(); const tp = plans.getPlan(tpId); const tDays = plans.getTrialDays(tpId);
+      const tEnd = new Date(); tEnd.setDate(tEnd.getDate() + tDays);
+      await subscriptionRepo.create({ businessId: b.id, planId: tpId, status: 'trial', billingCycle: 'trial', startDate: new Date(), endDate: null, trialEndDate: tEnd, features: tp.features });
+      return { user: u, business: b, trialPlanId: tpId, trialPlan: tp, trialDays: tDays, trialEndDate: tEnd };
     });
+
+    try { await emailService.sendVerification({ to: user.email, fullName: user.fullName, token: rawVerifyToken }); } catch (emailErr) { logger.error({ err: emailErr.message, userId: user.id }, 'register: verification email send failed'); }
+
+    securityEvents.log({ eventType: 'REGISTER_SUCCESS', userId: user.id, email, ipAddress: clientIp(req), userAgent: clientUa(req), metadata: { businessId: business.id } });
 
     const token = signToken(user, business);
     res.cookie('token', token, COOKIE_OPTIONS);
 
     return res.status(201).json({
-      success: true,
-      message: `Account created. Check your email to verify your account. You have ${trialDays} days of ${trialPlan.name} access.`,
-      token,
-      user: {
-        id: user.id,
-        fullName: user.fullName,
-        email: user.email,
-        phoneNumber: user.phoneNumber,
-        industry: business.industry,
-        businessId: business.id,
-        role: 'OWNER',   // ★ NEW
-        emailVerified: false,
-      },
-      business: {
-        id: business.id,
-        name: business.name,
-        industry: business.industry,
-      },
-      trial: {
-        planId: trialPlanId,
-        planName: trialPlan.name,
-        days: trialDays,
-        endDate: trialEndDate,
-      },
+      success: true, message: `Account created. You have ${trialDays} days of ${trialPlan.name} access.`, token,
+      user: { id: user.id, fullName: user.fullName, email: user.email, phoneNumber: user.phoneNumber, industry: business.industry, businessId: business.id, role: 'OWNER', emailVerified: false },
+      business: { id: business.id, name: business.name, industry: business.industry },
+      trial: { planId: trialPlanId, planName: trialPlan.name, days: trialDays, endDate: trialEndDate },
     });
   } catch (error) {
-    console.error('Register error:', error);
-
     if (error.code === '23505') {
       const constraint = error.constraint || '';
-
-      if (constraint.includes('email')) {
-        return res.status(409).json({
-          success: false,
-          code: 'EMAIL_TAKEN',
-          message: 'This email is already registered. Please log in or use a different email.',
-        });
-      }
-
-      if (constraint.includes('phone')) {
-        return res.status(409).json({
-          success: false,
-          code: 'PHONE_TAKEN',
-          message: 'This phone number is already registered. Please use a different one or log in.',
-        });
-      }
-
-      return res.status(409).json({
-        success: false,
-        message: 'Some of your information is already registered. Please check and try again.',
-      });
+      if (constraint.includes('email')) return res.status(409).json({ success: false, code: 'EMAIL_TAKEN', message: 'This email is already registered.' });
+      if (constraint.includes('phone')) return res.status(409).json({ success: false, code: 'PHONE_TAKEN', message: 'This phone number is already registered.' });
+      return res.status(409).json({ success: false, message: 'Some of your information is already registered.' });
     }
-
-    return res.status(500).json({
-      success: false,
-      message: error.message || 'Registration failed',
-    });
+    return res.status(500).json({ success: false, message: error.message || 'Registration failed' });
   }
 });
 
@@ -322,78 +177,32 @@ router.post('/register', registerLimiter, async (req, res) => {
 router.post('/verify-email', strictLimiter, async (req, res) => {
   try {
     const { token } = req.body;
-    if (!token) {
-      return res.status(400).json({ success: false, message: 'Verification token is required' });
-    }
-
+    if (!token) return res.status(400).json({ success: false, message: 'Verification token is required' });
     const result = await verifyEmailUseCase.execute({ token });
-
-    securityEvents.log({
-      eventType: 'EMAIL_VERIFIED',
-      userId: result.user?.id,
-      email: result.user?.email,
-      ipAddress: clientIp(req),
-      userAgent: clientUa(req),
-    });
-
+    securityEvents.log({ eventType: 'EMAIL_VERIFIED', userId: result.user?.id, email: result.user?.email, ipAddress: clientIp(req), userAgent: clientUa(req) });
     return res.json({ success: true, message: result.message });
-  } catch (error) {
-    return res.status(400).json({
-      success: false,
-      message: error.message || 'Verification failed',
-    });
-  }
+  } catch (error) { return res.status(400).json({ success: false, message: error.message || 'Verification failed' }); }
 });
 
 // ─────────────────────────────────────────────
 // POST /resend-verification
 // ─────────────────────────────────────────────
 router.post('/resend-verification', strictLimiter, async (req, res) => {
-  const genericResponse = {
-    success: true,
-    message: 'If your email is registered and unverified, a new verification link has been sent.',
-  };
-
+  const genericResponse = { success: true, message: 'If your email is registered and unverified, a new verification link has been sent.' };
   try {
     const { email } = req.body;
-    if (!email) {
-      return res.status(400).json({ success: false, message: 'Email is required' });
-    }
-
+    if (!email) return res.status(400).json({ success: false, message: 'Email is required' });
     const user = await userRepo.findByEmail(email);
-    if (!user) return res.json(genericResponse);
-    if (user.emailVerified) return res.json(genericResponse);
+    if (!user || user.emailVerified) return res.json(genericResponse);
 
     const rawVerifyToken = crypto.randomBytes(32).toString('hex');
     const hashedVerifyToken = hashToken(rawVerifyToken);
     const verifyExpiry = new Date(Date.now() + EMAIL_VERIFICATION_TTL_MS).toISOString();
 
-    await userRepo.update(user.id, {
-      emailVerificationToken: hashedVerifyToken,
-      emailVerificationExpiry: verifyExpiry,
-    });
-
-    try {
-      await emailService.sendVerification({
-        to: user.email,
-        fullName: user.fullName,
-        token: rawVerifyToken,
-      });
-    } catch (emailErr) {
-      logger.error(
-        { err: emailErr.message, userId: user.id },
-        'resend-verification: email send failed'
-      );
-    }
-
+    await userRepo.update(user.id, { emailVerificationToken: hashedVerifyToken, emailVerificationExpiry: verifyExpiry });
+    try { await emailService.sendVerification({ to: user.email, fullName: user.fullName, token: rawVerifyToken }); } catch (emailErr) { logger.error({ err: emailErr.message, userId: user.id }, 'resend-verification: email send failed'); }
     return res.json(genericResponse);
-  } catch (error) {
-    logger.error({ err: error.message }, 'resend-verification: unexpected error');
-    return res.status(500).json({
-      success: false,
-      message: 'Something went wrong. Please try again later.',
-    });
-  }
+  } catch (error) { return res.status(500).json({ success: false, message: 'Something went wrong. Please try again later.' }); }
 });
 
 // ─────────────────────────────────────────────
@@ -402,89 +211,89 @@ router.post('/resend-verification', strictLimiter, async (req, res) => {
 router.post('/login', loginEmailLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ success: false, message: 'Email and password are required' });
 
-    if (!email || !password) {
-      return res.status(400).json({ success: false, message: 'Email and password are required' });
+    const result = await loginUseCase.execute({ identifier: email, password });
+
+    if (result.requires2FA) {
+      return res.json({ success: true, requires2FA: true, tempToken: result.tempToken, message: 'Please enter your 6-digit Google Authenticator code.' });
     }
 
-    const user = await userRepo.findByEmail(email);
-    if (!user) {
-      securityEvents.log({
-        eventType: 'LOGIN_FAILED_UNKNOWN_EMAIL',
-        email,
-        ipAddress: clientIp(req),
-        userAgent: clientUa(req),
-      });
-      return res.status(401).json({ success: false, message: 'Invalid email or password' });
-    }
+    const token = signToken(result.user, result.business);
+    res.cookie('token', token, COOKIE_OPTIONS);
+    securityEvents.log({ eventType: 'LOGIN_SUCCESS', userId: result.user.id, email, ipAddress: clientIp(req), userAgent: clientUa(req) });
 
-    const isValid = await user.verifyPassword(password);
-    if (!isValid) {
-      securityEvents.log({
-        eventType: 'LOGIN_FAILED_BAD_PASSWORD',
-        userId: user.id,
-        email,
-        ipAddress: clientIp(req),
-        userAgent: clientUa(req),
-      });
-      return res.status(401).json({ success: false, message: 'Invalid email or password' });
-    }
+    return res.json({
+      success: true, message: 'Login successful', token,
+      user: { id: result.user.id, fullName: result.user.fullName, email: result.user.email, phoneNumber: result.user.phoneNumber, industry: result.business.industry, businessId: result.business.id, role: result.role, emailVerified: result.user.emailVerified, twoFactorEnabled: result.user.twoFactorEnabled },
+      business: { id: result.business.id, name: result.business.name, industry: result.business.industry },
+    });
+  } catch (error) {
+    return res.status(401).json({ success: false, message: error.message || 'Login failed' });
+  }
+});
 
-    // ★ NEW: resolve primary business via membership (falls back to ownership)
+// ─────────────────────────────────────────────
+// POST /2fa/login
+// ─────────────────────────────────────────────
+router.post('/2fa/login', strictLimiter, async (req, res) => {
+  try {
+    const { tempToken, code } = req.body;
+    if (!tempToken || !code) return res.status(400).json({ success: false, message: 'Token and code are required' });
+
+    const { user } = await verify2FALoginUseCase.execute(tempToken, code);
+    
     const membership = await memberRepo.findFirstActiveByUser(user.id);
-    let business = null;
-
-    if (membership) {
-      business = await businessRepo.findById(membership.businessId);
-    }
-
-    // Legacy fallback: if no membership but user owns a business, log in anyway.
-    // Migration 023 should have prevented this, but safety net.
-    if (!membership) {
-      business = await businessRepo.findByUserIdFirst(user.id);
-    }
-
-    if (!business) {
-      return res.status(403).json({
-        success: false,
-        message: 'No business associated with this account. Please contact support.',
-      });
-    }
+    let business = membership ? await businessRepo.findById(membership.businessId) : await businessRepo.findByUserIdFirst(user.id);
+    if (!business) return res.status(403).json({ success: false, message: 'No business associated with this account.' });
 
     const token = signToken(user, business);
     res.cookie('token', token, COOKIE_OPTIONS);
+    securityEvents.log({ eventType: 'LOGIN_SUCCESS_2FA', userId: user.id, email: user.email, ipAddress: clientIp(req), userAgent: clientUa(req) });
 
+    return res.json({
+      success: true, message: 'Login successful', token,
+      user: { id: user.id, fullName: user.fullName, email: user.email, phoneNumber: user.phoneNumber, industry: business.industry, businessId: business.id, role: membership?.role || 'OWNER', emailVerified: user.emailVerified, twoFactorEnabled: user.twoFactorEnabled },
+      business: { id: business.id, name: business.name, industry: business.industry },
+    });
+  } catch (error) { return res.status(401).json({ success: false, message: error.message || '2FA verification failed' }); }
+});
+
+// ─────────────────────────────────────────────
+// POST /2fa/setup & /2fa/enable
+// ─────────────────────────────────────────────
+router.post('/2fa/setup', authenticateToken, async (req, res) => {
+  try { const result = await setup2FAUseCase.execute(req.user.id); return res.json({ success: true, message: '2FA setup initiated.', data: result }); } 
+  catch (error) { return res.status(400).json({ success: false, message: error.message }); }
+});
+
+router.post('/2fa/enable', authenticateToken, async (req, res) => {
+  try {
+    const { code } = req.body;
+    if (!code) return res.status(400).json({ success: false, message: 'Code is required' });
+    const result = await enable2FAUseCase.execute(req.user.id, code);
+    return res.json({ success: true, message: result.message });
+  } catch (error) { return res.status(400).json({ success: false, message: error.message }); }
+});
+
+// ★ NEW: POST /2fa/disable
+router.post('/2fa/disable', authenticateToken, async (req, res) => {
+  try {
+    const { code } = req.body;
+    if (!code) return res.status(400).json({ success: false, message: 'Code is required' });
+    
+    const result = await disable2FAUseCase.execute(req.user.id, code);
+    
     securityEvents.log({
-      eventType: 'LOGIN_SUCCESS',
-      userId: user.id,
-      email,
+      eventType: '2FA_DISABLED',
+      userId: req.user.id,
       ipAddress: clientIp(req),
       userAgent: clientUa(req),
     });
 
-    return res.json({
-      success: true,
-      message: 'Login successful',
-      token,
-      user: {
-        id: user.id,
-        fullName: user.fullName,
-        email: user.email,
-        phoneNumber: user.phoneNumber,
-        industry: business.industry,
-        businessId: business.id,
-        role: membership?.role || 'OWNER',   // ★ NEW
-        emailVerified: user.emailVerified,
-      },
-      business: {
-        id: business.id,
-        name: business.name,
-        industry: business.industry,
-      },
-    });
-  } catch (error) {
-    console.error('Login error:', error);
-    return res.status(500).json({ success: false, message: error.message || 'Login failed' });
+    return res.json({ success: true, message: result.message });
+  } catch (error) { 
+    return res.status(400).json({ success: false, message: error.message }); 
   }
 });
 
@@ -493,66 +302,34 @@ router.post('/login', loginEmailLimiter, async (req, res) => {
 // ─────────────────────────────────────────────
 router.get('/me', async (req, res) => {
   try {
-    const token =
-      req.cookies.token ||
-      (req.headers.authorization?.startsWith('Bearer ')
-        ? req.headers.authorization.slice(7)
-        : null);
-
+    const token = req.cookies.token || (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : null);
     if (!token) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
     const decoded = jwt.verify(token, JWT_SECRET);
     const user = await userRepo.findById(decoded.id);
     if (!user) return res.status(401).json({ success: false, message: 'User not found' });
 
-    // ★ NEW: resolve membership fresh (strict)
     let membership = null;
-    if (decoded.businessId) {
-      membership = await memberRepo.findByBusinessAndUser(decoded.businessId, user.id);
-    }
-    if (!membership) {
-      membership = await memberRepo.findFirstActiveByUser(user.id);
-    }
+    if (decoded.businessId) membership = await memberRepo.findByBusinessAndUser(decoded.businessId, user.id);
+    if (!membership) membership = await memberRepo.findFirstActiveByUser(user.id);
 
-    if (!membership || membership.status !== 'ACTIVE') {
-      return res.status(403).json({
-        success: false,
-        message: 'You do not have access to this business. Contact the owner.',
-      });
-    }
+    if (!membership || membership.status !== 'ACTIVE') return res.status(403).json({ success: false, message: 'You do not have access to this business.' });
 
     const business = await businessRepo.findById(membership.businessId);
 
     return res.json({
       success: true,
-      user: {
-        id: user.id,
-        fullName: user.fullName,
-        email: user.email,
-        phoneNumber: user.phoneNumber,
-        industry: business ? business.industry : null,
-        businessId: business ? business.id : null,
-        role: membership.role,   // ★ NEW
-        emailVerified: user.emailVerified,
-      },
-      business: business
-        ? { id: business.id, name: business.name, industry: business.industry }
-        : null,
+      user: { id: user.id, fullName: user.fullName, email: user.email, phoneNumber: user.phoneNumber, industry: business ? business.industry : null, businessId: business ? business.id : null, role: membership.role, emailVerified: user.emailVerified, twoFactorEnabled: user.twoFactorEnabled },
+      business: business ? { id: business.id, name: business.name, industry: business.industry } : null,
     });
-  } catch (error) {
-    return res.status(401).json({ success: false, message: 'Invalid token' });
-  }
+  } catch (error) { return res.status(401).json({ success: false, message: 'Invalid token' }); }
 });
 
 // ─────────────────────────────────────────────
 // POST /logout
 // ─────────────────────────────────────────────
 router.post('/logout', (req, res) => {
-  res.clearCookie('token', {
-    httpOnly: true,
-    secure: !isDev,
-    sameSite: isDev ? 'lax' : 'none',
-  });
+  res.clearCookie('token', { httpOnly: true, secure: !isDev, sameSite: isDev ? 'lax' : 'none' });
   return res.json({ success: true, message: 'Logged out successfully' });
 });
 
@@ -562,19 +339,10 @@ router.post('/logout', (req, res) => {
 router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
   try {
     const { email } = req.body;
-    if (!email) {
-      return res.status(400).json({ success: false, message: 'Email is required' });
-    }
-
+    if (!email) return res.status(400).json({ success: false, message: 'Email is required' });
     const result = await forgotPasswordUseCase.execute({ email });
     return res.json(result);
-  } catch (error) {
-    logger.error({ err: error.message }, 'forgot-password: unexpected error');
-    return res.json({
-      success: true,
-      message: 'If your email is registered, you will receive a reset link.',
-    });
-  }
+  } catch (error) { return res.json({ success: true, message: 'If your email is registered, you will receive a reset link.' }); }
 });
 
 // ─────────────────────────────────────────────
@@ -583,34 +351,15 @@ router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
 router.post('/reset-password', strictLimiter, async (req, res) => {
   try {
     const { token, newPassword } = req.body;
-
-    if (!token || !newPassword) {
-      return res.status(400).json({
-        success: false,
-        message: 'Token and new password are required.',
-      });
-    }
+    if (!token || !newPassword) return res.status(400).json({ success: false, message: 'Token and new password are required.' });
 
     const pwError = validatePassword(newPassword);
-    if (pwError) {
-      return res.status(400).json({ success: false, message: pwError });
-    }
+    if (pwError) return res.status(400).json({ success: false, message: pwError });
 
     const result = await resetPasswordUseCase.execute({ token, newPassword });
-
-    securityEvents.log({
-      eventType: 'PASSWORD_RESET_SUCCESS',
-      ipAddress: clientIp(req),
-      userAgent: clientUa(req),
-    });
-
+    securityEvents.log({ eventType: 'PASSWORD_RESET_SUCCESS', ipAddress: clientIp(req), userAgent: clientUa(req) });
     return res.json(result);
-  } catch (error) {
-    return res.status(400).json({
-      success: false,
-      message: error.message || 'Password reset failed',
-    });
-  }
+  } catch (error) { return res.status(400).json({ success: false, message: error.message || 'Password reset failed' }); }
 });
 
 module.exports = router;

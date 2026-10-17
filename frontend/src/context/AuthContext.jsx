@@ -1,6 +1,5 @@
 // frontend/src/context/AuthContext.jsx
-// v4.2.0-prod — Captures user.role and user.businessName from /auth/me.
-// v4.1.0-prod — Merges business.name into user.businessName.
+// v4.3.0-prod — Adds login2FA method for handling the 2FA verification step.
 
 import {
   createContext,
@@ -73,7 +72,6 @@ const FALLBACK_PLAN = {
   endDate: null,
 };
 
-// Merge business + role fields into the user object.
 const mergeBusinessFields = (userData, business) => {
   if (!userData) return userData;
   if (business) {
@@ -81,8 +79,6 @@ const mergeBusinessFields = (userData, business) => {
     if (business.name) userData.businessName = business.name;
     if (business.industry) userData.industry = business.industry;
   }
-  // Role is on userData from /me and /login responses.
-  // Keep this here in case role lands in business scope in the future.
   if (business?.role && !userData.role) {
     userData.role = business.role;
   }
@@ -286,6 +282,29 @@ export const AuthProvider = ({ children }) => {
     return response.data;
   };
 
+  // ★ NEW: 2FA Login Handler
+  const login2FA = async (tempToken, code) => {
+    const response = await authApi.login2FA(tempToken, code);
+
+    if (response.data?.token) {
+      setStoredToken(response.data.token);
+    }
+
+    if (response.data?.user) {
+      const userData = mergeBusinessFields(
+        response.data.user,
+        response.data.business
+      );
+
+      userData.planData = await fetchPlan({ force: true });
+
+      setUser(userData);
+      setIsAuthenticated(true);
+    }
+
+    return response.data;
+  };
+
   const logout = async () => {
     try {
       await authApi.logout();
@@ -305,7 +324,6 @@ export const AuthProvider = ({ children }) => {
     return planData;
   }, [fetchPlan]);
 
-  // Refresh the current user (e.g. after accept-invite or role change)
   const refreshUser = useCallback(async () => {
     try {
       const response = await authApi.getCurrentUser();
@@ -330,6 +348,7 @@ export const AuthProvider = ({ children }) => {
     isAuthenticated,
     register,
     login,
+    login2FA, // ★ Exported
     logout,
     refreshPlan,
     refreshUser,

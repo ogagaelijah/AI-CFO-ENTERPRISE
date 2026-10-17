@@ -1,5 +1,5 @@
 // src/infrastructure/database/sqlite/repositories/UserRepository.js
-// v3.1.0-prod — Postgres async. Case-insensitive email lookup.
+// v3.2.0-prod — Postgres async. Case-insensitive email lookup. Added 2FA fields.
 
 const BaseRepository = require('./BaseRepository');
 const bcrypt = require('bcrypt');
@@ -22,6 +22,8 @@ class User {
         this.emailVerificationToken = data.emailVerificationToken || null;
         this.emailVerificationExpiry = data.emailVerificationExpiry || null;
         this.passwordChangedAt = data.passwordChangedAt || null;
+        this.twoFactorSecret = data.twoFactorSecret || null;
+        this.twoFactorEnabled = data.twoFactorEnabled || false;
         this.createdAt = data.createdAt || new Date();
         this.updatedAt = data.updatedAt || new Date();
     }
@@ -99,6 +101,7 @@ class User {
             fullName: this.fullName,
             emailVerified: this.emailVerified,
             phoneVerified: this.phoneVerified,
+            twoFactorEnabled: this.twoFactorEnabled, // Expose status, but NEVER expose twoFactorSecret
             createdAt: this.createdAt,
             updatedAt: this.updatedAt,
         };
@@ -129,6 +132,8 @@ class UserRepository extends BaseRepository {
             emailVerificationToken: row.email_verification_token,
             emailVerificationExpiry: row.email_verification_expiry,
             passwordChangedAt: row.password_changed_at,
+            twoFactorSecret: row.two_factor_secret,
+            twoFactorEnabled: row.two_factor_enabled === true || row.two_factor_enabled === 1,
             createdAt: row.created_at,
             updatedAt: row.updated_at,
         });
@@ -143,8 +148,8 @@ class UserRepository extends BaseRepository {
                 password_hash, email_verified, phone_verified,
                 reset_token, reset_token_expiry,
                 email_verification_token, email_verification_expiry,
-                password_changed_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                password_changed_at, two_factor_secret, two_factor_enabled
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             RETURNING id`,
             [
                 userData.telegramId || null,
@@ -159,6 +164,8 @@ class UserRepository extends BaseRepository {
                 userData.emailVerificationToken || null,
                 userData.emailVerificationExpiry || null,
                 userData.passwordChangedAt || now,
+                userData.twoFactorSecret || null,
+                userData.twoFactorEnabled ? true : false,
             ]
         );
 
@@ -217,6 +224,8 @@ class UserRepository extends BaseRepository {
                 emailVerificationToken: entity.emailVerificationToken,
                 emailVerificationExpiry: entity.emailVerificationExpiry,
                 passwordChangedAt: entity.passwordChangedAt,
+                twoFactorSecret: entity.twoFactorSecret,
+                twoFactorEnabled: entity.twoFactorEnabled,
             });
         }
 
@@ -237,12 +246,14 @@ class UserRepository extends BaseRepository {
             emailVerificationToken: 'email_verification_token',
             emailVerificationExpiry: 'email_verification_expiry',
             passwordChangedAt: 'password_changed_at',
+            twoFactorSecret: 'two_factor_secret',
+            twoFactorEnabled: 'two_factor_enabled',
         };
 
         for (const [key, column] of Object.entries(map)) {
             if (data[key] !== undefined) {
                 fields.push(`${column} = $${i++}`);
-                if (key === 'emailVerified' || key === 'phoneVerified') {
+                if (key === 'emailVerified' || key === 'phoneVerified' || key === 'twoFactorEnabled') {
                     values.push(data[key] ? true : false);
                 } else {
                     values.push(data[key]);
