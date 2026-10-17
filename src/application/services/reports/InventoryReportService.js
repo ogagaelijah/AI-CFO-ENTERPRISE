@@ -1,4 +1,8 @@
 // src/application/services/reports/InventoryReportService.js
+// v2.0.2-prod — Fixes movement field access: entity returns camelCase
+//               (inventoryItemId, movementType) not snake_case.
+// v2.0.1-prod — Replaces generateMovements() stub with real implementation.
+// v2.0.0-prod — Adds generateMovementReport() with per-item ledger snapshots.
 
 const PeriodResolver = require('./foundation/PeriodResolver');
 const ReportValidator = require('./foundation/ReportValidator');
@@ -6,31 +10,18 @@ const ReportResponseBuilder = require('./foundation/ReportResponseBuilder');
 const ReconciliationCheck = require('./foundation/ReconciliationCheck');
 const InventoryCalculator = require('./calculators/InventoryCalculator');
 
-/**
- * InventoryReportService - Generates Inventory Valuation and Status Reports
- * 
- * Provides:
- * - Inventory summary (total items, quantity, value, potential profit, low stock)
- * - Product-level details (name, quantity, cost, selling price, margin, value, status)
- * - Low stock and out of stock alerts
- * - Product profitability metrics
- * 
- * Status Types:
- * - IN_STOCK: Quantity > reorder level
- * - LOW_STOCK: 0 < Quantity <= reorder level
- * - OUT_OF_STOCK: Quantity = 0
- */
 class InventoryReportService {
     constructor({
         inventoryRepository = null,
+        inventoryMovementRepository = null,
         periodResolver = null,
         reportValidator = null,
         reportResponseBuilder = null,
         reconciliationCheck = null,
         inventoryCalculator = null,
     }) {
-        // Use provided instances or create defaults
         this.inventoryRepository = inventoryRepository;
+        this.inventoryMovementRepository = inventoryMovementRepository;
 
         this.periodResolver = periodResolver || new PeriodResolver();
         this.reportValidator = reportValidator || new ReportValidator();
@@ -40,7 +31,6 @@ class InventoryReportService {
         });
         this.reconciliationCheck = reconciliationCheck || new ReconciliationCheck();
 
-        // Initialize calculator with repository if not provided
         if (inventoryCalculator) {
             this.inventoryCalculator = inventoryCalculator;
         } else if (this.inventoryRepository) {
@@ -52,19 +42,10 @@ class InventoryReportService {
         }
     }
 
-    /**
-     * Generate Inventory Valuation Report
-     * 
-     * @param {Object} params
-     * @param {string|number} params.userId - User ID
-     * @param {string|number} params.businessId - Business ID
-     * @param {string} [params.asAtDate] - Date for inventory snapshot (default: today)
-     * @param {boolean} [params.includeDetails] - Include product-level details
-     * @param {number} [params.lowStockThreshold] - Threshold for low stock (default: 5)
-     * @param {string} [params.sortBy] - 'name' | 'quantity' | 'value' | 'margin' (default: 'name')
-     * @param {string} [params.filterStatus] - 'IN_STOCK' | 'LOW_STOCK' | 'OUT_OF_STOCK' | null
-     * @returns {Object} Inventory Report
-     */
+    // ─────────────────────────────────────────────────────────────
+    // Valuation report (existing — unchanged)
+    // ─────────────────────────────────────────────────────────────
+
     async generate({
         userId,
         businessId,
@@ -74,7 +55,6 @@ class InventoryReportService {
         sortBy = 'name',
         filterStatus = null,
     }) {
-        // Validate inputs
         const validation = this.reportValidator.validate({
             userId,
             businessId,
@@ -90,7 +70,6 @@ class InventoryReportService {
             });
         }
 
-        // Get inventory data from calculator
         const inventoryData = await this.inventoryCalculator.calculate({
             userId,
             businessId,
@@ -98,17 +77,14 @@ class InventoryReportService {
             lowStockThreshold,
         });
 
-        // Filter items if requested
         let items = inventoryData.details || [];
 
         if (filterStatus) {
             items = items.filter(item => item.status === filterStatus);
         }
 
-        // Sort items
         items = this._sortItems(items, sortBy);
 
-        // Calculate totals
         const summary = {
             totalItems: inventoryData.totalItems,
             totalQuantity: inventoryData.totalQuantity,
@@ -122,7 +98,6 @@ class InventoryReportService {
             overallMargin: inventoryData.overallMargin,
         };
 
-        // Build response
         const reportData = {
             asAtDate: asAtDate || new Date().toISOString().split('T')[0],
             lowStockThreshold,
@@ -146,27 +121,24 @@ class InventoryReportService {
         });
     }
 
-    /**
-     * Generate Inventory Movement Report
-     * 
-     * @param {Object} params
-     * @param {string|number} params.userId - User ID
-     * @param {string|number} params.businessId - Business ID
-     * @param {string} params.startDate - Start date (YYYY-MM-DD)
-     * @param {string} params.endDate - End date (YYYY-MM-DD)
-     * @param {string} [params.productName] - Filter by product name
-     * @param {number} [params.limit] - Limit results
-     * @returns {Object} Inventory Movement Report
-     */
-    async generateMovements({
+    // ─────────────────────────────────────────────────────────────
+    // Movement report (real implementation)
+    // ─────────────────────────────────────────────────────────────
+
+    async generateMovementReport({
         userId,
         businessId,
         startDate,
         endDate,
-        productName = null,
-        limit = 100,
+        inventoryItemId = null,
+        movementType = null,
+        page = 1,
+        limit = 50,
     }) {
-        // Validate inputs
+        if (!this.inventoryMovementRepository) {
+            throw new Error('InventoryReportService: inventoryMovementRepository is required for movement reports');
+        }
+
         const validation = this.reportValidator.validate({
             userId,
             businessId,
@@ -183,90 +155,175 @@ class InventoryReportService {
             });
         }
 
-        // Get inventory data from calculator
-        const inventoryData = await this.inventoryCalculator.calculate({
-            userId,
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+
+        // 1. Load all inventory items for the business
+        const allItems = await this._loadInventoryItems(businessId);
+        const targetItems = inventoryItemId
+            ? allItems.filter(i => Number(i.id) === Number(inventoryItemId))
+            : allItems;
+
+        // 2. Load all movements for the period
+        const movementsInPeriod = await this._loadMovements({
             businessId,
-            includeDetails: true,
+            start,
+            end,
+            movementType,
         });
 
-        let items = inventoryData.details || [];
+        // 3. Per-item summaries
+        const itemSummaries = [];
+        let overallCostIn = 0;
+        let overallCostOut = 0;
 
-        // Filter by product name if requested
-        if (productName) {
-            items = items.filter(item =>
-                item.name.toLowerCase().includes(productName.toLowerCase())
+        for (const item of targetItems) {
+            // ★ FIX: entity uses camelCase — inventoryItemId, not inventory_item_id
+            const itemMovements = movementsInPeriod.filter(
+                m => Number(m.inventoryItemId) === Number(item.id)
             );
+
+            const openingQty = await this._sumMovementsBefore({
+                inventoryItemId: item.id,
+                before: start,
+            });
+
+            let totalIn = 0;
+            let totalOut = 0;
+            let adjustments = 0;
+            let costIn = 0;
+            let costOut = 0;
+
+            for (const m of itemMovements) {
+                // ★ FIX: camelCase throughout
+                const qty = Number(m.quantity) || 0;
+                const totalCost = Number(m.totalCost) || 0;
+                switch (m.movementType) {
+                    case 'IN':
+                    case 'RETURN':
+                        totalIn += qty;
+                        costIn += totalCost;
+                        break;
+                    case 'OUT':
+                    case 'DAMAGE':
+                    case 'LOSS':
+                    case 'TRANSFER':
+                        totalOut += qty;
+                        costOut += totalCost;
+                        break;
+                    case 'ADJUSTMENT_IN':
+                        totalIn += qty;
+                        costIn += totalCost;
+                        adjustments += qty;
+                        break;
+                    case 'ADJUSTMENT_OUT':
+                        totalOut += qty;
+                        costOut += totalCost;
+                        adjustments -= qty;
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            const closingQty = openingQty + totalIn - totalOut;
+            const avgCost = Number(item.cost_price) || 0;
+
+            overallCostIn += costIn;
+            overallCostOut += costOut;
+
+            itemSummaries.push({
+                inventoryItemId: item.id,
+                itemName: item.item_name,
+                openingQuantity: openingQty,
+                openingValue: openingQty * avgCost,
+                totalIn,
+                totalOut,
+                adjustments,
+                closingQuantity: closingQty,
+                closingValue: closingQty * avgCost,
+                weightedAvgCost: avgCost,
+                movements: itemMovements.map(m => ({
+                    id: m.id,
+                    movementType: m.movementType,
+                    quantity: Number(m.quantity) || 0,
+                    unitCost: Number(m.unitCost) || 0,
+                    totalCost: Number(m.totalCost) || 0,
+                    quantityBefore: Number(m.quantityBefore) || 0,
+                    quantityAfter: Number(m.quantityAfter) || 0,
+                    referenceType: m.referenceType,
+                    referenceId: m.referenceId,
+                    reason: m.reason || '',
+                    notes: m.notes || '',
+                    createdAt: m.createdAt,
+                })),
+            });
         }
 
-        // Build movement details (simplified - using current snapshot)
-        // In a full implementation, this would query inventory_movements table
-        const movements = items.slice(0, limit).map(item => ({
-            productName: item.name,
-            currentQuantity: item.quantity,
-            currentValue: item.value,
-            avgCost: item.avgCost,
-            status: item.status,
-            reorderLevel: item.reorderLevel,
-        }));
+        // 4. Paginate
+        const total = itemSummaries.length;
+        const totalPages = Math.max(1, Math.ceil(total / limit));
+        const safePage = Math.min(Math.max(1, page), totalPages);
+        const offset = (safePage - 1) * limit;
+        const pagedItems = itemSummaries.slice(offset, offset + limit);
 
-        const period = {
-            startDate,
-            endDate,
-            label: `${startDate} - ${endDate}`,
+        // 5. Summary
+        const summary = {
+            totalIn: itemSummaries.reduce((s, i) => s + i.totalIn, 0),
+            totalOut: itemSummaries.reduce((s, i) => s + i.totalOut, 0),
+            totalAdjustments: itemSummaries.reduce((s, i) => s + i.adjustments, 0),
+            netChange: itemSummaries.reduce((s, i) => s + (i.totalIn - i.totalOut), 0),
+            totalCostIn: overallCostIn,
+            totalCostOut: overallCostOut,
         };
 
-        return this.reportResponseBuilder.success({
-            reportType: 'inventory_movements',
-            period,
+        return {
+            success: true,
             data: {
                 period: { startDate, endDate },
-                totalProducts: items.length,
-                movements,
-                limit,
+                summary,
+                items: pagedItems,
+                pagination: {
+                    page: safePage,
+                    limit,
+                    total,
+                    totalPages,
+                    hasNext: safePage < totalPages,
+                    hasPrev: safePage > 1,
+                },
             },
-        });
+        };
     }
 
-    /**
-     * Generate Low Stock Alert Report
-     */
+    async generateMovements(params) {
+        return this.generateMovementReport(params);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Other reports (unchanged)
+    // ─────────────────────────────────────────────────────────────
+
     async generateLowStock({ userId, businessId, threshold = 5 }) {
         return this.generate({
-            userId,
-            businessId,
-            includeDetails: true,
+            userId, businessId, includeDetails: true,
             lowStockThreshold: threshold,
-            filterStatus: 'LOW_STOCK',
-            sortBy: 'quantity',
+            filterStatus: 'LOW_STOCK', sortBy: 'quantity',
         });
     }
 
-    /**
-     * Generate Out of Stock Report
-     */
     async generateOutOfStock({ userId, businessId }) {
         return this.generate({
-            userId,
-            businessId,
-            includeDetails: true,
-            filterStatus: 'OUT_OF_STOCK',
-            sortBy: 'name',
+            userId, businessId, includeDetails: true,
+            filterStatus: 'OUT_OF_STOCK', sortBy: 'name',
         });
     }
 
-    /**
-     * Generate Product Profitability Report
-     */
     async generateProfitability({ userId, businessId, sortBy = 'margin' }) {
         const result = await this.generate({
-            userId,
-            businessId,
-            includeDetails: true,
-            sortBy,
+            userId, businessId, includeDetails: true, sortBy,
         });
 
-        // Add profitability metrics to each item
         if (result.status === 'SUCCESS' && result.data.items) {
             result.data.items = result.data.items.map(item => ({
                 ...item,
@@ -279,9 +336,55 @@ class InventoryReportService {
         return result;
     }
 
-    /**
-     * Sort items by specified field with deterministic secondary sort
-     */
+    // ─────────────────────────────────────────────────────────────
+    // Helpers
+    // ─────────────────────────────────────────────────────────────
+
+    async _loadInventoryItems(businessId) {
+        if (this.inventoryRepository && this.inventoryRepository.findByBusinessId) {
+            return await this.inventoryRepository.findByBusinessId(businessId);
+        }
+        return [];
+    }
+
+    async _loadMovements({ businessId, start, end, movementType }) {
+        if (!this.inventoryMovementRepository) return [];
+        const opts = { startDate: start, endDate: end };
+        if (movementType) opts.movementType = movementType;
+        return await this.inventoryMovementRepository.findByBusinessId(businessId, opts);
+    }
+
+    async _sumMovementsBefore({ inventoryItemId, before }) {
+        if (!this.inventoryMovementRepository) return 0;
+        const all = await this.inventoryMovementRepository.findByInventoryItemId(inventoryItemId, {});
+        let sum = 0;
+        const beforeMs = before.getTime();
+        for (const m of all) {
+            // ★ FIX: camelCase createdAt
+            const createdAt = m.createdAt ? new Date(m.createdAt).getTime() : 0;
+            if (createdAt >= beforeMs) continue;
+            const qty = Number(m.quantity) || 0;
+            // ★ FIX: camelCase movementType
+            switch (m.movementType) {
+                case 'IN':
+                case 'ADJUSTMENT_IN':
+                case 'RETURN':
+                    sum += qty;
+                    break;
+                case 'OUT':
+                case 'ADJUSTMENT_OUT':
+                case 'DAMAGE':
+                case 'LOSS':
+                case 'TRANSFER':
+                    sum -= qty;
+                    break;
+                default:
+                    break;
+            }
+        }
+        return sum;
+    }
+
     _sortItems(items, sortBy) {
         const sortMap = {
             name: (a, b) => a.name.localeCompare(b.name),

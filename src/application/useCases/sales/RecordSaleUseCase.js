@@ -1,19 +1,28 @@
 // src/application/useCases/sales/RecordSaleUseCase.js
+// v3.1.0-prod — Writes OUT inventory movements on sale. Fixes out-of-stock
+//               bug (zero-quantity now blocked). Movement writes are
+//               guarded — a failure never blocks the sale.
 // v3.0.0-prod — All writes wrapped in a single withTransaction.
 //               Per-business SALE-NNNN invoice numbering.
-//               Correct repo contracts (inventory findByNameIgnoreCase takes businessId).
-//               Removed broken getRawDb() transaction path.
 
 const Sale = require('../../../domain/entities/Sale');
 const { withTransaction } = require('../../../infrastructure/database/sqlite/connection');
 
 class RecordSaleUseCase {
-    constructor(saleRepository, inventoryRepository, debtorRepository, customerRepository = null, paymentRepository = null) {
+    constructor(
+        saleRepository,
+        inventoryRepository,
+        debtorRepository,
+        customerRepository = null,
+        paymentRepository = null,
+        inventoryMovementRepository = null,
+    ) {
         this.saleRepository = saleRepository;
         this.inventoryRepository = inventoryRepository;
         this.debtorRepository = debtorRepository;
         this.customerRepository = customerRepository;
         this.paymentRepository = paymentRepository;
+        this.inventoryMovementRepository = inventoryMovementRepository;
     }
 
     async execute({
@@ -51,6 +60,64 @@ class RecordSaleUseCase {
             customerName, customerId, customerType, paymentStatus, amountPaid,
             skipInventory, inventoryId, saleDate, notes,
         });
+    }
+
+    // ─────────────────────────────────────────────
+    // Movement writer — guarded, additive, non-blocking
+    // ─────────────────────────────────────────────
+
+    /**
+     * Write one OUT movement per reduced stock line.
+     * Never throws — a failure logs but does not block the sale.
+     *
+     * @param {Object} params
+     * @param {number} params.businessId
+     * @param {number} params.userId
+     * @param {number} params.inventoryItemId
+     * @param {number} params.quantity - positive quantity being removed
+     * @param {number} params.unitCost - cost at time of sale
+     * @param {number} params.quantityBefore - stock level BEFORE this reduction
+     * @param {number} params.quantityAfter - stock level AFTER this reduction
+     * @param {number|string} params.referenceId - sale ID
+     * @param {Date} params.createdAt
+     * @param {string} params.notes
+     */
+    async _writeStockMovement({
+        businessId, userId, inventoryItemId, quantity, unitCost,
+        quantityBefore, quantityAfter, referenceId, createdAt, notes = '',
+    }) {
+        if (!this.inventoryMovementRepository) return;
+
+        try {
+            const totalCost = Number(quantity) * (Number(unitCost) || 0);
+
+            await this.inventoryMovementRepository.create({
+                inventoryItemId,
+                businessId,
+                userId,
+                movementType: 'OUT',
+                quantity: Number(quantity),
+                unitCost: Number(unitCost) || 0,
+                totalCost,
+                quantityBefore: Number(quantityBefore) || 0,
+                quantityAfter: Number(quantityAfter) || 0,
+                costPriceBefore: Number(unitCost) || 0,
+                costPriceAfter: Number(unitCost) || 0,
+                referenceType: 'SALE',
+                referenceId,
+                reason: 'Stock reduced by sale',
+                notes: notes || '',
+                metadata: {},
+                createdAt,
+            });
+        } catch (err) {
+            // Movement write failure must NOT block the sale.
+            console.error(
+                '[RecordSaleUseCase] movement write failed:',
+                err.message,
+                { businessId, inventoryItemId, quantity, referenceId }
+            );
+        }
     }
 
     // ─────────────────────────────────────────────
@@ -137,7 +204,6 @@ class RecordSaleUseCase {
     }) {
         if (!customerName || balanceRemaining <= 0) return;
 
-        // Look up any existing open debtor for this business + customer.
         const existing = await this.debtorRepository.findByCustomerName(businessId, customerName);
         const openDebtor = (existing || []).find(d => Number(d.balance_remaining) > 0);
 
@@ -205,15 +271,22 @@ class RecordSaleUseCase {
                         finalItemName = item.item_name || raw.name;
                         unitCost = Number(item.cost_price) || 0;
 
-                        if (item.quantity < qty && item.quantity > 0) {
+                        // ★ FIX: block sales when stock is insufficient (including zero)
+                        if (item.quantity < qty) {
                             throw new Error(
                                 `Insufficient stock for "${finalItemName}". ` +
                                 `Available: ${item.quantity}, Requested: ${qty}`
                             );
                         }
-                        if (item.quantity > 0) {
-                            stockToReduce.push({ id: finalInventoryId, quantity: qty });
-                        }
+
+                        // Track for reduction + movement write
+                        stockToReduce.push({
+                            id: finalInventoryId,
+                            quantity: qty,
+                            unitCost,
+                            quantityBefore: Number(item.quantity) || 0,
+                            quantityAfter: (Number(item.quantity) || 0) - qty,
+                        });
                     }
                 }
 
@@ -292,6 +365,20 @@ class RecordSaleUseCase {
             if (!skipInventory) {
                 for (const inv of stockToReduce) {
                     await this.inventoryRepository.reduceStock(inv.id, inv.quantity);
+
+                    // ★ NEW: write OUT movement per reduced line
+                    await this._writeStockMovement({
+                        businessId,
+                        userId,
+                        inventoryItemId: inv.id,
+                        quantity: inv.quantity,
+                        unitCost: inv.unitCost,
+                        quantityBefore: inv.quantityBefore,
+                        quantityAfter: inv.quantityAfter,
+                        referenceId: savedSale.id,
+                        createdAt: saleDateObj,
+                        notes: `Sale ${invoiceNo}`,
+                    });
                 }
             }
 
@@ -346,7 +433,6 @@ class RecordSaleUseCase {
         const balanceRemaining = paymentStatus === 'PAID' ? 0 : totalPrice - amountPaidValue;
 
         return withTransaction(async () => {
-            // Inventory
             let unitCost = 0;
             let cogs = 0;
             let grossProfit = 0;
@@ -354,6 +440,8 @@ class RecordSaleUseCase {
             let finalInventoryId = inventoryId || null;
             let finalItemName = itemName;
             let inventoryItem = null;
+            let quantityBefore = 0;
+            let quantityAfter = 0;
 
             if (!skipInventory) {
                 inventoryItem = await this._findOrCreateInventoryItem({
@@ -365,19 +453,23 @@ class RecordSaleUseCase {
                     finalItemName = inventoryItem.item_name || itemName;
                     unitCost = Number(inventoryItem.cost_price) || 0;
 
-                    if (inventoryItem.quantity < qty && inventoryItem.quantity > 0) {
+                    // ★ FIX: block sales when stock is insufficient (including zero)
+                    if (inventoryItem.quantity < qty) {
                         throw new Error(
                             `Insufficient stock for "${finalItemName}". ` +
                             `Available: ${inventoryItem.quantity}, Requested: ${qty}`
                         );
                     }
+
+                    quantityBefore = Number(inventoryItem.quantity) || 0;
+                    quantityAfter = quantityBefore - qty;
+
                     cogs = qty * unitCost;
                     grossProfit = totalPrice - cogs;
                     marginPct = totalPrice > 0 ? (grossProfit / totalPrice) * 100 : 0;
                 }
             }
 
-            // Customer
             const { customerId: finalCustomerId, customerType: finalCustomerType } =
                 await this._findOrCreateCustomer({
                     businessId, customerName, customerId, customerType, userId,
@@ -437,8 +529,22 @@ class RecordSaleUseCase {
                 notes: notes || '',
             });
 
-            if (!skipInventory && finalInventoryId && inventoryItem && inventoryItem.quantity > 0) {
+            if (!skipInventory && finalInventoryId && inventoryItem) {
                 await this.inventoryRepository.reduceStock(finalInventoryId, qty);
+
+                // ★ NEW: write OUT movement
+                await this._writeStockMovement({
+                    businessId,
+                    userId,
+                    inventoryItemId: finalInventoryId,
+                    quantity: qty,
+                    unitCost,
+                    quantityBefore,
+                    quantityAfter,
+                    referenceId: savedSale.id,
+                    createdAt: saleDateObj,
+                    notes: `Sale ${invoiceNo}`,
+                });
             }
 
             if (paymentStatus === 'PAID' || paymentStatus === 'PARTIAL') {

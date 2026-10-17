@@ -1,8 +1,5 @@
 // frontend/src/pages/Reports.jsx
-// v1.2.0-prod — Keeps raw backend response in a separate state variable
-//               so exports get the shape exportService.js expects
-//               (revenue.sales, costs.purchases, transactions.sales, …).
-//               UI continues to consume the mapped shape.
+// v1.3.2-prod — Adds pagination state for Inventory Movement report.
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -21,6 +18,7 @@ import {
   mapBalanceSheetReport,
 } from '../services/reportMappers';
 
+// Existing Reports
 import ExecutiveReport from '../components/Reports/ExecutiveReport';
 import ProfitLossReport from '../components/Reports/ProfitLossReport';
 import DailyReport from '../components/Reports/DailyReport';
@@ -30,11 +28,17 @@ import YearlyReport from '../components/Reports/YearlyReport';
 import CashFlowReport from '../components/Reports/CashFlowReport';
 import BalanceSheetReport from '../components/Reports/BalanceSheetReport';
 
+// Inventory Reports
+import InventoryMovementReport from '../components/Reports/InventoryMovementReport';
+import InventoryValuationReport from '../components/Reports/InventoryValuationReport';
+
 const REPORT_TYPES = [
   { id: 'executive', label: 'Executive Report', component: ExecutiveReport, mapper: mapExecutiveReport },
   { id: 'pl', label: 'Profit & Loss', component: ProfitLossReport, mapper: mapProfitLossReport },
   { id: 'cashflow', label: 'Cash Flow', component: CashFlowReport, mapper: mapCashFlowReport },
   { id: 'balance-sheet', label: 'Balance Sheet', component: BalanceSheetReport, mapper: mapBalanceSheetReport },
+  { id: 'inventory-valuation', label: 'Inventory Valuation', component: InventoryValuationReport, mapper: (d) => d },
+  { id: 'inventory-movement', label: 'Inventory Movement', component: InventoryMovementReport, mapper: (d) => d },
   { id: 'daily', label: 'Daily Report', component: DailyReport, mapper: mapDailyReport },
   { id: 'weekly', label: 'Weekly Report', component: WeeklyReport, mapper: mapWeeklyReport },
   { id: 'monthly', label: 'Monthly Report', component: MonthlyReport, mapper: mapMonthlyReport },
@@ -43,21 +47,42 @@ const REPORT_TYPES = [
 
 const CURRENCY_SYMBOL = '₦';
 
+/**
+ * Normalizes the varied response envelopes the backend emits.
+ */
+const extractReportPayload = (response) => {
+  const body = response?.data;
+  if (!body) return null;
+  if (body.success === true && body.data) return body.data;
+  if (body.status === 'SUCCESS' && body.data) return body.data;
+  return null;
+};
+
+/**
+ * Extracts an error message from either envelope shape, if present.
+ */
+const extractReportError = (response) => {
+  const body = response?.data;
+  if (!body) return 'Failed to load report';
+  if (body.message) return body.message;
+  if (Array.isArray(body.errors) && body.errors.length > 0) {
+    return body.errors.join(', ');
+  }
+  return 'Failed to load report';
+};
+
 const Reports = () => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [activeReport, setActiveReport] = useState('executive');
 
-  // Mapped shape — consumed by the UI ReportComponent.
   const [reportData, setReportData] = useState(null);
-
-  // Raw backend shape — consumed by exportToPDF / exportToExcel.
-  // exportService.js reads fields like revenue.sales, costs.purchases,
-  // transactions.sales, which exist only on the raw response.
   const [rawReportData, setRawReportData] = useState(null);
-
   const [error, setError] = useState('');
-  const [exporting, setExporting] = useState(null); // 'pdf' | 'excel' | null
+  const [exporting, setExporting] = useState(null);
+
+  // ★ NEW: Pagination state for Movement Report
+  const [movementPage, setMovementPage] = useState(1);
 
   const today = new Date().toISOString().split('T')[0];
   const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
@@ -80,64 +105,67 @@ const Reports = () => {
 
       const report = getCurrentReport();
       let response;
-      let rawData;
 
       switch (report.id) {
         case 'executive':
           response = await reportApi.getExecutive(period.startDate, period.endDate);
-          rawData = response.data?.data;
           break;
         case 'pl':
           response = await reportApi.getPL(period.startDate, period.endDate);
-          rawData = response.data?.data;
           break;
         case 'cashflow':
           response = await reportApi.getCashFlow(period.startDate, period.endDate);
-          rawData = response.data?.data;
           break;
         case 'balance-sheet':
           response = await reportApi.getBalanceSheet(balanceSheetDate);
-          rawData = response.data?.data;
+          break;
+        case 'inventory-valuation':
+          response = await reportApi.getInventoryValuation(balanceSheetDate);
+          break;
+        case 'inventory-movement':
+          // ★ Uses movementPage state
+          response = await reportApi.getInventoryMovement(period.startDate, period.endDate, movementPage, 50);
           break;
         case 'daily':
           response = await reportApi.getDaily(date);
-          rawData = response.data?.data;
           break;
         case 'weekly':
           response = await reportApi.getWeekly(date);
-          rawData = response.data?.data;
           break;
         case 'monthly':
           response = await reportApi.getMonthly(date);
-          rawData = response.data?.data;
           break;
         case 'yearly':
           response = await reportApi.getYearly(date);
-          rawData = response.data?.data;
           break;
         default:
           response = await reportApi.getExecutive(period.startDate, period.endDate);
-          rawData = response.data?.data;
       }
 
-      if (response.data?.success && rawData) {
+      const rawData = extractReportPayload(response);
+
+      if (rawData) {
         const mappedData = report.mapper(rawData);
         setReportData(mappedData);
-        setRawReportData(rawData);       // ← store raw for exports
+        setRawReportData(rawData);
       } else {
-        setError(response.data?.message || 'Failed to load report');
+        setError(extractReportError(response));
         setReportData(null);
         setRawReportData(null);
       }
     } catch (error) {
       console.error('Error fetching report:', error);
-      setError(error.response?.data?.message || 'Failed to load report');
+      setError(
+        error.response?.data?.message ||
+        error.response?.data?.errors?.[0] ||
+        'Failed to load report'
+      );
       setReportData(null);
       setRawReportData(null);
     } finally {
       setLoading(false);
     }
-  }, [activeReport, period, date, balanceSheetDate]);
+  }, [activeReport, period, date, balanceSheetDate, movementPage]); // ★ Added movementPage
 
   useEffect(() => {
     fetchReport();
@@ -148,13 +176,16 @@ const Reports = () => {
     setReportData(null);
     setRawReportData(null);
     setError('');
+    if (reportId === 'inventory-movement') {
+      setMovementPage(1); // Reset page when switching to movement
+    }
   };
 
   const handleExportPDF = async () => {
     if (!rawReportData || exporting) return;
     try {
       setExporting('pdf');
-      await new Promise((r) => setTimeout(r, 50)); // let the spinner paint
+      await new Promise((r) => setTimeout(r, 50));
       exportToPDF(rawReportData, activeReport);
     } catch (err) {
       console.error('Export PDF failed:', err);
@@ -284,7 +315,7 @@ const Reports = () => {
             <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Period:</span>
           </div>
 
-          {(activeReport === 'executive' || activeReport === 'pl' || activeReport === 'cashflow') && (
+          {(activeReport === 'executive' || activeReport === 'pl' || activeReport === 'cashflow' || activeReport === 'inventory-movement') && (
             <div className="flex items-center space-x-2">
               <input
                 type="date"
@@ -302,7 +333,7 @@ const Reports = () => {
             </div>
           )}
 
-          {activeReport === 'balance-sheet' && (
+          {(activeReport === 'balance-sheet' || activeReport === 'inventory-valuation') && (
             <div className="flex items-center space-x-2">
               <input
                 type="date"
@@ -332,7 +363,7 @@ const Reports = () => {
           )}
 
           <button
-            onClick={fetchReport}
+            onClick={() => { setMovementPage(1); fetchReport(); }}
             className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg transition"
           >
             Generate
@@ -341,7 +372,16 @@ const Reports = () => {
       </div>
 
       {reportData && (
-        <ReportComponent data={reportData} formatCurrency={formatCurrency} formatPercentage={formatPercentage} />
+        <ReportComponent 
+          data={reportData} 
+          formatCurrency={formatCurrency} 
+          formatPercentage={formatPercentage}
+          // ★ Pass pagination props ONLY to the movement report
+          {...(activeReport === 'inventory-movement' && {
+            onPageChange: setMovementPage,
+            currentPage: movementPage
+          })}
+        />
       )}
     </div>
   );

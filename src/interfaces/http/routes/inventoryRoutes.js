@@ -1,4 +1,5 @@
 // src/interfaces/http/routes/inventoryRoutes.js
+// v1.5.0-prod — Writes IN / ADJUSTMENT_IN / ADJUSTMENT_OUT movements.
 // v1.4.1-prod — Error classification: user errors return 400/404/409, not 500.
 // v1.4.0-prod — Write endpoints require OWNER/ADMIN/MANAGER.
 // v1.3.0-prod — Adds search param passthrough.
@@ -7,12 +8,14 @@
 const express = require('express');
 const router = express.Router();
 const InventoryRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryRepository');
+const InventoryMovementRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryMovementRepository'); // ★ NEW
 const { authMiddleware } = require('../middleware/authMiddleware');
 const { requireRole } = require('../middleware/requireRole');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
 const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 
 const inventoryRepo = new InventoryRepository();
+const inventoryMovementRepo = new InventoryMovementRepository(); // ★ NEW
 
 router.use(authMiddleware);
 
@@ -20,7 +23,6 @@ const WRITE_ROLES = ['OWNER', 'ADMIN', 'MANAGER'];
 
 /**
  * Classify error message → correct HTTP status.
- * Prevents 500s for user errors like duplicate names or validation failures.
  */
 function classifyError(error) {
   const msg = String(error?.message || '');
@@ -29,6 +31,22 @@ function classifyError(error) {
   if (/already exists|duplicate/i.test(msg)) return 409;
   if (/required|invalid|must be|cannot|exceed|only whitespace|minLength|too long/i.test(msg)) return 400;
   return 500;
+}
+
+/**
+ * Write an inventory movement. Never throws — a failure logs but does not
+ * block the primary operation.
+ */
+async function writeMovementSafe(payload) {
+    try {
+        await inventoryMovementRepo.create(payload);
+    } catch (err) {
+        console.error('[inventoryRoutes] movement write failed:', err.message, {
+            businessId: payload.businessId,
+            inventoryItemId: payload.inventoryItemId,
+            movementType: payload.movementType,
+        });
+    }
 }
 
 // =============================================
@@ -162,6 +180,7 @@ router.get('/:id', async (req, res) => {
 
 // =============================================
 // POST /api/inventory — OWNER / ADMIN / MANAGER
+// Writes an IN movement on creation.
 // =============================================
 router.post('/', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
@@ -205,6 +224,29 @@ router.post('/', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, 
             reorder_level: reorderLevel
         });
 
+        // ★ NEW: write IN movement for the initial stock
+        const qty = Number(quantity);
+        const cost = Number(costPrice) || 0;
+        await writeMovementSafe({
+            inventoryItemId: newItem.id,
+            businessId,
+            userId,
+            movementType: 'IN',
+            quantity: qty,
+            unitCost: cost,
+            totalCost: qty * cost,
+            quantityBefore: 0,
+            quantityAfter: qty,
+            costPriceBefore: 0,
+            costPriceAfter: cost,
+            referenceType: 'OPENING',
+            referenceId: null,
+            reason: 'Initial stock on item creation',
+            notes: '',
+            metadata: {},
+            createdAt: new Date(),
+        });
+
         res.status(201).json({
             success: true,
             message: 'Stock added successfully',
@@ -219,6 +261,7 @@ router.post('/', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, 
 
 // =============================================
 // PUT /api/inventory/:id — OWNER / ADMIN / MANAGER
+// Metadata update only — no quantity change. No movement written.
 // =============================================
 router.put('/:id', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
@@ -257,6 +300,7 @@ router.put('/:id', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req
 
 // =============================================
 // PATCH /api/inventory/:id/stock — OWNER / ADMIN / MANAGER
+// Writes ADJUSTMENT_IN or ADJUSTMENT_OUT movement.
 // =============================================
 router.patch('/:id/stock', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
@@ -292,6 +336,31 @@ router.patch('/:id/stock', requireRole(...WRITE_ROLES), invalidateAfterWrite, as
 
         const updated = await inventoryRepo.update(id, { quantity: newQuantity });
 
+        // ★ NEW: write adjustment movement
+        const adj = Number(adjustment);
+        const absQty = Math.abs(adj);
+        const cost = Number(existing.cost_price) || 0;
+
+        await writeMovementSafe({
+            inventoryItemId: existing.id,
+            businessId,
+            userId,
+            movementType: adj > 0 ? 'ADJUSTMENT_IN' : 'ADJUSTMENT_OUT',
+            quantity: absQty,
+            unitCost: cost,
+            totalCost: absQty * cost,
+            quantityBefore: currentQuantity,
+            quantityAfter: newQuantity,
+            costPriceBefore: cost,
+            costPriceAfter: cost,
+            referenceType: 'ADJUSTMENT',
+            referenceId: null,
+            reason: reason || (adj > 0 ? 'Manual stock increase' : 'Manual stock decrease'),
+            notes: '',
+            metadata: {},
+            createdAt: new Date(),
+        });
+
         res.json({
             success: true,
             message: `Stock adjusted by ${adjustment} (${adjustment > 0 ? 'added' : 'removed'})`,
@@ -311,6 +380,7 @@ router.patch('/:id/stock', requireRole(...WRITE_ROLES), invalidateAfterWrite, as
 
 // =============================================
 // DELETE /api/inventory/:id — OWNER / ADMIN / MANAGER
+// Hard delete. No movement (item is removed).
 // =============================================
 router.delete('/:id', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {

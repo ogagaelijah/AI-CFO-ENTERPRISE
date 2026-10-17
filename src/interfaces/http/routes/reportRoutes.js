@@ -1,6 +1,6 @@
 // src/interfaces/http/routes/reportRoutes.js
-// v1.1.0-prod — Every route requires OWNER/ADMIN/MANAGER/ACCOUNTANT.
-//               Cashier has no access to any financial report.
+// v1.2.0-prod — Adds GET /inventory + GET /inventory-movement.
+// v1.1.0-prod — Role enforcement on all routes.
 // v1.0.0-prod — Initial.
 
 const express = require('express');
@@ -16,6 +16,7 @@ const DebtorRepository = require('../../../infrastructure/database/sqlite/reposi
 const CreditorRepository = require('../../../infrastructure/database/sqlite/repositories/CreditorRepository');
 const InventoryRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryRepository');
 const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository');
+const InventoryMovementRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryMovementRepository'); // ★ NEW
 
 const ProfitLossService = require('../../../application/services/reports/ProfitLossService');
 const DailyReportService = require('../../../application/services/reports/DailyReportService');
@@ -25,6 +26,7 @@ const YearlyReportService = require('../../../application/services/reports/Yearl
 const ExecutiveReportService = require('../../../application/services/reports/ExecutiveReportService');
 const CashFlowService = require('../../../application/services/reports/CashFlowService');
 const BalanceSheetService = require('../../../application/services/reports/BalanceSheetService');
+const InventoryReportService = require('../../../application/services/reports/InventoryReportService'); // ★ NEW
 
 const saleRepo = new SaleRepository();
 const incomeRepo = new IncomeRepository();
@@ -34,6 +36,7 @@ const debtorRepo = new DebtorRepository();
 const creditorRepo = new CreditorRepository();
 const inventoryRepo = new InventoryRepository();
 const paymentRepo = new PaymentRepository();
+const inventoryMovementRepo = new InventoryMovementRepository(); // ★ NEW
 
 const profitLossService = new ProfitLossService({
     saleRepository: saleRepo,
@@ -121,9 +124,14 @@ const balanceSheetService = new BalanceSheetService({
     profitLossService: profitLossService,
 });
 
+// ★ NEW: Inventory report service with movement repository
+const inventoryReportService = new InventoryReportService({
+    inventoryRepository: inventoryRepo,
+    inventoryMovementRepository: inventoryMovementRepo,
+});
+
 router.use(authMiddleware);
 
-// ★ Role gate — every report requires financial role
 const FINANCIAL_ROLES = ['OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
 
 // =============================================
@@ -449,6 +457,77 @@ router.get('/balance-sheet/summary', requireRole(...FINANCIAL_ROLES), async (req
     } catch (error) {
         console.error('❌ Error generating balance sheet summary:', error);
         res.status(500).json({ success: false, message: error.message || 'Failed to generate balance sheet summary' });
+    }
+});
+
+// =============================================
+// GET /api/reports/inventory — Valuation (as-at-date)
+// =============================================
+router.get('/inventory', requireRole(...FINANCIAL_ROLES), async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const businessId = req.user.businessId;
+        const { asAtDate, includeDetails, lowStockThreshold, sortBy, filterStatus } = req.query;
+
+        if (!businessId) {
+            return res.status(400).json({ success: false, message: 'Business ID is required' });
+        }
+
+        const result = await inventoryReportService.generate({
+            userId,
+            businessId,
+            asAtDate: asAtDate || null,
+            includeDetails: includeDetails === 'true' || includeDetails === '1',
+            lowStockThreshold: lowStockThreshold ? parseInt(lowStockThreshold, 10) : 5,
+            sortBy: sortBy || 'name',
+            filterStatus: filterStatus || null,
+        });
+
+        res.json(result);
+    } catch (error) {
+        console.error('❌ Error generating inventory valuation:', error);
+        res.status(500).json({ success: false, message: error.message || 'Failed to generate inventory valuation' });
+    }
+});
+
+// =============================================
+// GET /api/reports/inventory-movement — Movement (date range)
+// =============================================
+router.get('/inventory-movement', requireRole(...FINANCIAL_ROLES), async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const businessId = req.user.businessId;
+        const {
+            startDate, endDate, inventoryItemId, movementType,
+            page = 1, limit = 50,
+        } = req.query;
+
+        if (!businessId) {
+            return res.status(400).json({ success: false, message: 'Business ID is required' });
+        }
+
+        if (!startDate || !endDate) {
+            return res.status(400).json({
+                success: false,
+                message: 'startDate and endDate are required (YYYY-MM-DD)',
+            });
+        }
+
+        const result = await inventoryReportService.generateMovementReport({
+            userId,
+            businessId,
+            startDate,
+            endDate,
+            inventoryItemId: inventoryItemId ? parseInt(inventoryItemId, 10) : null,
+            movementType: movementType || null,
+            page: parseInt(page, 10) || 1,
+            limit: Math.min(parseInt(limit, 10) || 50, 100),
+        });
+
+        res.json(result);
+    } catch (error) {
+        console.error('❌ Error generating inventory movement report:', error);
+        res.status(500).json({ success: false, message: error.message || 'Failed to generate inventory movement report' });
     }
 });
 
