@@ -1,13 +1,17 @@
 // frontend/src/components/dashboard/DashboardSidebar.jsx
-// v1.1.0 — Filters nav items by role. Items without a `roles` array
-//          render for all authenticated users.
-// v1.0.0 — Initial.
+// v1.2.0 — Filters nav items by tenant role AND platform role.
 
 import { Link } from 'react-router-dom';
 import { X, LogOut } from 'lucide-react';
 import useRole from '../../hooks/useRole';
 
 const getSectionStyles = (label) => {
+  if (label.includes('PLATFORM')) {
+    return {
+      color: 'text-gold-600 dark:text-gold-400',
+      bg: 'bg-gold-50 dark:bg-gold-900/20',
+    };
+  }
   if (label.includes('TRANSACTIONS')) {
     return {
       color: 'text-blue-600 dark:text-blue-400',
@@ -63,7 +67,7 @@ const DashboardSidebar = ({
   onMobileClose,
   onLogout,
 }) => {
-  const { role } = useRole();
+  const { role, platformRole } = useRole();
 
   // Filter by role. Items without a `roles` field are always visible.
   // Section headers render only if at least one item in the section is visible.
@@ -82,7 +86,16 @@ const DashboardSidebar = ({
         lastSection = item;
         sectionHasVisibleChildren = false;
       } else {
-        const allowed = !item.roles || item.roles.includes(role);
+        let allowed = false;
+
+        // ★ NEW: Check if this is a Platform Staff item
+        if (item.roles && item.roles.includes('PLATFORM_STAFF')) {
+          allowed = Boolean(platformRole);
+        } else {
+          // Standard tenant role check
+          allowed = !item.roles || item.roles.includes(role);
+        }
+
         if (allowed) {
           out.push(item);
           sectionHasVisibleChildren = true;

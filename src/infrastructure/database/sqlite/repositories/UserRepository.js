@@ -1,12 +1,9 @@
 // src/infrastructure/database/sqlite/repositories/UserRepository.js
-// v3.2.0-prod — Postgres async. Case-insensitive email lookup. Added 2FA fields.
+// v3.3.0-prod — Adds platform_role for internal staff.
 
 const BaseRepository = require('./BaseRepository');
 const bcrypt = require('bcrypt');
 
-// ─────────────────────────────────────────────
-// User Entity
-// ─────────────────────────────────────────────
 class User {
     constructor(data) {
         this.id = data.id || null;
@@ -24,6 +21,7 @@ class User {
         this.passwordChangedAt = data.passwordChangedAt || null;
         this.twoFactorSecret = data.twoFactorSecret || null;
         this.twoFactorEnabled = data.twoFactorEnabled || false;
+        this.platformRole = data.platformRole || null; // ★ NEW
         this.createdAt = data.createdAt || new Date();
         this.updatedAt = data.updatedAt || new Date();
     }
@@ -101,16 +99,14 @@ class User {
             fullName: this.fullName,
             emailVerified: this.emailVerified,
             phoneVerified: this.phoneVerified,
-            twoFactorEnabled: this.twoFactorEnabled, // Expose status, but NEVER expose twoFactorSecret
+            twoFactorEnabled: this.twoFactorEnabled,
+            platformRole: this.platformRole, // ★ NEW
             createdAt: this.createdAt,
             updatedAt: this.updatedAt,
         };
     }
 }
 
-// ─────────────────────────────────────────────
-// Repository
-// ─────────────────────────────────────────────
 class UserRepository extends BaseRepository {
     constructor() {
         super('users');
@@ -134,6 +130,7 @@ class UserRepository extends BaseRepository {
             passwordChangedAt: row.password_changed_at,
             twoFactorSecret: row.two_factor_secret,
             twoFactorEnabled: row.two_factor_enabled === true || row.two_factor_enabled === 1,
+            platformRole: row.platform_role, // ★ NEW
             createdAt: row.created_at,
             updatedAt: row.updated_at,
         });
@@ -148,8 +145,9 @@ class UserRepository extends BaseRepository {
                 password_hash, email_verified, phone_verified,
                 reset_token, reset_token_expiry,
                 email_verification_token, email_verification_expiry,
-                password_changed_at, two_factor_secret, two_factor_enabled
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                password_changed_at, two_factor_secret, two_factor_enabled,
+                platform_role
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
             RETURNING id`,
             [
                 userData.telegramId || null,
@@ -166,6 +164,7 @@ class UserRepository extends BaseRepository {
                 userData.passwordChangedAt || now,
                 userData.twoFactorSecret || null,
                 userData.twoFactorEnabled ? true : false,
+                userData.platformRole || null, // ★ NEW
             ]
         );
 
@@ -226,6 +225,7 @@ class UserRepository extends BaseRepository {
                 passwordChangedAt: entity.passwordChangedAt,
                 twoFactorSecret: entity.twoFactorSecret,
                 twoFactorEnabled: entity.twoFactorEnabled,
+                platformRole: entity.platformRole, // ★ NEW
             });
         }
 
@@ -248,6 +248,7 @@ class UserRepository extends BaseRepository {
             passwordChangedAt: 'password_changed_at',
             twoFactorSecret: 'two_factor_secret',
             twoFactorEnabled: 'two_factor_enabled',
+            platformRole: 'platform_role', // ★ NEW
         };
 
         for (const [key, column] of Object.entries(map)) {

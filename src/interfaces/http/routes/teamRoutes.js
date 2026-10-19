@@ -1,6 +1,5 @@
 // src/interfaces/http/routes/teamRoutes.js
-// v1.0.0-prod — Team management: invite, accept, list, update role, remove.
-//               Every route is tenant-scoped by req.user.businessId.
+// v1.2.0-prod — Handles Platform Role injection upon invite acceptance.
 
 const express = require('express');
 const router = express.Router();
@@ -11,7 +10,9 @@ const BusinessMemberRepository = require('../../../infrastructure/database/sqlit
 const TeamInviteRepository = require('../../../infrastructure/database/sqlite/repositories/TeamInviteRepository');
 const UserRepository = require('../../../infrastructure/database/sqlite/repositories/UserRepository');
 const BusinessRepository = require('../../../infrastructure/database/sqlite/repositories/BusinessRepository');
+const SubscriptionRepository = require('../../../infrastructure/database/sqlite/repositories/SubscriptionRepository'); // ★ NEW
 const emailService = require('../../../infrastructure/services/email/ResendService');
+const plans = require('../../../config/plans'); // ★ NEW
 
 const { authMiddleware } = require('../middleware/authMiddleware');
 const { requireRole } = require('../middleware/requireRole');
@@ -22,6 +23,7 @@ const memberRepo = new BusinessMemberRepository();
 const inviteRepo = new TeamInviteRepository();
 const userRepo = new UserRepository();
 const businessRepo = new BusinessRepository();
+const subscriptionRepo = new SubscriptionRepository(); // ★ NEW
 
 const ALLOWED_ROLES = ['OWNER', 'ADMIN', 'MANAGER', 'CASHIER', 'ACCOUNTANT'];
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -54,11 +56,6 @@ const FRONTEND_URL =
 // PUBLIC ROUTES (no auth required)
 // ═══════════════════════════════════════════════
 
-// ─────────────────────────────────────────────
-// GET /api/team/invite/:token
-// Public: fetch invite details (email, business name, role) for the
-// accept-invite page. Does NOT consume the invite.
-// ─────────────────────────────────────────────
 router.get('/invite/:token', strictLimiter, async (req, res) => {
   try {
     const tokenHash = hashToken(req.params.token);
@@ -83,8 +80,8 @@ router.get('/invite/:token', strictLimiter, async (req, res) => {
         email: invite.email,
         role: invite.role,
         businessName: business?.name || null,
-        // Tells the frontend whether to show "create account" or "log in to accept"
         userExists: Boolean(existingUser),
+        platformRole: invite.platformRole, // ★ NEW
       },
     });
   } catch (error) {
@@ -93,12 +90,6 @@ router.get('/invite/:token', strictLimiter, async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────
-// POST /api/team/accept
-// Public: accept invite. Two paths:
-//   A) Existing user → just consume invite + add membership
-//   B) New user → create account + add membership + issue JWT
-// ─────────────────────────────────────────────
 router.post('/accept', strictLimiter, async (req, res) => {
   try {
     const { token, fullName, password } = req.body;
@@ -124,27 +115,31 @@ router.post('/accept', strictLimiter, async (req, res) => {
 
     // ── Path A: existing user
     if (existingUser) {
-      const already = await memberRepo.exists(invite.businessId, existingUser.id);
-      if (already) {
-        await inviteRepo.markAccepted(invite.id);
-        return res.status(409).json({
-          success: false,
-          message: 'You are already a member of this business.',
+      if (invite.platformRole) {
+        // ★ NEW: Apply platform role to existing user
+        await userRepo.update(existingUser.id, { platformRole: invite.platformRole });
+      } else {
+        const already = await memberRepo.exists(invite.businessId, existingUser.id);
+        if (already) {
+          await inviteRepo.markAccepted(invite.id);
+          return res.status(409).json({
+            success: false,
+            message: 'You are already a member of this business.',
+          });
+        }
+
+        await memberRepo.create({
+          businessId: invite.businessId,
+          userId: existingUser.id,
+          role: invite.role,
+          status: 'ACTIVE',
+          invitedBy: invite.invitedBy,
+          invitedAt: invite.createdAt,
+          acceptedAt: new Date().toISOString(),
         });
       }
 
-      await memberRepo.create({
-        businessId: invite.businessId,
-        userId: existingUser.id,
-        role: invite.role,
-        status: 'ACTIVE',
-        invitedBy: invite.invitedBy,
-        invitedAt: invite.createdAt,
-        acceptedAt: new Date().toISOString(),
-      });
-
       await inviteRepo.markAccepted(invite.id);
-
       const business = await businessRepo.findById(invite.businessId);
 
       return res.json({
@@ -170,7 +165,6 @@ router.post('/accept', strictLimiter, async (req, res) => {
     const passwordHash = await bcrypt.hash(password, 10);
     const uniqueTelegramId = `inv_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
 
-    // Create user (emailVerified = true — they received the invite at this email)
     const newUser = await userRepo.create({
       telegramId: uniqueTelegramId,
       email: invite.email,
@@ -180,21 +174,22 @@ router.post('/accept', strictLimiter, async (req, res) => {
       emailVerified: true,
       phoneVerified: false,
       passwordChangedAt: new Date().toISOString(),
+      platformRole: invite.platformRole || null, // ★ NEW
     });
 
-    // Add membership
-    await memberRepo.create({
-      businessId: invite.businessId,
-      userId: newUser.id,
-      role: invite.role,
-      status: 'ACTIVE',
-      invitedBy: invite.invitedBy,
-      invitedAt: invite.createdAt,
-      acceptedAt: new Date().toISOString(),
-    });
+    if (!invite.platformRole) {
+      await memberRepo.create({
+        businessId: invite.businessId,
+        userId: newUser.id,
+        role: invite.role,
+        status: 'ACTIVE',
+        invitedBy: invite.invitedBy,
+        invitedAt: invite.createdAt,
+        acceptedAt: new Date().toISOString(),
+      });
+    }
 
     await inviteRepo.markAccepted(invite.id);
-
     const business = await businessRepo.findById(invite.businessId);
 
     return res.status(201).json({
@@ -213,11 +208,6 @@ router.post('/accept', strictLimiter, async (req, res) => {
 // ═══════════════════════════════════════════════
 router.use(authMiddleware);
 
-// ─────────────────────────────────────────────
-// GET /api/team
-// List all members of the current business + pending invites.
-// Visible to OWNER and ADMIN.
-// ─────────────────────────────────────────────
 router.get('/', requireRole('OWNER', 'ADMIN'), async (req, res) => {
   try {
     const businessId = req.user.businessId;
@@ -240,11 +230,6 @@ router.get('/', requireRole('OWNER', 'ADMIN'), async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────
-// POST /api/team/invite
-// Send an invite. OWNER or ADMIN only.
-// Body: { email, role }
-// ─────────────────────────────────────────────
 router.post('/invite', requireRole('OWNER', 'ADMIN'), async (req, res) => {
   try {
     const businessId = req.user.businessId;
@@ -267,7 +252,6 @@ router.post('/invite', requireRole('OWNER', 'ADMIN'), async (req, res) => {
       });
     }
 
-    // ADMIN cannot create another OWNER or ADMIN (only OWNER can)
     if (req.user.role === 'ADMIN' && (role === 'OWNER' || role === 'ADMIN')) {
       return res.status(403).json({
         success: false,
@@ -275,7 +259,25 @@ router.post('/invite', requireRole('OWNER', 'ADMIN'), async (req, res) => {
       });
     }
 
-    // Is this email already a member?
+    // ★ NEW: Phase J Subscription Gate
+    const subscription = await subscriptionRepo.findActiveByBusinessId(businessId);
+    const planId = subscription?.planId || 'basic';
+    const limits = plans.getLimits(planId);
+    const maxUsers = limits.users;
+
+    if (maxUsers !== -1) {
+      const currentMembers = await memberRepo.findByBusinessId(businessId);
+      const activeMembers = currentMembers.filter(m => m.status === 'ACTIVE');
+      if (activeMembers.length >= maxUsers) {
+        return res.status(403).json({
+          success: false,
+          code: 'PLAN_LIMIT_REACHED',
+          message: `Your ${plans.getPlan(planId)?.name || 'current'} plan allows a maximum of ${maxUsers} user(s). Please upgrade to add more team members.`,
+        });
+      }
+    }
+    // ★ END Phase J
+
     const existingUser = await userRepo.findByEmail(normalizedEmail);
     if (existingUser) {
       const already = await memberRepo.exists(businessId, existingUser.id);
@@ -287,10 +289,8 @@ router.post('/invite', requireRole('OWNER', 'ADMIN'), async (req, res) => {
       }
     }
 
-    // Remove any older pending invite for the same email so the unique index allows the new one
     await inviteRepo.deletePendingForEmail(businessId, normalizedEmail);
 
-    // Create invite
     const rawToken = crypto.randomBytes(32).toString('hex');
     const tokenHash = hashToken(rawToken);
     const expiresAt = new Date(Date.now() + INVITE_TTL_MS).toISOString();
@@ -304,7 +304,6 @@ router.post('/invite', requireRole('OWNER', 'ADMIN'), async (req, res) => {
       expiresAt,
     });
 
-    // Fetch business + inviter for email
     const [business, inviter] = await Promise.all([
       businessRepo.findById(businessId),
       userRepo.findById(invitedBy),
@@ -341,10 +340,6 @@ router.post('/invite', requireRole('OWNER', 'ADMIN'), async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────
-// POST /api/team/invite/:id/resend
-// Resend an invite with a fresh token.
-// ─────────────────────────────────────────────
 router.post('/invite/:id/resend', requireRole('OWNER', 'ADMIN'), async (req, res) => {
   try {
     const businessId = req.user.businessId;
@@ -361,7 +356,6 @@ router.post('/invite/:id/resend', requireRole('OWNER', 'ADMIN'), async (req, res
       return res.status(400).json({ success: false, message: 'This invite has already been accepted' });
     }
 
-    // Delete the old one + create fresh
     await inviteRepo.delete(oldInvite.id);
 
     const rawToken = crypto.randomBytes(32).toString('hex');
@@ -411,10 +405,6 @@ router.post('/invite/:id/resend', requireRole('OWNER', 'ADMIN'), async (req, res
   }
 });
 
-// ─────────────────────────────────────────────
-// DELETE /api/team/invite/:id
-// Revoke a pending invite.
-// ─────────────────────────────────────────────
 router.delete('/invite/:id', requireRole('OWNER', 'ADMIN'), async (req, res) => {
   try {
     const businessId = req.user.businessId;
@@ -436,10 +426,6 @@ router.delete('/invite/:id', requireRole('OWNER', 'ADMIN'), async (req, res) => 
   }
 });
 
-// ─────────────────────────────────────────────
-// PUT /api/team/:memberId/role
-// Change a member's role. OWNER only.
-// ─────────────────────────────────────────────
 router.put('/:memberId/role', requireRole('OWNER'), async (req, res) => {
   try {
     const businessId = req.user.businessId;
@@ -461,7 +447,6 @@ router.put('/:memberId/role', requireRole('OWNER'), async (req, res) => {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
-    // Prevent demoting the last OWNER
     if (target.role === 'OWNER' && role !== 'OWNER') {
       const owners = await memberRepo.countOwners(businessId);
       if (owners <= 1) {
@@ -480,10 +465,6 @@ router.put('/:memberId/role', requireRole('OWNER'), async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────
-// DELETE /api/team/:memberId
-// Remove a member. OWNER or ADMIN.
-// ─────────────────────────────────────────────
 router.delete('/:memberId', requireRole('OWNER', 'ADMIN'), async (req, res) => {
   try {
     const businessId = req.user.businessId;
@@ -498,7 +479,6 @@ router.delete('/:memberId', requireRole('OWNER', 'ADMIN'), async (req, res) => {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
-    // Cannot remove yourself
     if (target.userId === requesterId) {
       return res.status(400).json({
         success: false,
@@ -506,7 +486,6 @@ router.delete('/:memberId', requireRole('OWNER', 'ADMIN'), async (req, res) => {
       });
     }
 
-    // ADMIN cannot remove OWNER or other ADMINs
     if (req.user.role === 'ADMIN' && (target.role === 'OWNER' || target.role === 'ADMIN')) {
       return res.status(403).json({
         success: false,
@@ -514,7 +493,6 @@ router.delete('/:memberId', requireRole('OWNER', 'ADMIN'), async (req, res) => {
       });
     }
 
-    // Cannot remove the last OWNER
     if (target.role === 'OWNER') {
       const owners = await memberRepo.countOwners(businessId);
       if (owners <= 1) {

@@ -1,12 +1,9 @@
 // src/infrastructure/database/sqlite/repositories/SubscriptionRepository.js
-// v3.0.0-prod — Postgres async. Same logic as SQLite v2.0.0.
+// v3.1.0-prod — Adds countActive() for Platform Admin.
 
 const BaseRepository = require('./BaseRepository');
 const plans = require('../../../../config/plans');
 
-// ─────────────────────────────────────────────
-// Subscription Entity
-// ─────────────────────────────────────────────
 class Subscription {
     constructor(data = {}) {
         this.id = data.id ?? null;
@@ -35,17 +32,14 @@ class Subscription {
 
     isExpired() {
         if (this.status === 'expired' || this.status === 'cancelled') return true;
-
         if (this.status === 'trial') {
             if (!this.trialEndDate) return true;
             return Date.now() >= this.trialEndDate.getTime();
         }
-
         if (this.status === 'active') {
             if (!this.endDate) return false;
             return Date.now() >= this.endDate.getTime();
         }
-
         return false;
     }
 
@@ -55,10 +49,7 @@ class Subscription {
 
     daysRemaining() {
         if (this.isExpired()) return 0;
-        const end =
-            this.status === 'trial' && this.trialEndDate
-                ? this.trialEndDate
-                : this.endDate;
+        const end = this.status === 'trial' && this.trialEndDate ? this.trialEndDate : this.endDate;
         if (!end) return null;
         const ms = end.getTime() - Date.now();
         return Math.max(0, Math.ceil(ms / (1000 * 60 * 60 * 24)));
@@ -66,23 +57,17 @@ class Subscription {
 
     allows(feature) {
         if (this.isReadOnly()) return false;
-        const effectivePlanId = this.isTrialActive()
-            ? plans.getTrialPlan()
-            : this.planId;
+        const effectivePlanId = this.isTrialActive() ? plans.getTrialPlan() : this.planId;
         return plans.hasFeature(effectivePlanId, feature);
     }
 
     getEffectiveLimits() {
-        const effectivePlanId = this.isTrialActive()
-            ? plans.getTrialPlan()
-            : this.planId;
+        const effectivePlanId = this.isTrialActive() ? plans.getTrialPlan() : this.planId;
         return plans.getLimits(effectivePlanId);
     }
 
     getEffectiveFeatures() {
-        const effectivePlanId = this.isTrialActive()
-            ? plans.getTrialPlan()
-            : this.planId;
+        const effectivePlanId = this.isTrialActive() ? plans.getTrialPlan() : this.planId;
         return plans.getFeatures(effectivePlanId);
     }
 
@@ -113,9 +98,6 @@ class Subscription {
     }
 }
 
-// ─────────────────────────────────────────────
-// Repository
-// ─────────────────────────────────────────────
 class SubscriptionRepository extends BaseRepository {
     constructor() {
         super('subscriptions');
@@ -316,11 +298,16 @@ class SubscriptionRepository extends BaseRepository {
         const result = await this._query(query, params);
         return result.rows[0]?.count || 0;
     }
+
+    // ★ NEW: Platform Admin Method
+    async countActive() {
+        const result = await this._query(
+            `SELECT COUNT(*)::int as count FROM subscriptions WHERE status IN ('active', 'trial')`
+        );
+        return result.rows[0]?.count || 0;
+    }
 }
 
-// ─────────────────────────────────────────────
-// Utils
-// ─────────────────────────────────────────────
 function safeJSON(str) {
     try {
         return typeof str === 'string' ? JSON.parse(str) : str;

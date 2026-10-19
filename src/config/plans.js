@@ -1,9 +1,6 @@
 // src/config/plans.js
 // Single Source of Truth for subscription plans, features, limits, pricing.
-// v4.4.0-prod
-//
-// v4.3.0 — Added `fees` to INDUSTRY_FEATURES (Education).
-// v4.4.0 — Added `pledges` and `donations` to INDUSTRY_FEATURES (NGO).
+// v4.5.0-prod — Adds TEAM_FEATURES to Pro tier.
 
 const CORE_FEATURES = {
     sales: true,
@@ -19,37 +16,16 @@ const CORE_FEATURES = {
 };
 
 const INDUSTRY_FEATURES = {
-    // Consultancy
     projects: true,
     time_entries: true,
     invoices: true,
-    // Education
     students: true,
     classes: true,
     enrollments: true,
     terms: true,
     fees: true,
-    // NGO / Non-Profit
     pledges: true,
     donations: true,
-    // Real Estate (next)
-    // properties: true,
-    // tenants: true,
-    // rent: true,
-    // Logistics
-    // trips: true,
-    // vehicles: true,
-    // drivers: true,
-    // Healthcare
-    // patients: true,
-    // visits: true,
-    // medical_supplies: true,
-    // Construction
-    // materials: true,
-    // Manufacturing
-    // raw_materials: true,
-    // production: true,
-    // finished_goods: true,
 };
 
 const INTELLIGENCE_FEATURES = {
@@ -119,7 +95,8 @@ const TIER_COMPOSITION = {
         support: { support_email: true },
     },
     pro: {
-        groups: [CORE_FEATURES, INDUSTRY_FEATURES, INTELLIGENCE_FEATURES],
+        // ★ Added TEAM_FEATURES here for Phase J
+        groups: [CORE_FEATURES, INDUSTRY_FEATURES, INTELLIGENCE_FEATURES, TEAM_FEATURES],
         reports: {
             reports_basic: true,
             reports_financial: true,
@@ -184,7 +161,7 @@ const TIER_META = {
             transactions_per_month: 500,
             inventory_items: 100,
             customers: 200,
-            users: 1,
+            users: 1, // ★ Strictly 1 user (the OWNER)
             ai_queries_per_day: 0,
             data_retention_months: 6,
         },
@@ -201,7 +178,7 @@ const TIER_META = {
             transactions_per_month: 5000,
             inventory_items: 1000,
             customers: 2000,
-            users: 3,
+            users: 3, // ★ Allows 3 users
             ai_queries_per_day: 20,
             data_retention_months: 24,
         },
@@ -218,7 +195,7 @@ const TIER_META = {
             transactions_per_month: -1,
             inventory_items: -1,
             customers: -1,
-            users: -1,
+            users: -1, // ★ Unlimited
             ai_queries_per_day: -1,
             data_retention_months: -1,
         },

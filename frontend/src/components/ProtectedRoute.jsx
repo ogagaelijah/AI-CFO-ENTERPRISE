@@ -1,4 +1,6 @@
 // frontend/src/components/ProtectedRoute.jsx
+// v2.0.0-prod — Uses platformRole for admin access instead of hardcoded emails.
+
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
@@ -21,15 +23,12 @@ const ProtectedRoute = ({ children, requireAdmin = false }) => {
   }
 
   if (requireAdmin) {
-    const adminEmails = [
-      'ogagaokeelijah@gmail.com',
-      'ogagaoke66@gmail.com',
-      'ogalosautomation@gmail.com',
-    ];
+    // ★ NEW: Check platformRole instead of hardcoded emails
+    const allowedPlatformRoles = ['SUPERADMIN', 'ADMIN', 'SUPPORT', 'TECHNICAL', 'OPERATIONS', 'MARKETING', 'HR', 'COMPLIANCE', 'FINANCE'];
+    const isPlatformStaff = user?.platformRole && allowedPlatformRoles.includes(user.platformRole);
+    const isTenantAdmin = user?.isAdmin === true; // Keeping this just in case
 
-    const isAdmin = adminEmails.includes(user?.email) || user?.isAdmin === true;
-
-    if (!isAdmin) {
+    if (!isPlatformStaff && !isTenantAdmin) {
       return <Navigate to="/dashboard" replace />;
     }
   }

@@ -1,15 +1,12 @@
 // frontend/src/pages/Dashboard.jsx
-// v2.4.0-prod — Uses useRole for widget + nav gating. DashboardSidebar
-//               handles role-filtering of nav items via industryConfig roles.
-// v2.3.0-prod — Mounts VerifyEmailBanner above WelcomeBanner.
-// v2.2.1-prod — Regex fix: handles '/' in industry names.
+// v2.5.0-prod — Uses getSidebarItems to inject Platform Admin links.
 
 import { useState } from 'react';
 import { Home } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { usePlan } from '../hooks/usePlan';
 import useRole from '../hooks/useRole';
-import { INDUSTRY_CONFIGS } from '../config/industryConfig';
+import { INDUSTRY_CONFIGS, getSidebarItems } from '../config/industryConfig';
 import { useDashboardData } from '../hooks/useDashboardData';
 
 import DashboardSidebar from '../components/dashboard/DashboardSidebar';
@@ -69,11 +66,13 @@ const Dashboard = () => {
     refresh,
   } = useDashboardData();
 
-  // Build nav items. DashboardSidebar filters by role using each item's `roles`.
-  const navItems = [
+  // ★ NEW: Build nav items and inject platform links if applicable
+  const baseNavItems = [
     { icon: Home, label: 'Dashboard', href: '/dashboard', active: true },
     ...(industryConfig.sidebar || []),
   ];
+  
+  const navItems = getSidebarItems(baseNavItems, user);
 
   const handleLogout = () => {
     logout();
@@ -82,9 +81,6 @@ const Dashboard = () => {
 
   const closeMenu = () => setIsMobileMenuOpen(false);
 
-  // Show health/risk/decisions cards only if:
-  //   1. Plan includes the analytics feature, AND
-  //   2. User's role allows financial widgets
   const showIntelligenceWidgets = can('analytics') && canViewFinancialWidgets;
 
   return (

@@ -1,5 +1,5 @@
 // src/interfaces/http/routes/authRoutes.js
-// v5.3.0-prod — Fully refactored to use LoginUseCase. Added 2FA (TOTP) endpoints including Disable.
+// v5.7.0-prod — Handles Platform Staff login (no business) without crashing.
 
 const express = require('express');
 const router = express.Router();
@@ -22,7 +22,7 @@ const ResetPasswordUseCase = require('../../../application/useCases/auth/ResetPa
 const Setup2FAUseCase = require('../../../application/useCases/auth/Setup2FAUseCase');
 const Enable2FAUseCase = require('../../../application/useCases/auth/Enable2FAUseCase');
 const Verify2FALoginUseCase = require('../../../application/useCases/auth/Verify2FALoginUseCase');
-const Disable2FAUseCase = require('../../../application/useCases/auth/Disable2FAUseCase'); // ★ NEW
+const Disable2FAUseCase = require('../../../application/useCases/auth/Disable2FAUseCase');
 
 const emailService = require('../../../infrastructure/services/email/ResendService');
 const logger = require('../../../shared/utils/logger');
@@ -40,7 +40,6 @@ const memberRepo = new BusinessMemberRepository();
 const subscriptionRepo = new SubscriptionRepository();
 const securityEvents = new SecurityEventService();
 
-// Initialize Use Cases
 const loginUseCase = new LoginUseCase(userRepo, memberRepo, businessRepo);
 const verifyEmailUseCase = new VerifyEmailUseCase({ userRepository: userRepo });
 const forgotPasswordUseCase = new ForgotPasswordUseCase(userRepo, { emailService });
@@ -48,7 +47,7 @@ const resetPasswordUseCase = new ResetPasswordUseCase(userRepo);
 const setup2FAUseCase = new Setup2FAUseCase(userRepo);
 const enable2FAUseCase = new Enable2FAUseCase(userRepo);
 const verify2FALoginUseCase = new Verify2FALoginUseCase(userRepo);
-const disable2FAUseCase = new Disable2FAUseCase(userRepo); // ★ NEW
+const disable2FAUseCase = new Disable2FAUseCase(userRepo);
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 const JWT_EXPIRES_IN = '7d';
@@ -84,7 +83,13 @@ const normalizePhone = (input) => {
 
 const signToken = (user, business) =>
   jwt.sign(
-    { id: user.id, email: user.email, businessId: business?.id || null, industry: business?.industry || null },
+    { 
+      id: user.id, 
+      email: user.email, 
+      businessId: business?.id || null, 
+      industry: business?.industry || null,
+      platformRole: user.platformRole 
+    },
     JWT_SECRET,
     { expiresIn: JWT_EXPIRES_IN }
   );
@@ -156,7 +161,7 @@ router.post('/register', registerLimiter, async (req, res) => {
 
     return res.status(201).json({
       success: true, message: `Account created. You have ${trialDays} days of ${trialPlan.name} access.`, token,
-      user: { id: user.id, fullName: user.fullName, email: user.email, phoneNumber: user.phoneNumber, industry: business.industry, businessId: business.id, role: 'OWNER', emailVerified: false },
+      user: { id: user.id, fullName: user.fullName, email: user.email, phoneNumber: user.phoneNumber, industry: business.industry, businessId: business.id, role: 'OWNER', emailVerified: false, twoFactorEnabled: user.twoFactorEnabled, platformRole: user.platformRole },
       business: { id: business.id, name: business.name, industry: business.industry },
       trial: { planId: trialPlanId, planName: trialPlan.name, days: trialDays, endDate: trialEndDate },
     });
@@ -225,8 +230,21 @@ router.post('/login', loginEmailLimiter, async (req, res) => {
 
     return res.json({
       success: true, message: 'Login successful', token,
-      user: { id: result.user.id, fullName: result.user.fullName, email: result.user.email, phoneNumber: result.user.phoneNumber, industry: result.business.industry, businessId: result.business.id, role: result.role, emailVerified: result.user.emailVerified, twoFactorEnabled: result.user.twoFactorEnabled },
-      business: { id: result.business.id, name: result.business.name, industry: result.business.industry },
+      user: { 
+        id: result.user.id, 
+        fullName: result.user.fullName, 
+        email: result.user.email, 
+        phoneNumber: result.user.phoneNumber, 
+        industry: result.business?.industry || null, 
+        businessId: result.business?.id || null, 
+        role: result.role, 
+        emailVerified: result.user.emailVerified, 
+        twoFactorEnabled: result.user.twoFactorEnabled, 
+        platformRole: result.user.platformRole 
+      },
+      business: result.business 
+        ? { id: result.business.id, name: result.business.name, industry: result.business.industry }
+        : null,
     });
   } catch (error) {
     return res.status(401).json({ success: false, message: error.message || 'Login failed' });
@@ -245,7 +263,10 @@ router.post('/2fa/login', strictLimiter, async (req, res) => {
     
     const membership = await memberRepo.findFirstActiveByUser(user.id);
     let business = membership ? await businessRepo.findById(membership.businessId) : await businessRepo.findByUserIdFirst(user.id);
-    if (!business) return res.status(403).json({ success: false, message: 'No business associated with this account.' });
+    
+    // Allow Platform Staff to login without a business
+    const isPlatformStaff = Boolean(user.platformRole);
+    if (!business && !isPlatformStaff) return res.status(403).json({ success: false, message: 'No business associated with this account.' });
 
     const token = signToken(user, business);
     res.cookie('token', token, COOKIE_OPTIONS);
@@ -253,8 +274,19 @@ router.post('/2fa/login', strictLimiter, async (req, res) => {
 
     return res.json({
       success: true, message: 'Login successful', token,
-      user: { id: user.id, fullName: user.fullName, email: user.email, phoneNumber: user.phoneNumber, industry: business.industry, businessId: business.id, role: membership?.role || 'OWNER', emailVerified: user.emailVerified, twoFactorEnabled: user.twoFactorEnabled },
-      business: { id: business.id, name: business.name, industry: business.industry },
+      user: { 
+        id: user.id, 
+        fullName: user.fullName, 
+        email: user.email, 
+        phoneNumber: user.phoneNumber, 
+        industry: business?.industry || null, 
+        businessId: business?.id || null, 
+        role: membership?.role || (isPlatformStaff ? 'PLATFORM_STAFF' : 'OWNER'), 
+        emailVerified: user.emailVerified, 
+        twoFactorEnabled: user.twoFactorEnabled, 
+        platformRole: user.platformRole 
+      },
+      business: business ? { id: business.id, name: business.name, industry: business.industry } : null,
     });
   } catch (error) { return res.status(401).json({ success: false, message: error.message || '2FA verification failed' }); }
 });
@@ -276,25 +308,14 @@ router.post('/2fa/enable', authenticateToken, async (req, res) => {
   } catch (error) { return res.status(400).json({ success: false, message: error.message }); }
 });
 
-// ★ NEW: POST /2fa/disable
 router.post('/2fa/disable', authenticateToken, async (req, res) => {
   try {
     const { code } = req.body;
     if (!code) return res.status(400).json({ success: false, message: 'Code is required' });
-    
     const result = await disable2FAUseCase.execute(req.user.id, code);
-    
-    securityEvents.log({
-      eventType: '2FA_DISABLED',
-      userId: req.user.id,
-      ipAddress: clientIp(req),
-      userAgent: clientUa(req),
-    });
-
+    securityEvents.log({ eventType: '2FA_DISABLED', userId: req.user.id, ipAddress: clientIp(req), userAgent: clientUa(req) });
     return res.json({ success: true, message: result.message });
-  } catch (error) { 
-    return res.status(400).json({ success: false, message: error.message }); 
-  }
+  } catch (error) { return res.status(400).json({ success: false, message: error.message }); }
 });
 
 // ─────────────────────────────────────────────
@@ -313,13 +334,28 @@ router.get('/me', async (req, res) => {
     if (decoded.businessId) membership = await memberRepo.findByBusinessAndUser(decoded.businessId, user.id);
     if (!membership) membership = await memberRepo.findFirstActiveByUser(user.id);
 
-    if (!membership || membership.status !== 'ACTIVE') return res.status(403).json({ success: false, message: 'You do not have access to this business.' });
+    // Allow Platform Staff to bypass strict business membership check
+    const isPlatformStaff = Boolean(user.platformRole);
+    if ((!membership || membership.status !== 'ACTIVE') && !isPlatformStaff) {
+      return res.status(403).json({ success: false, message: 'You do not have access to this business.' });
+    }
 
-    const business = await businessRepo.findById(membership.businessId);
+    const business = membership ? await businessRepo.findById(membership.businessId) : null;
 
     return res.json({
       success: true,
-      user: { id: user.id, fullName: user.fullName, email: user.email, phoneNumber: user.phoneNumber, industry: business ? business.industry : null, businessId: business ? business.id : null, role: membership.role, emailVerified: user.emailVerified, twoFactorEnabled: user.twoFactorEnabled },
+      user: { 
+        id: user.id, 
+        fullName: user.fullName, 
+        email: user.email, 
+        phoneNumber: user.phoneNumber, 
+        industry: business ? business.industry : null, 
+        businessId: business ? business.id : null, 
+        role: membership?.role || (isPlatformStaff ? 'PLATFORM_STAFF' : null), 
+        emailVerified: user.emailVerified, 
+        twoFactorEnabled: user.twoFactorEnabled, 
+        platformRole: user.platformRole 
+      },
       business: business ? { id: business.id, name: business.name, industry: business.industry } : null,
     });
   } catch (error) { return res.status(401).json({ success: false, message: 'Invalid token' }); }

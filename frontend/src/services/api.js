@@ -1,5 +1,5 @@
 // frontend/src/services/api.js
-// v4.3.0-prod — Adds disable2FA endpoint.
+// v4.6.0-prod — Adds updateStaffRole to platformApi.
 
 import axios from 'axios';
 import { reportError, reportWarning } from './telemetry';
@@ -170,7 +170,7 @@ export const authApi = {
   setup2FA: () => api.post('/auth/2fa/setup'),
   enable2FA: (code) => api.post('/auth/2fa/enable', { code }),
   login2FA: (tempToken, code) => api.post('/auth/2fa/login', { tempToken, code }),
-  disable2FA: (code) => api.post('/auth/2fa/disable', { code }), // ★ NEW
+  disable2FA: (code) => api.post('/auth/2fa/disable', { code }),
 };
 
 export const businessApi = {
@@ -186,6 +186,15 @@ export const subscriptionApi = {
   getPlans: () => api.get('/subscription/plans'),
   getCurrent: () => api.get('/subscription/current'),
   cancel: (reason = '') => api.post('/subscription/cancel', { reason }),
+};
+
+// Platform Admin API
+export const platformApi = {
+  getStats: () => api.get('/platform/stats'),
+  getStaff: () => api.get('/platform/staff'),
+  hireStaff: (email, platformRole) => api.post('/platform/staff', { email, platformRole }),
+  updateStaffRole: (id, platformRole) => api.put(`/platform/staff/${id}`, { platformRole }), // ★ NEW
+  fireStaff: (id) => api.delete(`/platform/staff/${id}`),
 };
 
 export default api;

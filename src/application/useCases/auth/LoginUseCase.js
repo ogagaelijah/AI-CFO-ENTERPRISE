@@ -1,4 +1,6 @@
 // src/application/useCases/auth/LoginUseCase.js
+// v1.1.0-prod — Allows Platform Staff to login without a business.
+
 const Email = require('../../../domain/valueObjects/Email');
 const PhoneNumber = require('../../../domain/valueObjects/PhoneNumber');
 const jwt = require('jsonwebtoken');
@@ -41,7 +43,7 @@ class LoginUseCase {
             const tempToken = jwt.sign(
                 { id: user.id, requires2FA: true },
                 process.env.JWT_SECRET || 'your-secret-key',
-                { expiresIn: '5m' } // 5 minutes to enter the code
+                { expiresIn: '5m' }
             );
             return { requires2FA: true, tempToken };
         }
@@ -53,19 +55,19 @@ class LoginUseCase {
         if (membership) {
             business = await this.businessRepository.findById(membership.businessId);
         }
-        if (!business) {
-            business = await this.businessRepository.findByUserIdFirst(user.id);
-        }
+        
+        // ★ NEW: If they are Platform Staff, they don't need a business to log in.
+        const isPlatformStaff = Boolean(user.platformRole);
 
-        if (!business) {
+        if (!business && !isPlatformStaff) {
             throw new Error('No business associated with this account. Please contact support.');
         }
 
         return {
             requires2FA: false,
             user: user,
-            business,
-            role: membership?.role || 'OWNER',
+            business: business,
+            role: membership?.role || (isPlatformStaff ? 'PLATFORM_STAFF' : 'OWNER'),
             message: 'Login successful!',
         };
     }
