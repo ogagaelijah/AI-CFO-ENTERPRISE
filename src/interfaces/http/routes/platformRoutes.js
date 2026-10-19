@@ -1,5 +1,5 @@
 // src/interfaces/http/routes/platformRoutes.js
-// v1.6.0-prod — Adds staff promotion/demotion endpoint.
+// v1.7.0-prod — Returns actual error messages on hire failure.
 
 const express = require('express');
 const router = express.Router();
@@ -63,7 +63,6 @@ router.get('/stats', requirePlatformRole(...ALL_STAFF), async (req, res) => {
 
 // ─────────────────────────────────────────────
 // GET /api/platform/staff
-// List all current platform staff.
 // ─────────────────────────────────────────────
 router.get('/staff', requirePlatformRole('SUPERADMIN'), async (req, res) => {
   try {
@@ -82,7 +81,6 @@ router.get('/staff', requirePlatformRole('SUPERADMIN'), async (req, res) => {
 
 // ─────────────────────────────────────────────
 // POST /api/platform/staff
-// Hire: Promote if exists, Invite if new.
 // ─────────────────────────────────────────────
 router.post('/staff', requirePlatformRole('SUPERADMIN'), async (req, res) => {
   try {
@@ -135,13 +133,13 @@ router.post('/staff', requirePlatformRole('SUPERADMIN'), async (req, res) => {
 
   } catch (error) {
     logger.error({ err: error.message }, 'platform: POST staff failed');
-    return res.status(500).json({ success: false, message: 'Failed to hire staff' });
+    // ★ FIXED: Return the actual error message so we can debug Production
+    return res.status(500).json({ success: false, message: error.message || 'Failed to hire staff' });
   }
 });
 
 // ─────────────────────────────────────────────
 // PUT /api/platform/staff/:id
-// Change a staff member's role (promotion/demotion).
 // ─────────────────────────────────────────────
 router.put('/staff/:id', requirePlatformRole('SUPERADMIN'), async (req, res) => {
   try {
@@ -152,7 +150,6 @@ router.put('/staff/:id', requirePlatformRole('SUPERADMIN'), async (req, res) => 
       return res.status(400).json({ success: false, message: 'Invalid platform role' });
     }
 
-    // Prevent self-demotion (Superadmin shouldn't accidentally lock themselves out)
     if (staffId === req.user.id && platformRole !== 'SUPERADMIN') {
       return res.status(400).json({ success: false, message: 'You cannot demote yourself from Superadmin.' });
     }
@@ -172,7 +169,6 @@ router.put('/staff/:id', requirePlatformRole('SUPERADMIN'), async (req, res) => 
 
 // ─────────────────────────────────────────────
 // DELETE /api/platform/staff/:id
-// Revoke platform access (Fire staff).
 // ─────────────────────────────────────────────
 router.delete('/staff/:id', requirePlatformRole('SUPERADMIN'), async (req, res) => {
   try {

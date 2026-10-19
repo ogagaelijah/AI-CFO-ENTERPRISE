@@ -1,5 +1,5 @@
 // frontend/src/components/dashboard/DashboardHeader.jsx
-// v1.2.0 — Replaces inline profile dropdown with shared <UserMenu />.
+// v1.3.0 — Replaces inline profile dropdown with shared <UserMenu />.
 //          Adds role badge next to name. Notification bell, theme toggle,
 //          plan badge, and industry pill unchanged.
 // v1.1.0 — Adds EmailStatusBadge (compact) in the avatar dropdown.
@@ -8,12 +8,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Menu, X, Bell, Sun, Moon, ChevronDown,
+  Menu, X, Bell, Sun, Moon, ChevronDown, Check,
 } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { usePlan } from '../../hooks/usePlan';
 import RoleBadge from '../common/RoleBadge';
+import api from '../../services/api'; // ★ NEW
 
 const DashboardHeader = ({
   user,
@@ -28,6 +29,11 @@ const DashboardHeader = ({
 
   const [openDropdown, setOpenDropdown] = useState(null);
   const [profileOpen, setProfileOpen] = useState(false);
+  
+  // ★ NEW: Notification state
+  const [notifications, setNotifications] = useState([]);
+  const [isLoadingNotifs, setIsLoadingNotifs] = useState(false);
+
   const containerRef = useRef(null);
   const profileRef = useRef(null);
 
@@ -54,8 +60,43 @@ const DashboardHeader = ({
     };
   }, []);
 
-  const toggleDropdown = (name) =>
-    setOpenDropdown((prev) => (prev === name ? null : name));
+  // ★ NEW: Fetch notifications
+  const fetchNotifications = async () => {
+    setIsLoadingNotifs(true);
+    try {
+      const res = await api.get('/notifications');
+      if (res.data?.success) {
+        setNotifications(res.data.data || []);
+      }
+    } catch (err) {
+      console.error('Failed to load notifications', err);
+    } finally {
+      setIsLoadingNotifs(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+  }, []);
+
+  const unreadCount = notifications.filter(n => !n.is_read).length;
+
+  const handleMarkAsRead = async (id) => {
+    try {
+      await api.put(`/notifications/${id}/read`);
+      setNotifications(notifications.map(n => n.id === id ? { ...n, is_read: true } : n));
+    } catch (err) {
+      console.error('Failed to mark as read', err);
+    }
+  };
+
+  const toggleDropdown = (name) => {
+    const isOpening = openDropdown !== name;
+    setOpenDropdown(isOpening ? name : null);
+    if (name === 'notifications' && isOpening) {
+      fetchNotifications(); // Refresh when opening
+    }
+  };
 
   const planStyles = {
     basic: 'bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-gray-300 border-gray-200 dark:border-slate-600',
@@ -143,7 +184,7 @@ const DashboardHeader = ({
             <span>{industryConfig.label}</span>
           </div>
 
-          {/* Notifications — unchanged */}
+          {/* ★ UPDATED: Notifications */}
           <div className="relative">
             <button
               onClick={() => toggleDropdown('notifications')}
@@ -152,24 +193,69 @@ const DashboardHeader = ({
               aria-expanded={openDropdown === 'notifications'}
             >
               <Bell className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
+              {unreadCount > 0 && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
+              )}
             </button>
 
             {openDropdown === 'notifications' && (
-              <div className="absolute right-0 mt-2 w-72 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-gray-200 dark:border-slate-700 z-50">
-                <div className="px-4 py-3 border-b border-gray-200 dark:border-slate-700">
+              <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-gray-200 dark:border-slate-700 z-50 overflow-hidden">
+                <div className="px-4 py-3 border-b border-gray-200 dark:border-slate-700 flex justify-between items-center">
                   <p className="text-sm font-semibold text-gray-900 dark:text-white">
                     Notifications
                   </p>
+                  {unreadCount > 0 && (
+                     <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium">
+                       {unreadCount} new
+                     </span>
+                  )}
                 </div>
-                <div className="px-4 py-8 text-center">
-                  <Bell className="w-8 h-8 mx-auto text-gray-300 dark:text-slate-600 mb-2" />
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    No new notifications
-                  </p>
-                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                    You're all caught up
-                  </p>
+                
+                <div className="max-h-[300px] overflow-y-auto">
+                  {isLoadingNotifs ? (
+                    <div className="px-4 py-8 text-center text-sm text-gray-500">
+                      Loading notifications...
+                    </div>
+                  ) : notifications.length === 0 ? (
+                    <div className="px-4 py-8 text-center">
+                      <Bell className="w-8 h-8 mx-auto text-gray-300 dark:text-slate-600 mb-2" />
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        No new notifications
+                      </p>
+                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                        You're all caught up
+                      </p>
+                    </div>
+                  ) : (
+                    <ul className="divide-y divide-gray-100 dark:divide-slate-700">
+                      {notifications.map(n => (
+                        <li key={n.id} className={`p-4 transition ${n.is_read ? 'opacity-60 bg-transparent' : 'bg-blue-50/50 dark:bg-slate-700/30'}`}>
+                          <div className="flex justify-between items-start gap-2">
+                            <div>
+                              <p className="text-sm font-medium text-gray-900 dark:text-white">
+                                {n.title}
+                              </p>
+                              <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                                {n.message}
+                              </p>
+                              <p className="text-[10px] text-gray-400 mt-2">
+                                {new Date(n.created_at).toLocaleString()}
+                              </p>
+                            </div>
+                            {!n.is_read && (
+                              <button
+                                onClick={() => handleMarkAsRead(n.id)}
+                                className="p-1 text-gray-400 hover:text-green-600 rounded transition"
+                                title="Mark as read"
+                              >
+                                <Check className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               </div>
             )}
