@@ -1,11 +1,13 @@
 // src/interfaces/http/routes/advisorRoutes.js
-// SSOT v2.0.0-prod | Pure Decision consumer
+// v2.1.0-prod — All routes require OWNER/ADMIN/MANAGER/ACCOUNTANT.
+// v2.0.0-prod — Pure Decision consumer.
 
 'use strict';
 
 const express = require('express');
 const router = express.Router();
 const { authMiddleware } = require('../middleware/authMiddleware');
+const { requireRole } = require('../middleware/requireRole');
 
 const AdvisorEngine = require('../../../application/services/advisor/AdvisorEngine');
 const AdvisorDataProvider = require('../../../application/services/advisor/integration/AdvisorDataProvider');
@@ -23,7 +25,6 @@ const ProjectionEngine = require('../../../application/services/forecast/core/Pr
 const AnalyticsProvider = require('../../../application/services/analytics/integration/AnalyticsProvider');
 const ReportEngineAdapter = require('../../../application/services/analytics/integration/ReportEngineAdapter');
 
-// Report services + repos (same wiring as decisionRoutes)
 const ProfitLossService = require('../../../application/services/reports/ProfitLossService');
 const CashFlowService = require('../../../application/services/reports/CashFlowService');
 const BalanceSheetService = require('../../../application/services/reports/BalanceSheetService');
@@ -75,36 +76,31 @@ const dailyReportService = new DailyReportService({
   saleRepository: saleRepo, expenseRepository: expenseRepo,
   incomeRepository: incomeRepo, debtorRepository: debtorRepo,
   creditorRepository: creditorRepo, inventoryRepository: inventoryRepo,
-  paymentRepository: paymentRepo,
-  reportRepository: reportRepo,
+  paymentRepository: paymentRepo, reportRepository: reportRepo,
 });
 const weeklyReportService = new WeeklyReportService({
   saleRepository: saleRepo, expenseRepository: expenseRepo,
   incomeRepository: incomeRepo, debtorRepository: debtorRepo,
   creditorRepository: creditorRepo, inventoryRepository: inventoryRepo,
-  paymentRepository: paymentRepo,
-  reportRepository: reportRepo,
+  paymentRepository: paymentRepo, reportRepository: reportRepo,
 });
 const monthlyReportService = new MonthlyReportService({
   saleRepository: saleRepo, expenseRepository: expenseRepo,
   incomeRepository: incomeRepo, debtorRepository: debtorRepo,
   creditorRepository: creditorRepo, inventoryRepository: inventoryRepo,
-  paymentRepository: paymentRepo,
-  reportRepository: reportRepo,
+  paymentRepository: paymentRepo, reportRepository: reportRepo,
 });
 const yearlyReportService = new YearlyReportService({
   saleRepository: saleRepo, expenseRepository: expenseRepo,
   incomeRepository: incomeRepo, debtorRepository: debtorRepo,
   creditorRepository: creditorRepo, inventoryRepository: inventoryRepo,
-  paymentRepository: paymentRepo,
-  reportRepository: reportRepo,
+  paymentRepository: paymentRepo, reportRepository: reportRepo,
 });
 const executiveReportService = new ExecutiveReportService({
   saleRepository: saleRepo, expenseRepository: expenseRepo,
   incomeRepository: incomeRepo, debtorRepository: debtorRepo,
   creditorRepository: creditorRepo, inventoryRepository: inventoryRepo,
-  paymentRepository: paymentRepo,
-  reportRepository: reportRepo,
+  paymentRepository: paymentRepo, reportRepository: reportRepo,
 });
 const agingService = new AgingService({
   debtorRepository: debtorRepo, creditorRepository: creditorRepo,
@@ -138,7 +134,12 @@ const advisorEngine = new AdvisorEngine({ advisorDataProvider });
 
 router.use(authMiddleware);
 
-router.post('/generate', async (req, res) => {
+const FINANCIAL_ROLES = ['OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
+
+// =============================================
+// POST /api/advisor/generate
+// =============================================
+router.post('/generate', requireRole(...FINANCIAL_ROLES), async (req, res) => {
   try {
     const userId = req.user.id || req.user.userId;
     const businessId = req.user.businessId || req.body.businessId;
@@ -164,14 +165,14 @@ router.post('/generate', async (req, res) => {
     res.json({ success: true, data: result, horizon, timestamp: new Date().toISOString() });
   } catch (error) {
     console.error('❌ Error generating advisor:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to generate advisor insights',
-    });
+    res.status(500).json({ success: false, message: error.message || 'Failed to generate advisor insights' });
   }
 });
 
-router.get('/horizons', (req, res) => {
+// =============================================
+// GET /api/advisor/horizons
+// =============================================
+router.get('/horizons', requireRole(...FINANCIAL_ROLES), (req, res) => {
   res.json({
     success: true,
     data: { '7D': 7, '14D': 14, '30D': 30, '60D': 60, '90D': 90, '6M': 180, '12M': 365 },
@@ -182,7 +183,10 @@ router.get('/horizons', (req, res) => {
   });
 });
 
-router.post('/health-check', (req, res) => {
+// =============================================
+// POST /api/advisor/health-check
+// =============================================
+router.post('/health-check', requireRole(...FINANCIAL_ROLES), (req, res) => {
   res.json({
     success: true,
     message: 'Advisor service is running',

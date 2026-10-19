@@ -1,6 +1,6 @@
 // src/interfaces/http/routes/salesRoutes.js
-// v2.3.0-prod — Sales are append-only: PUT and DELETE always return 405.
-//               POST requires OWNER/ADMIN/MANAGER/CASHIER.
+// v2.4.0-prod — Wires InventoryMovementRepository into RecordSaleUseCase.
+// v2.3.0-prod — Sales are append-only: PUT and DELETE return 405.
 // v2.2.0-prod — Adds pagination to GET /.
 // v2.1.0-prod — multi-tenant aware + 30s read cache for GET /
 
@@ -12,6 +12,7 @@ const InventoryRepository = require('../../../infrastructure/database/sqlite/rep
 const DebtorRepository = require('../../../infrastructure/database/sqlite/repositories/DebtorRepository');
 const CustomerRepository = require('../../../infrastructure/database/sqlite/repositories/CustomerRepository');
 const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository');
+const InventoryMovementRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryMovementRepository'); // ★ NEW
 const { authMiddleware } = require('../middleware/authMiddleware');
 const { requireRole } = require('../middleware/requireRole');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
@@ -27,13 +28,15 @@ const inventoryRepo = new InventoryRepository();
 const debtorRepo = new DebtorRepository();
 const customerRepo = new CustomerRepository();
 const paymentRepo = new PaymentRepository();
+const inventoryMovementRepo = new InventoryMovementRepository(); // ★ NEW
 
 const recordSaleUseCase = new RecordSaleUseCase(
     saleRepo,
     inventoryRepo,
     debtorRepo,
     customerRepo,
-    paymentRepo
+    paymentRepo,
+    inventoryMovementRepo // ★ NEW
 );
 
 router.use(authMiddleware);

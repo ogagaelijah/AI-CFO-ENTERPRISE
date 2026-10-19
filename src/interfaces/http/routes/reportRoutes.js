@@ -1,10 +1,13 @@
 // src/interfaces/http/routes/reportRoutes.js
+// v1.2.0-prod — Adds GET /inventory + GET /inventory-movement.
+// v1.1.0-prod — Role enforcement on all routes.
+// v1.0.0-prod — Initial.
 
 const express = require('express');
 const router = express.Router();
 const { authMiddleware } = require('../middleware/authMiddleware');
+const { requireRole } = require('../middleware/requireRole');
 
-// Repositories
 const SaleRepository = require('../../../infrastructure/database/sqlite/repositories/SaleRepository');
 const IncomeRepository = require('../../../infrastructure/database/sqlite/repositories/IncomeRepository');
 const ExpenseRepository = require('../../../infrastructure/database/sqlite/repositories/ExpenseRepository');
@@ -13,8 +16,8 @@ const DebtorRepository = require('../../../infrastructure/database/sqlite/reposi
 const CreditorRepository = require('../../../infrastructure/database/sqlite/repositories/CreditorRepository');
 const InventoryRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryRepository');
 const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository');
+const InventoryMovementRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryMovementRepository'); // ★ NEW
 
-// Report Services
 const ProfitLossService = require('../../../application/services/reports/ProfitLossService');
 const DailyReportService = require('../../../application/services/reports/DailyReportService');
 const WeeklyReportService = require('../../../application/services/reports/WeeklyReportService');
@@ -23,8 +26,8 @@ const YearlyReportService = require('../../../application/services/reports/Yearl
 const ExecutiveReportService = require('../../../application/services/reports/ExecutiveReportService');
 const CashFlowService = require('../../../application/services/reports/CashFlowService');
 const BalanceSheetService = require('../../../application/services/reports/BalanceSheetService');
+const InventoryReportService = require('../../../application/services/reports/InventoryReportService'); // ★ NEW
 
-// Initialize repositories
 const saleRepo = new SaleRepository();
 const incomeRepo = new IncomeRepository();
 const expenseRepo = new ExpenseRepository();
@@ -33,8 +36,8 @@ const debtorRepo = new DebtorRepository();
 const creditorRepo = new CreditorRepository();
 const inventoryRepo = new InventoryRepository();
 const paymentRepo = new PaymentRepository();
+const inventoryMovementRepo = new InventoryMovementRepository(); // ★ NEW
 
-// Initialize services
 const profitLossService = new ProfitLossService({
     saleRepository: saleRepo,
     purchaseRepository: purchaseRepo,
@@ -121,22 +124,27 @@ const balanceSheetService = new BalanceSheetService({
     profitLossService: profitLossService,
 });
 
+// ★ NEW: Inventory report service with movement repository
+const inventoryReportService = new InventoryReportService({
+    inventoryRepository: inventoryRepo,
+    inventoryMovementRepository: inventoryMovementRepo,
+});
+
 router.use(authMiddleware);
 
+const FINANCIAL_ROLES = ['OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
+
 // =============================================
-// GET /api/reports/pl - Full P&L Report
+// GET /api/reports/pl
 // =============================================
-router.get('/pl', async (req, res) => {
+router.get('/pl', requireRole(...FINANCIAL_ROLES), async (req, res) => {
     try {
         const userId = req.user.id;
         const businessId = req.user.businessId || req.query.businessId;
         const { startDate, endDate, period = 'monthly' } = req.query;
 
         if (!businessId) {
-            return res.status(400).json({
-                success: false,
-                message: 'Business ID is required',
-            });
+            return res.status(400).json({ success: false, message: 'Business ID is required' });
         }
 
         let start = startDate;
@@ -151,41 +159,28 @@ router.get('/pl', async (req, res) => {
         }
 
         const result = await profitLossService.generateWithComparison({
-            userId,
-            businessId,
-            startDate: start,
-            endDate: end,
-            period,
+            userId, businessId,
+            startDate: start, endDate: end, period,
         });
 
-        res.json({
-            success: true,
-            data: result,
-        });
-
+        res.json({ success: true, data: result });
     } catch (error) {
         console.error('❌ Error generating P&L report:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to generate P&L report',
-        });
+        res.status(500).json({ success: false, message: error.message || 'Failed to generate P&L report' });
     }
 });
 
 // =============================================
-// GET /api/reports/pl/summary - Quick P&L Summary
+// GET /api/reports/pl/summary
 // =============================================
-router.get('/pl/summary', async (req, res) => {
+router.get('/pl/summary', requireRole(...FINANCIAL_ROLES), async (req, res) => {
     try {
         const userId = req.user.id;
         const businessId = req.user.businessId || req.query.businessId;
         const { startDate, endDate } = req.query;
 
         if (!businessId) {
-            return res.status(400).json({
-                success: false,
-                message: 'Business ID is required',
-            });
+            return res.status(400).json({ success: false, message: 'Business ID is required' });
         }
 
         let start = startDate;
@@ -200,184 +195,127 @@ router.get('/pl/summary', async (req, res) => {
         }
 
         const result = await profitLossService.generateSummary({
-            userId,
-            businessId,
-            startDate: start,
-            endDate: end,
+            userId, businessId, startDate: start, endDate: end,
         });
 
-        res.json({
-            success: true,
-            data: result,
-        });
-
+        res.json({ success: true, data: result });
     } catch (error) {
         console.error('❌ Error generating P&L summary:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to generate P&L summary',
-        });
+        res.status(500).json({ success: false, message: error.message || 'Failed to generate P&L summary' });
     }
 });
 
 // =============================================
-// GET /api/reports/daily - Daily Report
+// GET /api/reports/daily
 // =============================================
-router.get('/daily', async (req, res) => {
+router.get('/daily', requireRole(...FINANCIAL_ROLES), async (req, res) => {
     try {
         const userId = req.user.id;
         const businessId = req.user.businessId || req.query.businessId;
         const { date } = req.query;
 
         if (!businessId) {
-            return res.status(400).json({
-                success: false,
-                message: 'Business ID is required',
-            });
+            return res.status(400).json({ success: false, message: 'Business ID is required' });
         }
 
         const result = await dailyReportService.generate({
-            userId,
-            businessId,
+            userId, businessId,
             date: date || new Date().toISOString().split('T')[0],
         });
 
-        res.json({
-            success: true,
-            data: result,
-        });
-
+        res.json({ success: true, data: result });
     } catch (error) {
         console.error('❌ Error generating daily report:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to generate daily report',
-        });
+        res.status(500).json({ success: false, message: error.message || 'Failed to generate daily report' });
     }
 });
 
 // =============================================
-// GET /api/reports/weekly - Weekly Report
+// GET /api/reports/weekly
 // =============================================
-router.get('/weekly', async (req, res) => {
+router.get('/weekly', requireRole(...FINANCIAL_ROLES), async (req, res) => {
     try {
         const userId = req.user.id;
         const businessId = req.user.businessId || req.query.businessId;
         const { date } = req.query;
 
         if (!businessId) {
-            return res.status(400).json({
-                success: false,
-                message: 'Business ID is required',
-            });
+            return res.status(400).json({ success: false, message: 'Business ID is required' });
         }
 
         const result = await weeklyReportService.generate({
-            userId,
-            businessId,
+            userId, businessId,
             date: date || new Date().toISOString().split('T')[0],
         });
 
-        res.json({
-            success: true,
-            data: result,
-        });
-
+        res.json({ success: true, data: result });
     } catch (error) {
         console.error('❌ Error generating weekly report:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to generate weekly report',
-        });
+        res.status(500).json({ success: false, message: error.message || 'Failed to generate weekly report' });
     }
 });
 
 // =============================================
-// GET /api/reports/monthly - Monthly Report
+// GET /api/reports/monthly
 // =============================================
-router.get('/monthly', async (req, res) => {
+router.get('/monthly', requireRole(...FINANCIAL_ROLES), async (req, res) => {
     try {
         const userId = req.user.id;
         const businessId = req.user.businessId || req.query.businessId;
         const { date } = req.query;
 
         if (!businessId) {
-            return res.status(400).json({
-                success: false,
-                message: 'Business ID is required',
-            });
+            return res.status(400).json({ success: false, message: 'Business ID is required' });
         }
 
         const result = await monthlyReportService.generate({
-            userId,
-            businessId,
+            userId, businessId,
             date: date || new Date().toISOString().split('T')[0],
         });
 
-        res.json({
-            success: true,
-            data: result,
-        });
-
+        res.json({ success: true, data: result });
     } catch (error) {
         console.error('❌ Error generating monthly report:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to generate monthly report',
-        });
+        res.status(500).json({ success: false, message: error.message || 'Failed to generate monthly report' });
     }
 });
 
 // =============================================
-// GET /api/reports/yearly - Yearly Report
+// GET /api/reports/yearly
 // =============================================
-router.get('/yearly', async (req, res) => {
+router.get('/yearly', requireRole(...FINANCIAL_ROLES), async (req, res) => {
     try {
         const userId = req.user.id;
         const businessId = req.user.businessId || req.query.businessId;
         const { date } = req.query;
 
         if (!businessId) {
-            return res.status(400).json({
-                success: false,
-                message: 'Business ID is required',
-            });
+            return res.status(400).json({ success: false, message: 'Business ID is required' });
         }
 
         const result = await yearlyReportService.generate({
-            userId,
-            businessId,
+            userId, businessId,
             date: date || new Date().toISOString().split('T')[0],
         });
 
-        res.json({
-            success: true,
-            data: result,
-        });
-
+        res.json({ success: true, data: result });
     } catch (error) {
         console.error('❌ Error generating yearly report:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to generate yearly report',
-        });
+        res.status(500).json({ success: false, message: error.message || 'Failed to generate yearly report' });
     }
 });
 
 // =============================================
-// GET /api/reports/executive - Executive Report
+// GET /api/reports/executive
 // =============================================
-router.get('/executive', async (req, res) => {
+router.get('/executive', requireRole(...FINANCIAL_ROLES), async (req, res) => {
     try {
         const userId = req.user.id;
         const businessId = req.user.businessId || req.query.businessId;
         const { startDate, endDate } = req.query;
 
         if (!businessId) {
-            return res.status(400).json({
-                success: false,
-                message: 'Business ID is required',
-            });
+            return res.status(400).json({ success: false, message: 'Business ID is required' });
         }
 
         let start = startDate;
@@ -392,40 +330,27 @@ router.get('/executive', async (req, res) => {
         }
 
         const result = await executiveReportService.generate({
-            userId,
-            businessId,
-            startDate: start,
-            endDate: end,
+            userId, businessId, startDate: start, endDate: end,
         });
 
-        res.json({
-            success: true,
-            data: result,
-        });
-
+        res.json({ success: true, data: result });
     } catch (error) {
         console.error('❌ Error generating executive report:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to generate executive report',
-        });
+        res.status(500).json({ success: false, message: error.message || 'Failed to generate executive report' });
     }
 });
 
 // =============================================
-// GET /api/reports/cashflow - Cash Flow Report
+// GET /api/reports/cashflow
 // =============================================
-router.get('/cashflow', async (req, res) => {
+router.get('/cashflow', requireRole(...FINANCIAL_ROLES), async (req, res) => {
     try {
         const userId = req.user.id;
         const businessId = req.user.businessId || req.query.businessId;
         const { startDate, endDate } = req.query;
 
         if (!businessId) {
-            return res.status(400).json({
-                success: false,
-                message: 'Business ID is required',
-            });
+            return res.status(400).json({ success: false, message: 'Business ID is required' });
         }
 
         let start = startDate;
@@ -440,40 +365,27 @@ router.get('/cashflow', async (req, res) => {
         }
 
         const result = await cashFlowService.generate({
-            userId,
-            businessId,
-            startDate: start,
-            endDate: end,
+            userId, businessId, startDate: start, endDate: end,
         });
 
-        res.json({
-            success: true,
-            data: result,
-        });
-
+        res.json({ success: true, data: result });
     } catch (error) {
         console.error('❌ Error generating cash flow report:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to generate cash flow report',
-        });
+        res.status(500).json({ success: false, message: error.message || 'Failed to generate cash flow report' });
     }
 });
 
 // =============================================
-// GET /api/reports/cashflow/summary - Cash Flow Summary
+// GET /api/reports/cashflow/summary
 // =============================================
-router.get('/cashflow/summary', async (req, res) => {
+router.get('/cashflow/summary', requireRole(...FINANCIAL_ROLES), async (req, res) => {
     try {
         const userId = req.user.id;
         const businessId = req.user.businessId || req.query.businessId;
         const { startDate, endDate } = req.query;
 
         if (!businessId) {
-            return res.status(400).json({
-                success: false,
-                message: 'Business ID is required',
-            });
+            return res.status(400).json({ success: false, message: 'Business ID is required' });
         }
 
         let start = startDate;
@@ -488,95 +400,134 @@ router.get('/cashflow/summary', async (req, res) => {
         }
 
         const result = await cashFlowService.generateSummary({
-            userId,
-            businessId,
-            startDate: start,
-            endDate: end,
+            userId, businessId, startDate: start, endDate: end,
         });
 
-        res.json({
-            success: true,
-            data: result,
-        });
-
+        res.json({ success: true, data: result });
     } catch (error) {
         console.error('❌ Error generating cash flow summary:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to generate cash flow summary',
-        });
+        res.status(500).json({ success: false, message: error.message || 'Failed to generate cash flow summary' });
     }
 });
 
 // =============================================
-// GET /api/reports/balance-sheet - Balance Sheet
+// GET /api/reports/balance-sheet
 // =============================================
-router.get('/balance-sheet', async (req, res) => {
+router.get('/balance-sheet', requireRole(...FINANCIAL_ROLES), async (req, res) => {
     try {
         const userId = req.user.id;
         const businessId = req.user.businessId || req.query.businessId;
         const { asAtDate } = req.query;
 
         if (!businessId) {
-            return res.status(400).json({
-                success: false,
-                message: 'Business ID is required',
-            });
+            return res.status(400).json({ success: false, message: 'Business ID is required' });
         }
 
         const result = await balanceSheetService.generate({
-            userId,
-            businessId,
+            userId, businessId,
             asAtDate: asAtDate || new Date().toISOString().split('T')[0],
         });
 
-        res.json({
-            success: true,
-            data: result,
-        });
-
+        res.json({ success: true, data: result });
     } catch (error) {
         console.error('❌ Error generating balance sheet:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to generate balance sheet',
-        });
+        res.status(500).json({ success: false, message: error.message || 'Failed to generate balance sheet' });
     }
 });
 
 // =============================================
-// GET /api/reports/balance-sheet/summary - Balance Sheet Summary
+// GET /api/reports/balance-sheet/summary
 // =============================================
-router.get('/balance-sheet/summary', async (req, res) => {
+router.get('/balance-sheet/summary', requireRole(...FINANCIAL_ROLES), async (req, res) => {
     try {
         const userId = req.user.id;
         const businessId = req.user.businessId || req.query.businessId;
         const { asAtDate } = req.query;
 
         if (!businessId) {
-            return res.status(400).json({
-                success: false,
-                message: 'Business ID is required',
-            });
+            return res.status(400).json({ success: false, message: 'Business ID is required' });
         }
 
         const result = await balanceSheetService.generateSummary({
-            userId,
-            businessId,
+            userId, businessId,
             asAtDate: asAtDate || new Date().toISOString().split('T')[0],
         });
 
-        res.json({
-            success: true,
-            data: result,
-        });
-
+        res.json({ success: true, data: result });
     } catch (error) {
         console.error('❌ Error generating balance sheet summary:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to generate balance sheet summary',
+        res.status(500).json({ success: false, message: error.message || 'Failed to generate balance sheet summary' });
+    }
+});
+
+// =============================================
+// GET /api/reports/inventory — Valuation (as-at-date)
+// =============================================
+router.get('/inventory', requireRole(...FINANCIAL_ROLES), async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const businessId = req.user.businessId;
+        const { asAtDate, includeDetails, lowStockThreshold, sortBy, filterStatus } = req.query;
+
+        if (!businessId) {
+            return res.status(400).json({ success: false, message: 'Business ID is required' });
+        }
+
+        const result = await inventoryReportService.generate({
+            userId,
+            businessId,
+            asAtDate: asAtDate || null,
+            includeDetails: includeDetails === 'true' || includeDetails === '1',
+            lowStockThreshold: lowStockThreshold ? parseInt(lowStockThreshold, 10) : 5,
+            sortBy: sortBy || 'name',
+            filterStatus: filterStatus || null,
         });
+
+        res.json(result);
+    } catch (error) {
+        console.error('❌ Error generating inventory valuation:', error);
+        res.status(500).json({ success: false, message: error.message || 'Failed to generate inventory valuation' });
+    }
+});
+
+// =============================================
+// GET /api/reports/inventory-movement — Movement (date range)
+// =============================================
+router.get('/inventory-movement', requireRole(...FINANCIAL_ROLES), async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const businessId = req.user.businessId;
+        const {
+            startDate, endDate, inventoryItemId, movementType,
+            page = 1, limit = 50,
+        } = req.query;
+
+        if (!businessId) {
+            return res.status(400).json({ success: false, message: 'Business ID is required' });
+        }
+
+        if (!startDate || !endDate) {
+            return res.status(400).json({
+                success: false,
+                message: 'startDate and endDate are required (YYYY-MM-DD)',
+            });
+        }
+
+        const result = await inventoryReportService.generateMovementReport({
+            userId,
+            businessId,
+            startDate,
+            endDate,
+            inventoryItemId: inventoryItemId ? parseInt(inventoryItemId, 10) : null,
+            movementType: movementType || null,
+            page: parseInt(page, 10) || 1,
+            limit: Math.min(parseInt(limit, 10) || 50, 100),
+        });
+
+        res.json(result);
+    } catch (error) {
+        console.error('❌ Error generating inventory movement report:', error);
+        res.status(500).json({ success: false, message: error.message || 'Failed to generate inventory movement report' });
     }
 });
 

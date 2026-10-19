@@ -1,16 +1,16 @@
 // frontend/src/pages/Settings.jsx
-// v1.1.0-prod — Adds Team tab (visible to OWNER/ADMIN only).
-// v1.0.0-prod — Profile, Business, Subscription tabs.
+// v1.2.0-prod — Adds Security tab with 2FA support.
 
 import { useState, useEffect } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
-import { User, Building2, CreditCard, LogOut, Menu, X, Moon, Sun, Users } from 'lucide-react';
+import { User, Building2, CreditCard, LogOut, Menu, X, Moon, Sun, Users, Shield } from 'lucide-react'; // ★ Added Shield
 import { Link } from 'react-router-dom';
 import ProfileTab from './settings/ProfileTab';
 import BusinessTab from './settings/BusinessTab';
 import SubscriptionTab from './settings/SubscriptionTab';
 import TeamTab from './settings/TeamTab';
+import SecurityTab from './settings/SecurityTab'; // ★ NEW
 import { NAV_ITEMS } from './settings/SettingsSidebar';
 import PageHeader from '../components/common/PageHeader';
 
@@ -60,6 +60,7 @@ const Settings = () => {
   const tabs = [
     { id: 'profile', label: 'Profile', icon: User },
     { id: 'business', label: 'Business', icon: Building2 },
+    { id: 'security', label: 'Security', icon: Shield }, // ★ NEW
     { id: 'subscription', label: 'Subscription', icon: CreditCard },
     ...(canManageTeam ? [{ id: 'team', label: 'Team', icon: Users }] : []),
   ];
@@ -201,6 +202,7 @@ const Settings = () => {
             <>
               {activeTab === 'profile' && <ProfileTab profileData={profileData} setProfileData={setProfileData} />}
               {activeTab === 'business' && <BusinessTab businessData={businessData} setBusinessData={setBusinessData} industries={['Retail / Wholesale', 'Manufacturing', 'Construction', 'Healthcare', 'Consultancy', 'Real Estate', 'Education', 'Logistics']} />}
+              {activeTab === 'security' && <SecurityTab />} {/* ★ NEW */}
               {activeTab === 'subscription' && <SubscriptionTab subscription={subscription} />}
               {activeTab === 'team' && canManageTeam && <TeamTab />}
             </>

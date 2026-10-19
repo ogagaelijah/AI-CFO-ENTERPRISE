@@ -1,18 +1,53 @@
 // src/interfaces/http/routes/inventoryRoutes.js
-// v1.3.0-prod — Adds search param passthrough (server-side search wired).
-// v1.2.0-prod — Pagination at TOP LEVEL. Response shape:
-//               { success, data: [...items...], summary, pagination }.
+// v1.5.0-prod — Writes IN / ADJUSTMENT_IN / ADJUSTMENT_OUT movements.
+// v1.4.1-prod — Error classification: user errors return 400/404/409, not 500.
+// v1.4.0-prod — Write endpoints require OWNER/ADMIN/MANAGER.
+// v1.3.0-prod — Adds search param passthrough.
+// v1.2.0-prod — Pagination at TOP LEVEL.
 
 const express = require('express');
 const router = express.Router();
 const InventoryRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryRepository');
+const InventoryMovementRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryMovementRepository'); // ★ NEW
 const { authMiddleware } = require('../middleware/authMiddleware');
+const { requireRole } = require('../middleware/requireRole');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
 const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 
 const inventoryRepo = new InventoryRepository();
+const inventoryMovementRepo = new InventoryMovementRepository(); // ★ NEW
 
 router.use(authMiddleware);
+
+const WRITE_ROLES = ['OWNER', 'ADMIN', 'MANAGER'];
+
+/**
+ * Classify error message → correct HTTP status.
+ */
+function classifyError(error) {
+  const msg = String(error?.message || '');
+  if (/not found|does not exist/i.test(msg)) return 404;
+  if (/access denied|forbidden|permission/i.test(msg)) return 403;
+  if (/already exists|duplicate/i.test(msg)) return 409;
+  if (/required|invalid|must be|cannot|exceed|only whitespace|minLength|too long/i.test(msg)) return 400;
+  return 500;
+}
+
+/**
+ * Write an inventory movement. Never throws — a failure logs but does not
+ * block the primary operation.
+ */
+async function writeMovementSafe(payload) {
+    try {
+        await inventoryMovementRepo.create(payload);
+    } catch (err) {
+        console.error('[inventoryRoutes] movement write failed:', err.message, {
+            businessId: payload.businessId,
+            inventoryItemId: payload.inventoryItemId,
+            movementType: payload.movementType,
+        });
+    }
+}
 
 // =============================================
 // GET /api/inventory?page=1&limit=50&search=gala
@@ -29,8 +64,6 @@ router.get('/', async (req, res) => {
         const { page, limit, offset } = parsePagination(req.query);
         const searchTerm = (search || '').trim() || null;
 
-        // Low-stock view — bounded set by design (typically <100 items).
-        // Still returns pagination for consistency.
         if (lowStock === 'true') {
             const all = await inventoryRepo.findLowStock(businessId);
             const total = all.length;
@@ -68,7 +101,7 @@ router.get('/', async (req, res) => {
         });
     } catch (error) {
         console.error('❌ Error fetching inventory:', error);
-        res.status(500).json({
+        res.status(classifyError(error)).json({
             success: false,
             message: error.message || 'Failed to fetch inventory'
         });
@@ -87,17 +120,11 @@ router.get('/summary', async (req, res) => {
 
         const summary = await inventoryRepo.getSummary(businessId);
 
-        res.json({
-            success: true,
-            data: summary
-        });
+        res.json({ success: true, data: summary });
 
     } catch (error) {
         console.error('❌ Error fetching inventory summary:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to fetch inventory summary'
-        });
+        res.status(classifyError(error)).json({ success: false, message: error.message || 'Failed to fetch inventory summary' });
     }
 });
 
@@ -116,19 +143,12 @@ router.get('/low-stock', async (req, res) => {
 
         res.json({
             success: true,
-            data: {
-                items,
-                count: items.length,
-                threshold
-            }
+            data: { items, count: items.length, threshold }
         });
 
     } catch (error) {
         console.error('❌ Error fetching low stock:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to fetch low stock items'
-        });
+        res.status(classifyError(error)).json({ success: false, message: error.message || 'Failed to fetch low stock items' });
     }
 });
 
@@ -143,37 +163,26 @@ router.get('/:id', async (req, res) => {
 
         const item = await inventoryRepo.findById(id);
         if (!item) {
-            return res.status(404).json({
-                success: false,
-                message: 'Inventory item not found'
-            });
+            return res.status(404).json({ success: false, message: 'Inventory item not found' });
         }
 
         if (item.business_id !== businessId && item.user_id !== userId) {
-            return res.status(403).json({
-                success: false,
-                message: 'Access denied'
-            });
+            return res.status(403).json({ success: false, message: 'Access denied' });
         }
 
-        res.json({
-            success: true,
-            data: item
-        });
+        res.json({ success: true, data: item });
 
     } catch (error) {
         console.error('❌ Error fetching inventory item:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to fetch inventory item'
-        });
+        res.status(classifyError(error)).json({ success: false, message: error.message || 'Failed to fetch inventory item' });
     }
 });
 
 // =============================================
-// POST /api/inventory
+// POST /api/inventory — OWNER / ADMIN / MANAGER
+// Writes an IN movement on creation.
 // =============================================
-router.post('/', invalidateAfterWrite, async (req, res) => {
+router.post('/', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const userId = req.user.id;
         const businessId = req.user.businessId;
@@ -183,28 +192,16 @@ router.post('/', invalidateAfterWrite, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Business context required' });
         }
         if (!itemName || itemName.length < 2) {
-            return res.status(400).json({
-                success: false,
-                message: 'Item name must be at least 2 characters'
-            });
+            return res.status(400).json({ success: false, message: 'Item name must be at least 2 characters' });
         }
         if (!quantity || quantity <= 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'Quantity must be greater than 0'
-            });
+            return res.status(400).json({ success: false, message: 'Quantity must be greater than 0' });
         }
         if (costPrice === undefined || costPrice < 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'Cost price must be a valid number'
-            });
+            return res.status(400).json({ success: false, message: 'Cost price must be a valid number' });
         }
         if (sellingPrice === undefined || sellingPrice < 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'Selling price must be a valid number'
-            });
+            return res.status(400).json({ success: false, message: 'Selling price must be a valid number' });
         }
 
         const existing = await inventoryRepo.findByNameIgnoreCase(businessId, itemName);
@@ -227,6 +224,29 @@ router.post('/', invalidateAfterWrite, async (req, res) => {
             reorder_level: reorderLevel
         });
 
+        // ★ NEW: write IN movement for the initial stock
+        const qty = Number(quantity);
+        const cost = Number(costPrice) || 0;
+        await writeMovementSafe({
+            inventoryItemId: newItem.id,
+            businessId,
+            userId,
+            movementType: 'IN',
+            quantity: qty,
+            unitCost: cost,
+            totalCost: qty * cost,
+            quantityBefore: 0,
+            quantityAfter: qty,
+            costPriceBefore: 0,
+            costPriceAfter: cost,
+            referenceType: 'OPENING',
+            referenceId: null,
+            reason: 'Initial stock on item creation',
+            notes: '',
+            metadata: {},
+            createdAt: new Date(),
+        });
+
         res.status(201).json({
             success: true,
             message: 'Stock added successfully',
@@ -235,17 +255,15 @@ router.post('/', invalidateAfterWrite, async (req, res) => {
 
     } catch (error) {
         console.error('❌ Error adding inventory:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to add inventory item'
-        });
+        res.status(classifyError(error)).json({ success: false, message: error.message || 'Failed to add inventory item' });
     }
 });
 
 // =============================================
-// PUT /api/inventory/:id
+// PUT /api/inventory/:id — OWNER / ADMIN / MANAGER
+// Metadata update only — no quantity change. No movement written.
 // =============================================
-router.put('/:id', invalidateAfterWrite, async (req, res) => {
+router.put('/:id', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
@@ -254,16 +272,10 @@ router.put('/:id', invalidateAfterWrite, async (req, res) => {
 
         const existing = await inventoryRepo.findById(id);
         if (!existing) {
-            return res.status(404).json({
-                success: false,
-                message: 'Inventory item not found'
-            });
+            return res.status(404).json({ success: false, message: 'Inventory item not found' });
         }
         if (existing.business_id !== businessId && existing.user_id !== userId) {
-            return res.status(403).json({
-                success: false,
-                message: 'Access denied'
-            });
+            return res.status(403).json({ success: false, message: 'Access denied' });
         }
 
         const updateData = {};
@@ -282,17 +294,15 @@ router.put('/:id', invalidateAfterWrite, async (req, res) => {
 
     } catch (error) {
         console.error('❌ Error updating inventory:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to update inventory item'
-        });
+        res.status(classifyError(error)).json({ success: false, message: error.message || 'Failed to update inventory item' });
     }
 });
 
 // =============================================
-// PATCH /api/inventory/:id/stock
+// PATCH /api/inventory/:id/stock — OWNER / ADMIN / MANAGER
+// Writes ADJUSTMENT_IN or ADJUSTMENT_OUT movement.
 // =============================================
-router.patch('/:id/stock', invalidateAfterWrite, async (req, res) => {
+router.patch('/:id/stock', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
@@ -300,30 +310,18 @@ router.patch('/:id/stock', invalidateAfterWrite, async (req, res) => {
         const { adjustment, reason } = req.body;
 
         if (adjustment === undefined || adjustment === null) {
-            return res.status(400).json({
-                success: false,
-                message: 'Adjustment amount is required'
-            });
+            return res.status(400).json({ success: false, message: 'Adjustment amount is required' });
         }
         if (adjustment === 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'Adjustment cannot be zero'
-            });
+            return res.status(400).json({ success: false, message: 'Adjustment cannot be zero' });
         }
 
         const existing = await inventoryRepo.findById(id);
         if (!existing) {
-            return res.status(404).json({
-                success: false,
-                message: 'Inventory item not found'
-            });
+            return res.status(404).json({ success: false, message: 'Inventory item not found' });
         }
         if (existing.business_id !== businessId && existing.user_id !== userId) {
-            return res.status(403).json({
-                success: false,
-                message: 'Access denied'
-            });
+            return res.status(403).json({ success: false, message: 'Access denied' });
         }
 
         const currentQuantity = existing.quantity || 0;
@@ -336,8 +334,31 @@ router.patch('/:id/stock', invalidateAfterWrite, async (req, res) => {
             });
         }
 
-        const updated = await inventoryRepo.update(id, {
-            quantity: newQuantity
+        const updated = await inventoryRepo.update(id, { quantity: newQuantity });
+
+        // ★ NEW: write adjustment movement
+        const adj = Number(adjustment);
+        const absQty = Math.abs(adj);
+        const cost = Number(existing.cost_price) || 0;
+
+        await writeMovementSafe({
+            inventoryItemId: existing.id,
+            businessId,
+            userId,
+            movementType: adj > 0 ? 'ADJUSTMENT_IN' : 'ADJUSTMENT_OUT',
+            quantity: absQty,
+            unitCost: cost,
+            totalCost: absQty * cost,
+            quantityBefore: currentQuantity,
+            quantityAfter: newQuantity,
+            costPriceBefore: cost,
+            costPriceAfter: cost,
+            referenceType: 'ADJUSTMENT',
+            referenceId: null,
+            reason: reason || (adj > 0 ? 'Manual stock increase' : 'Manual stock decrease'),
+            notes: '',
+            metadata: {},
+            createdAt: new Date(),
         });
 
         res.json({
@@ -345,25 +366,23 @@ router.patch('/:id/stock', invalidateAfterWrite, async (req, res) => {
             message: `Stock adjusted by ${adjustment} (${adjustment > 0 ? 'added' : 'removed'})`,
             data: {
                 previousQuantity: currentQuantity,
-                newQuantity: newQuantity,
-                adjustment: adjustment,
+                newQuantity,
+                adjustment,
                 item: updated
             }
         });
 
     } catch (error) {
         console.error('❌ Error adjusting stock:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to adjust stock'
-        });
+        res.status(classifyError(error)).json({ success: false, message: error.message || 'Failed to adjust stock' });
     }
 });
 
 // =============================================
-// DELETE /api/inventory/:id
+// DELETE /api/inventory/:id — OWNER / ADMIN / MANAGER
+// Hard delete. No movement (item is removed).
 // =============================================
-router.delete('/:id', invalidateAfterWrite, async (req, res) => {
+router.delete('/:id', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
@@ -371,31 +390,19 @@ router.delete('/:id', invalidateAfterWrite, async (req, res) => {
 
         const existing = await inventoryRepo.findById(id);
         if (!existing) {
-            return res.status(404).json({
-                success: false,
-                message: 'Inventory item not found'
-            });
+            return res.status(404).json({ success: false, message: 'Inventory item not found' });
         }
         if (existing.business_id !== businessId && existing.user_id !== userId) {
-            return res.status(403).json({
-                success: false,
-                message: 'Access denied'
-            });
+            return res.status(403).json({ success: false, message: 'Access denied' });
         }
 
         await inventoryRepo.delete(id);
 
-        res.json({
-            success: true,
-            message: 'Inventory item deleted successfully'
-        });
+        res.json({ success: true, message: 'Inventory item deleted successfully' });
 
     } catch (error) {
         console.error('❌ Error deleting inventory:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to delete inventory item'
-        });
+        res.status(classifyError(error)).json({ success: false, message: error.message || 'Failed to delete inventory item' });
     }
 });
 

@@ -1,4 +1,7 @@
 // src/interfaces/http/routes/projectRoutes.js
+// v1.1.0-prod — Reads require OWNER/ADMIN/MANAGER/ACCOUNTANT.
+//               Writes require OWNER/ADMIN/MANAGER.
+//               Error classification applied.
 
 'use strict';
 
@@ -15,6 +18,7 @@ const UpdateProjectUseCase = require('../../../application/useCases/projects/Upd
 const DeleteProjectUseCase = require('../../../application/useCases/projects/DeleteProjectUseCase');
 
 const { authMiddleware } = require('../middleware/authMiddleware');
+const { requireRole } = require('../middleware/requireRole');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
 
 const projectRepo = new ProjectRepository();
@@ -31,10 +35,20 @@ const deleteProjectUseCase = new DeleteProjectUseCase({
 
 router.use(authMiddleware);
 
-// =============================================
-// GET /api/projects — list projects
-// =============================================
-router.get('/', async (req, res) => {
+const READ_ROLES = ['OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
+const WRITE_ROLES = ['OWNER', 'ADMIN', 'MANAGER'];
+
+function classifyError(error) {
+  const msg = String(error?.message || '');
+  if (/not found|does not exist/i.test(msg)) return 404;
+  if (/access denied|forbidden|permission/i.test(msg)) return 403;
+  if (/already exists|duplicate/i.test(msg)) return 409;
+  if (/required|invalid|must be|cannot|exceed|only whitespace|too long|time entries/i.test(msg)) return 400;
+  return 500;
+}
+
+// GET /api/projects
+router.get('/', requireRole(...READ_ROLES), async (req, res) => {
     try {
         const businessId = req.user.businessId;
         if (!businessId) {
@@ -55,14 +69,12 @@ router.get('/', async (req, res) => {
         res.json(result);
     } catch (error) {
         console.error('❌ [GET /api/projects]', error.message);
-        res.status(500).json({ success: false, message: error.message || 'Failed to fetch projects' });
+        res.status(classifyError(error)).json({ success: false, message: error.message || 'Failed to fetch projects' });
     }
 });
 
-// =============================================
-// GET /api/projects/:id — single project
-// =============================================
-router.get('/:id', async (req, res) => {
+// GET /api/projects/:id
+router.get('/:id', requireRole(...READ_ROLES), async (req, res) => {
     try {
         const businessId = req.user.businessId;
         const { id } = req.params;
@@ -74,16 +86,13 @@ router.get('/:id', async (req, res) => {
 
         res.json(result);
     } catch (error) {
-        const status = /not found/i.test(error.message) ? 404 : /access denied/i.test(error.message) ? 403 : 500;
         console.error('❌ [GET /api/projects/:id]', error.message);
-        res.status(status).json({ success: false, message: error.message });
+        res.status(classifyError(error)).json({ success: false, message: error.message });
     }
 });
 
-// =============================================
-// POST /api/projects — create project
-// =============================================
-router.post('/', invalidateAfterWrite, async (req, res) => {
+// POST /api/projects — OWNER / ADMIN / MANAGER
+router.post('/', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const businessId = req.user.businessId;
         if (!businessId) {
@@ -97,28 +106,23 @@ router.post('/', invalidateAfterWrite, async (req, res) => {
 
         const result = await createProjectUseCase.execute({
             businessId,
-            name,
-            description,
-            budget,
+            name, description, budget,
             startDate: startDate ? new Date(startDate) : new Date(),
             endDate: endDate ? new Date(endDate) : null,
             customerId: customerId || null,
             customerType: customerType || null,
-            notes,
-            metadata,
+            notes, metadata,
         });
 
         res.status(201).json(result);
     } catch (error) {
         console.error('❌ [POST /api/projects]', error.message);
-        res.status(400).json({ success: false, message: error.message });
+        res.status(classifyError(error)).json({ success: false, message: error.message });
     }
 });
 
-// =============================================
-// PUT /api/projects/:id — update project
-// =============================================
-router.put('/:id', invalidateAfterWrite, async (req, res) => {
+// PUT /api/projects/:id — OWNER / ADMIN / MANAGER
+router.put('/:id', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const businessId = req.user.businessId;
         const { id } = req.params;
@@ -131,30 +135,21 @@ router.put('/:id', invalidateAfterWrite, async (req, res) => {
         const result = await updateProjectUseCase.execute({
             projectId: parseInt(id, 10),
             businessId,
-            name,
-            description,
-            status,
-            budget,
+            name, description, status, budget,
             startDate: startDate !== undefined ? (startDate ? new Date(startDate) : null) : undefined,
             endDate: endDate !== undefined ? (endDate ? new Date(endDate) : null) : undefined,
-            customerId,
-            customerType,
-            notes,
-            metadata,
+            customerId, customerType, notes, metadata,
         });
 
         res.json(result);
     } catch (error) {
-        const status = /not found/i.test(error.message) ? 404 : /access denied/i.test(error.message) ? 403 : 400;
         console.error('❌ [PUT /api/projects/:id]', error.message);
-        res.status(status).json({ success: false, message: error.message });
+        res.status(classifyError(error)).json({ success: false, message: error.message });
     }
 });
 
-// =============================================
-// DELETE /api/projects/:id — delete project
-// =============================================
-router.delete('/:id', invalidateAfterWrite, async (req, res) => {
+// DELETE /api/projects/:id — OWNER / ADMIN / MANAGER
+router.delete('/:id', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const businessId = req.user.businessId;
         const { id } = req.params;
@@ -166,9 +161,8 @@ router.delete('/:id', invalidateAfterWrite, async (req, res) => {
 
         res.json(result);
     } catch (error) {
-        const status = /not found/i.test(error.message) ? 404 : /access denied/i.test(error.message) ? 403 : 400;
         console.error('❌ [DELETE /api/projects/:id]', error.message);
-        res.status(status).json({ success: false, message: error.message });
+        res.status(classifyError(error)).json({ success: false, message: error.message });
     }
 });
 

@@ -1,6 +1,8 @@
 // src/interfaces/http/routes/creditorRoutes.js
-// v1.1.0-prod — Pagination on GET /. Fix: pagination always applied
-//               (previously findByBusinessId was unbounded when no status filter).
+// v1.2.1-prod — Error classification: user errors return 400/404/409, not 500.
+// v1.2.0-prod — Reads require OWNER/ADMIN/MANAGER/ACCOUNTANT.
+//               Writes require OWNER/ADMIN/MANAGER.
+// v1.1.0-prod — Pagination on GET /.
 
 const express = require('express');
 const router = express.Router();
@@ -9,6 +11,7 @@ const PaymentRepository = require('../../../infrastructure/database/sqlite/repos
 const TransactionRepository = require('../../../infrastructure/database/sqlite/repositories/TransactionRepository');
 const RecordCreditorPaymentUseCase = require('../../../application/useCases/creditors/RecordCreditorPaymentUseCase');
 const { authMiddleware } = require('../middleware/authMiddleware');
+const { requireRole } = require('../middleware/requireRole');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
 const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 
@@ -24,10 +27,22 @@ const recordCreditorPaymentUseCase = new RecordCreditorPaymentUseCase({
 
 router.use(authMiddleware);
 
+const READ_ROLES = ['OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
+const WRITE_ROLES = ['OWNER', 'ADMIN', 'MANAGER'];
+
+function classifyError(error) {
+  const msg = String(error?.message || '');
+  if (/not found|does not exist/i.test(msg)) return 404;
+  if (/access denied|forbidden|permission/i.test(msg)) return 403;
+  if (/already exists|duplicate/i.test(msg)) return 409;
+  if (/required|invalid|must be|cannot|exceed|only whitespace|too long/i.test(msg)) return 400;
+  return 500;
+}
+
 // =============================================
-// GET /api/creditors?page=1&limit=50
+// GET /api/creditors
 // =============================================
-router.get('/', async (req, res) => {
+router.get('/', requireRole(...READ_ROLES), async (req, res) => {
     try {
         const businessId = req.user.businessId;
         const { status } = req.query;
@@ -50,13 +65,8 @@ router.get('/', async (req, res) => {
             data: {
                 creditors: creditors || [],
                 summary: summary || {
-                    total_creditors: 0,
-                    total_owed: 0,
-                    total_paid: 0,
-                    total_outstanding: 0,
-                    active_count: 0,
-                    paid_count: 0,
-                    overdue_count: 0,
+                    total_creditors: 0, total_owed: 0, total_paid: 0,
+                    total_outstanding: 0, active_count: 0, paid_count: 0, overdue_count: 0,
                 },
                 totalOutstanding: totalOutstanding || 0,
                 pagination: buildPaginationMeta({ page, limit, total }),
@@ -64,14 +74,14 @@ router.get('/', async (req, res) => {
         });
     } catch (error) {
         console.error('❌ Error fetching creditors:', error);
-        res.status(500).json({ success: false, message: error.message || 'Failed to fetch creditors' });
+        res.status(classifyError(error)).json({ success: false, message: error.message || 'Failed to fetch creditors' });
     }
 });
 
 // =============================================
 // GET /api/creditors/active
 // =============================================
-router.get('/active', async (req, res) => {
+router.get('/active', requireRole(...READ_ROLES), async (req, res) => {
     try {
         const businessId = req.user.businessId;
         if (!businessId) {
@@ -83,22 +93,18 @@ router.get('/active', async (req, res) => {
 
         res.json({
             success: true,
-            data: {
-                creditors: creditors || [],
-                totalOutstanding,
-                count: creditors.length
-            }
+            data: { creditors: creditors || [], totalOutstanding, count: creditors.length }
         });
     } catch (error) {
         console.error('❌ Error fetching active creditors:', error);
-        res.status(500).json({ success: false, message: error.message || 'Failed to fetch active creditors' });
+        res.status(classifyError(error)).json({ success: false, message: error.message || 'Failed to fetch active creditors' });
     }
 });
 
 // =============================================
 // GET /api/creditors/summary
 // =============================================
-router.get('/summary', async (req, res) => {
+router.get('/summary', requireRole(...READ_ROLES), async (req, res) => {
     try {
         const businessId = req.user.businessId;
         if (!businessId) {
@@ -110,21 +116,18 @@ router.get('/summary', async (req, res) => {
 
         res.json({
             success: true,
-            data: {
-                ...summary,
-                totalOutstanding,
-            }
+            data: { ...summary, totalOutstanding }
         });
     } catch (error) {
         console.error('❌ Error fetching creditor summary:', error);
-        res.status(500).json({ success: false, message: error.message || 'Failed to fetch creditor summary' });
+        res.status(classifyError(error)).json({ success: false, message: error.message || 'Failed to fetch creditor summary' });
     }
 });
 
 // =============================================
 // GET /api/creditors/:id
 // =============================================
-router.get('/:id', async (req, res) => {
+router.get('/:id', requireRole(...READ_ROLES), async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
@@ -139,7 +142,6 @@ router.get('/:id', async (req, res) => {
         if (!creditor) {
             return res.status(404).json({ success: false, message: 'Creditor not found' });
         }
-
         if (creditor.business_id !== businessId && creditor.user_id !== userId) {
             return res.status(403).json({ success: false, message: 'Access denied' });
         }
@@ -147,14 +149,14 @@ router.get('/:id', async (req, res) => {
         res.json({ success: true, data: creditor });
     } catch (error) {
         console.error('❌ Error fetching creditor:', error);
-        res.status(500).json({ success: false, message: error.message || 'Failed to fetch creditor' });
+        res.status(classifyError(error)).json({ success: false, message: error.message || 'Failed to fetch creditor' });
     }
 });
 
 // =============================================
-// POST /api/creditors
+// POST /api/creditors — OWNER / ADMIN / MANAGER
 // =============================================
-router.post('/', invalidateAfterWrite, async (req, res) => {
+router.post('/', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const userId = req.user.id;
         const businessId = req.user.businessId;
@@ -171,8 +173,7 @@ router.post('/', invalidateAfterWrite, async (req, res) => {
         }
 
         const creditor = await creditorRepo.create({
-            userId,
-            businessId,
+            userId, businessId,
             supplier_name: supplierName,
             total_owed: totalOwed,
             balance_remaining: totalOwed,
@@ -188,14 +189,14 @@ router.post('/', invalidateAfterWrite, async (req, res) => {
         });
     } catch (error) {
         console.error('❌ Error creating creditor:', error);
-        res.status(500).json({ success: false, message: error.message || 'Failed to create creditor' });
+        res.status(classifyError(error)).json({ success: false, message: error.message || 'Failed to create creditor' });
     }
 });
 
 // =============================================
-// POST /api/creditors/:id/payment
+// POST /api/creditors/:id/payment — OWNER / ADMIN / MANAGER
 // =============================================
-router.post('/:id/payment', invalidateAfterWrite, async (req, res) => {
+router.post('/:id/payment', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
@@ -215,13 +216,8 @@ router.post('/:id/payment', invalidateAfterWrite, async (req, res) => {
         }
 
         const result = await recordCreditorPaymentUseCase.execute({
-            userId,
-            businessId,
-            creditorId,
-            amount,
-            paymentDate: new Date(),
-            notes,
-            paymentMethod,
+            userId, businessId, creditorId, amount,
+            paymentDate: new Date(), notes, paymentMethod,
         });
 
         if (result.success) {
@@ -239,17 +235,14 @@ router.post('/:id/payment', invalidateAfterWrite, async (req, res) => {
         }
     } catch (error) {
         console.error('❌ Error recording creditor payment:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to record payment'
-        });
+        res.status(classifyError(error)).json({ success: false, message: error.message || 'Failed to record payment' });
     }
 });
 
 // =============================================
-// DELETE /api/creditors/:id
+// DELETE /api/creditors/:id — OWNER / ADMIN / MANAGER
 // =============================================
-router.delete('/:id', invalidateAfterWrite, async (req, res) => {
+router.delete('/:id', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
@@ -272,7 +265,7 @@ router.delete('/:id', invalidateAfterWrite, async (req, res) => {
         res.json({ success: true, message: 'Creditor deleted successfully' });
     } catch (error) {
         console.error('❌ Error deleting creditor:', error);
-        res.status(500).json({ success: false, message: error.message || 'Failed to delete creditor' });
+        res.status(classifyError(error)).json({ success: false, message: error.message || 'Failed to delete creditor' });
     }
 });
 

@@ -1,0 +1,2 @@
+ALTER TABLE users 
+ADD COLUMN platform_role VARCHAR(50) DEFAULT NULL;

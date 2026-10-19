@@ -1,5 +1,5 @@
 // src/interfaces/http/middleware/planGuard.js
-// v1.1.0-prod — Postgres async. Awaits findActiveByBusinessId.
+// v1.2.0-prod — Platform Staff bypass plan checks entirely.
 
 const SubscriptionRepository = require('../../../infrastructure/database/sqlite/repositories/SubscriptionRepository');
 
@@ -12,6 +12,11 @@ const planGuard = ({ feature, allowReadOnly = true } = {}) => {
 
     return async (req, res, next) => {
         try {
+            // ★ NEW: Platform Staff bypass plan limits
+            if (req.user?.platformRole) {
+                return next();
+            }
+
             const businessId = req.user?.businessId;
 
             if (!businessId) {

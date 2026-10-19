@@ -1,10 +1,13 @@
 // src/interfaces/http/routes/subscriptionRoutes.js
-// v2.0.2-prod — Public /plans route + auth-gated subscription routes (Postgres async)
+// v2.1.0-prod — Authenticated routes require OWNER only (billing).
+//               Error classification applied.
+// v2.0.2-prod — Public /plans route + auth-gated subscription routes.
 
 const express = require('express');
 const router = express.Router();
 
 const { authMiddleware } = require('../middleware/authMiddleware');
+const { requireRole } = require('../middleware/requireRole');
 const BusinessRepository = require('../../../infrastructure/database/sqlite/repositories/BusinessRepository');
 const SubscriptionRepository = require('../../../infrastructure/database/sqlite/repositories/SubscriptionRepository');
 const CancelSubscriptionUseCase = require('../../../application/useCases/subscriptions/CancelSubscriptionUseCase');
@@ -17,6 +20,15 @@ const cancelSubscriptionUseCase = new CancelSubscriptionUseCase({
     subscriptionRepository: subscriptionRepo,
     businessRepository: businessRepo,
 });
+
+function classifyError(error) {
+  const msg = String(error?.message || '');
+  if (/not found|does not exist/i.test(msg)) return 404;
+  if (/access denied|forbidden|permission/i.test(msg)) return 403;
+  if (/already exists|duplicate/i.test(msg)) return 409;
+  if (/required|invalid|must be|cannot|exceed|only whitespace|too long/i.test(msg)) return 400;
+  return 500;
+}
 
 // ─────────────────────────────────────────────
 // PUBLIC ROUTE — must be BEFORE authMiddleware
@@ -37,7 +49,7 @@ router.get('/plans', (req, res) => {
         res.json({ success: true, plans: publicPlans });
     } catch (error) {
         console.error('❌ Get plans error:', error.message);
-        res.status(500).json({
+        res.status(classifyError(error)).json({
             success: false,
             message: error.message || 'Failed to get plans',
         });
@@ -50,7 +62,8 @@ router.get('/plans', (req, res) => {
 router.use(authMiddleware);
 
 // ─────────────────────────────────────────────
-// GET /api/subscription/current
+// GET /api/subscription/current — OWNER / ADMIN / MANAGER / ACCOUNTANT
+// (Plan info is needed app-wide; only cancel is restricted)
 // ─────────────────────────────────────────────
 router.get('/current', async (req, res) => {
     try {
@@ -71,7 +84,6 @@ router.get('/current', async (req, res) => {
 
         const subscription = await subscriptionRepo.findActiveByBusinessId(business.id);
 
-        // ── No subscription → fallback plan, read-only
         if (!subscription) {
             const fallbackPlanId = plans.getFallbackPlan();
             const fallbackPlan = plans.getPlan(fallbackPlanId);
@@ -93,11 +105,8 @@ router.get('/current', async (req, res) => {
             });
         }
 
-        // ── Determine effective plan (trial = pro access)
         const isTrial = subscription.isTrialActive();
-        const effectivePlanId = isTrial
-            ? plans.getTrialPlan()
-            : subscription.planId;
+        const effectivePlanId = isTrial ? plans.getTrialPlan() : subscription.planId;
         const plan = plans.getPlan(effectivePlanId);
 
         const isReadOnly = subscription.isReadOnly();
@@ -132,7 +141,7 @@ router.get('/current', async (req, res) => {
         });
     } catch (error) {
         console.error('❌ Get subscription error:', error.message);
-        return res.status(500).json({
+        return res.status(classifyError(error)).json({
             success: false,
             message: error.message || 'Failed to get subscription',
         });
@@ -140,9 +149,9 @@ router.get('/current', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
-// POST /api/subscription/cancel
+// POST /api/subscription/cancel — OWNER only
 // ─────────────────────────────────────────────
-router.post('/cancel', async (req, res) => {
+router.post('/cancel', requireRole('OWNER'), async (req, res) => {
     try {
         const userId = req.user.id;
         const businesses = await businessRepo.findByUserId(userId);
@@ -163,7 +172,7 @@ router.post('/cancel', async (req, res) => {
         return res.json(result);
     } catch (error) {
         console.error('❌ Cancel subscription error:', error.message);
-        return res.status(500).json({
+        return res.status(classifyError(error)).json({
             success: false,
             message: error.message || 'Failed to cancel subscription',
         });

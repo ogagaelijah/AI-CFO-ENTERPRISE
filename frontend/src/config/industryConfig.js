@@ -1,7 +1,5 @@
 // frontend/src/config/industryConfig.js
-// v1.3.0-prod — Every sidebar item has a `roles` array. Section headers
-//               auto-hide when all children are role-filtered out.
-// v1.2.1-prod — Renames Consultancy label to "Consultancy / Services".
+// v1.5.0-prod — Hides tenant links for non-superadmin platform staff.
 
 import { 
   Store, Wrench, Building, Stethoscope, Briefcase, 
@@ -10,7 +8,7 @@ import {
   Package, Users, CreditCard, Building2, BarChart3,
   FileText, Calendar, Brain, Layers, Lightbulb, Settings,
   AlertTriangle, Briefcase as ProjectIcon, Clock, Wallet,
-  Home, UserCheck, Users2, Receipt, Heart
+  Home, UserCheck, Users2, Receipt, Heart, ShieldAlert
 } from 'lucide-react';
 
 // ── Role shortcuts
@@ -20,6 +18,35 @@ const FINANCIAL       = ['OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT']; // Can view
 const FINANCIAL_WRITE = ['OWNER', 'ADMIN', 'MANAGER'];               // Can write financials
 const ADMIN_ONLY      = ['OWNER', 'ADMIN'];
 const OWNER_ONLY      = ['OWNER'];
+const PLATFORM_STAFF  = ['PLATFORM_STAFF'];
+
+// ★ Sidebar injection logic
+export const getSidebarItems = (baseSidebar, user) => {
+  const isPlatformStaff = Boolean(user?.platformRole);
+  const isSuperadmin = user?.platformRole === 'SUPERADMIN';
+  
+  if (isPlatformStaff) {
+    const platformItems = [
+      { type: 'section', label: '─── PLATFORM ───', roles: PLATFORM_STAFF },
+      { icon: ShieldAlert, label: 'Admin Dashboard', href: '/admin', roles: PLATFORM_STAFF },
+    ];
+
+    // If Superadmin, show both Platform and Tenant links
+    if (isSuperadmin) {
+      return [
+        ...platformItems,
+        { type: 'section', label: '─── MY BUSINESS ───', roles: PLATFORM_STAFF },
+        ...baseSidebar
+      ];
+    }
+
+    // If regular staff (HR, Support, etc.), ONLY show Platform links
+    return platformItems;
+  }
+  
+  // If regular tenant user, show standard tenant links
+  return baseSidebar;
+};
 
 const CONSULTANCY_LIKE = {
   stats: [

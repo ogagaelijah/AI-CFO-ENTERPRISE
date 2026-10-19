@@ -1,5 +1,5 @@
 // src/interfaces/http/middleware/authMiddleware.js
-// v4.0.0-prod — Strict multi-tenant auth. Role resolved fresh from
+// v4.1.0-prod — Strict multi-tenant auth. Role resolved fresh from
 //               business_members on every request. No fallback to
 //               businesses.user_id. Removed users get 403 immediately.
 // v3.1.0-prod — Stateless auth + session revocation.
@@ -83,8 +83,12 @@ const authMiddleware = async (req, res, next) => {
       membership = await memberRepo.findFirstActiveByUser(user.id);
     }
 
+    // ★ NEW: Allow Platform Staff to bypass membership check
+    const isPlatformStaff = Boolean(user.platformRole);
+
     // No active membership → 403 (not 401 — user is authenticated, just unauthorized)
-    if (!membership || membership.status !== 'ACTIVE') {
+    // BUT if they are platform staff, they don't need a business membership.
+    if ((!membership || membership.status !== 'ACTIVE') && !isPlatformStaff) {
       logger.warn(
         {
           userId: user.id,
@@ -100,17 +104,21 @@ const authMiddleware = async (req, res, next) => {
     }
 
     // Load the business (needed for industry + as tenant anchor)
-    const business = await businessRepo.findById(membership.businessId);
+    // Note: Platform staff might not have a business, so this can be null.
+    const business = membership
+      ? await businessRepo.findById(membership.businessId)
+      : null;
 
     req.user = {
       id: user.id,
       email: user.email,
       fullName: user.fullName,
-      businessId: membership.businessId,
+      businessId: membership ? membership.businessId : null,
       industry: business?.industry || null,
-      role: membership.role,
-      memberId: membership.id,
+      role: membership?.role || null,
+      memberId: membership?.id || null,
       emailVerified: user.emailVerified,
+      platformRole: user.platformRole, // ★ THE MISSING LINK
     };
 
     return next();

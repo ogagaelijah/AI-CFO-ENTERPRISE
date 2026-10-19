@@ -1,6 +1,8 @@
 // src/interfaces/http/routes/enrollmentRoutes.js
-// v1.1.0-prod — GET / pagination standardized. Response shape preserved
-//               ({ success, enrollments, pagination }).
+// v1.2.0-prod — Reads require OWNER/ADMIN/MANAGER/ACCOUNTANT.
+//               Writes require OWNER/ADMIN/MANAGER.
+//               Error classification applied.
+// v1.1.0-prod — GET / pagination standardized.
 
 'use strict';
 
@@ -18,6 +20,7 @@ const UnenrollStudentUseCase = require('../../../application/useCases/enrollment
 const PromoteEnrollmentUseCase = require('../../../application/useCases/enrollments/PromoteEnrollmentUseCase');
 
 const { authMiddleware } = require('../middleware/authMiddleware');
+const { requireRole } = require('../middleware/requireRole');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
 const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 
@@ -41,7 +44,19 @@ const promoteEnrollmentUseCase = new PromoteEnrollmentUseCase({
 
 router.use(authMiddleware);
 
-router.get('/', async (req, res) => {
+const READ_ROLES = ['OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
+const WRITE_ROLES = ['OWNER', 'ADMIN', 'MANAGER'];
+
+function classifyError(error) {
+  const msg = String(error?.message || '');
+  if (/not found|does not exist/i.test(msg)) return 404;
+  if (/access denied|forbidden|permission/i.test(msg)) return 403;
+  if (/already exists|duplicate|active enrollment/i.test(msg)) return 409;
+  if (/required|invalid|must be|cannot|exceed|only whitespace|too long/i.test(msg)) return 400;
+  return 500;
+}
+
+router.get('/', requireRole(...READ_ROLES), async (req, res) => {
     try {
         const businessId = req.user.businessId;
         if (!businessId) {
@@ -58,8 +73,7 @@ router.get('/', async (req, res) => {
             session: session || null,
             term: term || null,
             status: status || null,
-            limit,
-            offset,
+            limit, offset,
         });
 
         const total = result?.pagination?.total || 0;
@@ -70,11 +84,11 @@ router.get('/', async (req, res) => {
         });
     } catch (error) {
         console.error('❌ [GET /api/enrollments]', error.message);
-        res.status(500).json({ success: false, message: error.message || 'Failed to fetch enrollments' });
+        res.status(classifyError(error)).json({ success: false, message: error.message || 'Failed to fetch enrollments' });
     }
 });
 
-router.get('/:id', async (req, res) => {
+router.get('/:id', requireRole(...READ_ROLES), async (req, res) => {
     try {
         const businessId = req.user.businessId;
         const { id } = req.params;
@@ -84,13 +98,12 @@ router.get('/:id', async (req, res) => {
         });
         res.json(result);
     } catch (error) {
-        const status = /not found/i.test(error.message) ? 404 : /access denied/i.test(error.message) ? 403 : 500;
         console.error('❌ [GET /api/enrollments/:id]', error.message);
-        res.status(status).json({ success: false, message: error.message });
+        res.status(classifyError(error)).json({ success: false, message: error.message });
     }
 });
 
-router.post('/', invalidateAfterWrite, async (req, res) => {
+router.post('/', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const businessId = req.user.businessId;
         if (!businessId) {
@@ -101,19 +114,18 @@ router.post('/', invalidateAfterWrite, async (req, res) => {
             businessId,
             studentId: studentId ? parseInt(studentId, 10) : null,
             classId: classId ? parseInt(classId, 10) : null,
-            term,
-            session,
+            term, session,
             enrolledOn: enrolledOn ? new Date(enrolledOn) : new Date(),
             metadata,
         });
         res.status(201).json(result);
     } catch (error) {
         console.error('❌ [POST /api/enrollments]', error.message);
-        res.status(400).json({ success: false, message: error.message });
+        res.status(classifyError(error)).json({ success: false, message: error.message });
     }
 });
 
-router.post('/:id/promote', invalidateAfterWrite, async (req, res) => {
+router.post('/:id/promote', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const businessId = req.user.businessId;
         const { id } = req.params;
@@ -122,19 +134,16 @@ router.post('/:id/promote', invalidateAfterWrite, async (req, res) => {
             enrollmentId: parseInt(id, 10),
             businessId,
             newClassId: newClassId ? parseInt(newClassId, 10) : null,
-            newTerm,
-            newSession,
-            metadata,
+            newTerm, newSession, metadata,
         });
         res.status(201).json(result);
     } catch (error) {
-        const status = /not found/i.test(error.message) ? 404 : /access denied/i.test(error.message) ? 403 : 400;
         console.error('❌ [POST /api/enrollments/:id/promote]', error.message);
-        res.status(status).json({ success: false, message: error.message });
+        res.status(classifyError(error)).json({ success: false, message: error.message });
     }
 });
 
-router.post('/:id/unenroll', invalidateAfterWrite, async (req, res) => {
+router.post('/:id/unenroll', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const businessId = req.user.businessId;
         const { id } = req.params;
@@ -146,9 +155,8 @@ router.post('/:id/unenroll', invalidateAfterWrite, async (req, res) => {
         });
         res.json(result);
     } catch (error) {
-        const status = /not found/i.test(error.message) ? 404 : /access denied/i.test(error.message) ? 403 : 400;
         console.error('❌ [POST /api/enrollments/:id/unenroll]', error.message);
-        res.status(status).json({ success: false, message: error.message });
+        res.status(classifyError(error)).json({ success: false, message: error.message });
     }
 });
 

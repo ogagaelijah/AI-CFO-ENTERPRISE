@@ -1,10 +1,5 @@
 // frontend/src/services/api.js
-// v4.1.0-prod — Adds verifyEmail, resendVerification, forgotPassword,
-//               resetPassword to authApi.
-// v4.0.0-prod — Bearer auth support alongside cookies. Fixes cross-origin
-//               cookie blocks on staging/production. Token stored in
-//               localStorage; attached as Authorization header on every
-//               request. 401 clears token.
+// v4.6.0-prod — Adds updateStaffRole to platformApi.
 
 import axios from 'axios';
 import { reportError, reportWarning } from './telemetry';
@@ -96,7 +91,8 @@ api.interceptors.response.use(
       const isAuthProbe =
         url?.includes('/auth/me') ||
         url?.includes('/auth/login') ||
-        url?.includes('/auth/register');
+        url?.includes('/auth/register') ||
+        url?.includes('/auth/2fa/login');
 
       // On a genuine 401 from a protected endpoint, wipe the stored token
       // so we don't keep sending a dead bearer.
@@ -169,6 +165,12 @@ export const authApi = {
   forgotPassword: (email) => api.post('/auth/forgot-password', { email }),
   resetPassword: (token, newPassword) =>
     api.post('/auth/reset-password', { token, newPassword }),
+
+  // 2FA Endpoints
+  setup2FA: () => api.post('/auth/2fa/setup'),
+  enable2FA: (code) => api.post('/auth/2fa/enable', { code }),
+  login2FA: (tempToken, code) => api.post('/auth/2fa/login', { tempToken, code }),
+  disable2FA: (code) => api.post('/auth/2fa/disable', { code }),
 };
 
 export const businessApi = {
@@ -184,6 +186,15 @@ export const subscriptionApi = {
   getPlans: () => api.get('/subscription/plans'),
   getCurrent: () => api.get('/subscription/current'),
   cancel: (reason = '') => api.post('/subscription/cancel', { reason }),
+};
+
+// Platform Admin API
+export const platformApi = {
+  getStats: () => api.get('/platform/stats'),
+  getStaff: () => api.get('/platform/staff'),
+  hireStaff: (email, platformRole) => api.post('/platform/staff', { email, platformRole }),
+  updateStaffRole: (id, platformRole) => api.put(`/platform/staff/${id}`, { platformRole }), // ★ NEW
+  fireStaff: (id) => api.delete(`/platform/staff/${id}`),
 };
 
 export default api;

@@ -1,7 +1,5 @@
 // frontend/src/hooks/useRole.js
-// v1.1.1-prod — Corrects Sales: no one can edit/delete (append-only).
-//               Income, Payments, Purchases also append-only.
-// v1.1.0-prod — Complete role helpers matching the full permission matrix.
+// v1.2.0-prod — Adds Platform Staff bypass.
 
 import { useAuth } from '../context/AuthContext';
 
@@ -16,6 +14,10 @@ const HIERARCHY = {
 export default function useRole() {
   const { user } = useAuth();
   const role = user?.role || null;
+  const platformRole = user?.platformRole || null;
+  
+  const isPlatformStaff = Boolean(platformRole);
+  const isSuperadmin = platformRole === 'SUPERADMIN';
 
   const has = (...allowed) => allowed.includes(role);
   const can = has;
@@ -32,96 +34,102 @@ export default function useRole() {
   };
 
   const helpers = {
+    // ── Platform Admin
+    isPlatformStaff,
+    isSuperadmin,
+
     // ── Team & account management
-    canManageTeam:          has('OWNER', 'ADMIN'),
-    canManageSettings:      has('OWNER', 'ADMIN'),
-    canManageSubscription:  has('OWNER'),
-    canTransferOwnership:   has('OWNER'),
-    canDeleteBusiness:      has('OWNER'),
+    // Platform staff can always manage
+    canManageTeam:          isPlatformStaff || has('OWNER', 'ADMIN'),
+    canManageSettings:      isPlatformStaff || has('OWNER', 'ADMIN'),
+    canManageSubscription:  isPlatformStaff || has('OWNER'),
+    canTransferOwnership:   isPlatformStaff || has('OWNER'),
+    canDeleteBusiness:      isPlatformStaff || has('OWNER'),
 
     // ── Dashboard
-    canViewFinancialWidgets: has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
+    canViewFinancialWidgets: isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
 
     // ── Sales — immutable once recorded
-    canRecordSale:    has('OWNER', 'ADMIN', 'MANAGER', 'CASHIER'),
+    canRecordSale:    isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER', 'CASHIER'),
     canEditSale:      false,          // append-only
     canDeleteSale:    false,          // append-only
-    canPrintReceipt:  has('OWNER', 'ADMIN', 'MANAGER', 'CASHIER', 'ACCOUNTANT'),
-    canViewSales:     has('OWNER', 'ADMIN', 'MANAGER', 'CASHIER', 'ACCOUNTANT'),
+    canPrintReceipt:  isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER', 'CASHIER', 'ACCOUNTANT'),
+    canViewSales:     isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER', 'CASHIER', 'ACCOUNTANT'),
 
     // ── Income — append-only
-    canViewIncome:    has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
+    canViewIncome:    isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
     canEditIncome:    false,          // append-only
     canDeleteIncome:  false,          // append-only
 
-    // ── Expenses — editable by OWNER/ADMIN/MANAGER (adjust if you want append-only)
-    canViewExpenses:  has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
-    canEditExpenses:  has('OWNER', 'ADMIN', 'MANAGER'),
-    canDeleteExpenses: has('OWNER', 'ADMIN', 'MANAGER'),
+    // ── Expenses
+    canViewExpenses:  isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
+    canEditExpenses:  isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER'),
+    canDeleteExpenses: isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER'),
 
     // ── Purchases — append-only
-    canViewPurchases: has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
+    canViewPurchases: isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
     canEditPurchases: false,          // append-only
     canDeletePurchases: false,        // append-only
 
     // ── Payments — append-only
-    canRecordDebtorPayment:   has('OWNER', 'ADMIN', 'MANAGER', 'CASHIER'),
-    canRecordCreditorPayment: has('OWNER', 'ADMIN', 'MANAGER'),
-    canRecordInvoicePayment:  has('OWNER', 'ADMIN', 'MANAGER', 'CASHIER'),
-    canRecordFeePayment:      has('OWNER', 'ADMIN', 'MANAGER', 'CASHIER'),
+    canRecordDebtorPayment:   isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER', 'CASHIER'),
+    canRecordCreditorPayment: isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER'),
+    canRecordInvoicePayment:  isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER', 'CASHIER'),
+    canRecordFeePayment:      isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER', 'CASHIER'),
     canEditPayment:   false,          // append-only
     canDeletePayment: false,          // append-only
 
     // ── Inventory
-    canViewInventory: has('OWNER', 'ADMIN', 'MANAGER', 'CASHIER', 'ACCOUNTANT'),
-    canEditInventory: has('OWNER', 'ADMIN', 'MANAGER'),
+    canViewInventory: isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER', 'CASHIER', 'ACCOUNTANT'),
+    canEditInventory: isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER'),
 
     // ── Debtors
-    canViewDebtors:   has('OWNER', 'ADMIN', 'MANAGER', 'CASHIER', 'ACCOUNTANT'),
-    canEditDebtors:   has('OWNER', 'ADMIN', 'MANAGER'),
+    canViewDebtors:   isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER', 'CASHIER', 'ACCOUNTANT'),
+    canEditDebtors:   isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER'),
 
     // ── Creditors
-    canViewCreditors: has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
-    canEditCreditors: has('OWNER', 'ADMIN', 'MANAGER'),
+    canViewCreditors: isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
+    canEditCreditors: isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER'),
 
     // ── Suppliers
-    canViewSuppliers: has('OWNER', 'ADMIN', 'MANAGER', 'CASHIER', 'ACCOUNTANT'),
-    canEditSuppliers: has('OWNER', 'ADMIN', 'MANAGER'),
+    canViewSuppliers: isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER', 'CASHIER', 'ACCOUNTANT'),
+    canEditSuppliers: isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER'),
 
     // ── Customers / Clients / Donors
-    canViewCustomers: has('OWNER', 'ADMIN', 'MANAGER', 'CASHIER', 'ACCOUNTANT'),
-    canEditCustomers: has('OWNER', 'ADMIN', 'MANAGER', 'CASHIER'),
+    canViewCustomers: isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER', 'CASHIER', 'ACCOUNTANT'),
+    canEditCustomers: isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER', 'CASHIER'),
 
     // ── Consultancy
-    canViewProjects:    has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
-    canEditProjects:    has('OWNER', 'ADMIN', 'MANAGER'),
-    canViewTimeEntries: has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
-    canEditTimeEntries: has('OWNER', 'ADMIN', 'MANAGER'),
+    canViewProjects:    isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
+    canEditProjects:    isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER'),
+    canViewTimeEntries: isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
+    canEditTimeEntries: isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER'),
 
-    // ── Invoices — editable (DRAFT is editable; SENT/PAID changes are tracked)
-    canViewInvoices:  has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
-    canEditInvoices:  has('OWNER', 'ADMIN', 'MANAGER'),
+    // ── Invoices
+    canViewInvoices:  isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
+    canEditInvoices:  isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER'),
 
     // ── Education
-    canViewEducation: has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
-    canEditEducation: has('OWNER', 'ADMIN', 'MANAGER'),
+    canViewEducation: isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
+    canEditEducation: isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER'),
 
     // ── NGO
-    canViewNGO:       has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
-    canEditNGO:       has('OWNER', 'ADMIN', 'MANAGER'),
+    canViewNGO:       isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
+    canEditNGO:       isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER'),
 
     // ── Intelligence
-    canViewReports:   has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
-    canExportReports: has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
-    canViewAnalytics: has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
-    canViewForecast:  has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
-    canViewRisk:      has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
-    canViewDecisions: has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
-    canViewAdvisor:   has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
+    canViewReports:   isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
+    canExportReports: isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
+    canViewAnalytics: isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
+    canViewForecast:  isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
+    canViewRisk:      isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
+    canViewDecisions: isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
+    canViewAdvisor:   isPlatformStaff || has('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'),
   };
 
   return {
     role,
+    platformRole,
     has,
     can,
     canAtLeast,

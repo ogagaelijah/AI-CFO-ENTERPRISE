@@ -1,8 +1,5 @@
 // frontend/src/App.jsx
-// v2.6.0 — Adds /accept-invite public route.
-// v2.5.0 — Removes global <ChatWidget />.
-// v2.4.0 — Adds route-level code splitting via React.lazy + Suspense.
-// v2.3.0 — Adds /verify-email, /forgot-password, /reset-password routes.
+// v2.7.0 — Adds /admin nested routes (ComingSoon placeholders).
 
 import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
@@ -17,11 +14,12 @@ import Login from './pages/Login';
 import VerifyEmail from './pages/VerifyEmail';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
-import AcceptInvite from './pages/AcceptInvite';   // ★ NEW
+import AcceptInvite from './pages/AcceptInvite';
 
 // ── Lazy pages (loaded on demand) ───────────────────────────────────────
 const Dashboard       = lazy(() => import('./pages/Dashboard'));
 const AdminDashboard  = lazy(() => import('./pages/AdminDashboard'));
+const ComingSoon      = lazy(() => import('./pages/admin/ComingSoon')); // ★ NEW
 const Settings        = lazy(() => import('./pages/Settings'));
 const Subscription    = lazy(() => import('./pages/Subscription'));
 const PaymentSuccess  = lazy(() => import('./pages/PaymentSuccess'));
@@ -82,7 +80,7 @@ function App() {
               <Route path="/verify-email" element={<VerifyEmail />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/reset-password" element={<ResetPassword />} />
-              <Route path="/accept-invite" element={<AcceptInvite />} />  {/* ★ NEW */}
+              <Route path="/accept-invite" element={<AcceptInvite />} />
               <Route path="/payment/success" element={<PaymentSuccess />} />
 
               {/* Protected Routes - Regular Users */}
@@ -120,7 +118,16 @@ function App() {
 
               {/* Protected Routes - Admin Only */}
               <Route path="/admin" element={<ProtectedRoute requireAdmin={true}><AdminDashboard /></ProtectedRoute>} />
-              <Route path="/admin/*" element={<ProtectedRoute requireAdmin={true}><AdminDashboard /></ProtectedRoute>} />
+              
+              {/* ★ NEW: Admin Sub-pages (Wrapped inside AdminDashboard layout via Outlet in the future, 
+                  but for now they just render ComingSoon directly) */}
+              <Route path="/admin/users" element={<ProtectedRoute requireAdmin={true}><ComingSoon /></ProtectedRoute>} />
+              <Route path="/admin/businesses" element={<ProtectedRoute requireAdmin={true}><ComingSoon /></ProtectedRoute>} />
+              <Route path="/admin/subscriptions" element={<ProtectedRoute requireAdmin={true}><ComingSoon /></ProtectedRoute>} />
+              <Route path="/admin/revenue" element={<ProtectedRoute requireAdmin={true}><ComingSoon /></ProtectedRoute>} />
+              <Route path="/admin/analytics" element={<ProtectedRoute requireAdmin={true}><ComingSoon /></ProtectedRoute>} />
+              <Route path="/admin/health" element={<ProtectedRoute requireAdmin={true}><ComingSoon /></ProtectedRoute>} />
+              <Route path="/admin/settings" element={<ProtectedRoute requireAdmin={true}><ComingSoon /></ProtectedRoute>} />
 
               {/* Fallback Route */}
               <Route path="*" element={<Landing />} />

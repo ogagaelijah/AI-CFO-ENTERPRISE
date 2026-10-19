@@ -1,5 +1,5 @@
 // src/infrastructure/database/sqlite/repositories/TeamInviteRepository.js
-// v1.0.0-prod — Pending team invitations. Tenant-scoped by business_id.
+// v1.1.0-prod — Pending team invitations. Adds platform_role for platform staff.
 
 const BaseRepository = require('./BaseRepository');
 
@@ -17,6 +17,7 @@ class TeamInvite {
         this.expiresAt = data.expiresAt || null;
         this.acceptedAt = data.acceptedAt || null;
         this.createdAt = data.createdAt || new Date();
+        this.platformRole = data.platformRole || null; // ★ NEW
     }
 
     isExpired() {
@@ -42,6 +43,7 @@ class TeamInvite {
             expiresAt: this.expiresAt,
             acceptedAt: this.acceptedAt,
             createdAt: this.createdAt,
+            platformRole: this.platformRole, // ★ NEW
         };
     }
 }
@@ -66,16 +68,17 @@ class TeamInviteRepository extends BaseRepository {
             expiresAt: row.expires_at,
             acceptedAt: row.accepted_at,
             createdAt: row.created_at,
+            platformRole: row.platform_role, // ★ NEW
         });
     }
 
-    async create({ businessId, email, role, tokenHash, invitedBy, expiresAt }) {
+    async create({ businessId, email, role, tokenHash, invitedBy, expiresAt, platformRole }) {
         const result = await this._query(
             `INSERT INTO team_invites
-                (business_id, email, role, token_hash, invited_by, expires_at)
-             VALUES ($1, $2, $3, $4, $5, $6)
+                (business_id, email, role, token_hash, invited_by, expires_at, platform_role)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
              RETURNING id`,
-            [businessId, email.toLowerCase(), role, tokenHash, invitedBy, expiresAt]
+            [businessId, email.toLowerCase(), role, tokenHash, invitedBy, expiresAt, platformRole || null]
         );
         return this.findById(result.rows[0].id);
     }
@@ -96,9 +99,6 @@ class TeamInviteRepository extends BaseRepository {
         return this.toEntity(result.rows[0] || null);
     }
 
-    /**
-     * List pending (unaccepted, unexpired) invites for a business.
-     */
     async findPendingByBusiness(businessId) {
         const result = await this._query(
             `SELECT * FROM team_invites
@@ -111,10 +111,6 @@ class TeamInviteRepository extends BaseRepository {
         return result.rows.map(row => this.toEntity(row));
     }
 
-    /**
-     * Find a pending invite for a specific email in a business.
-     * Returns null if none exists (used to prevent duplicate invites).
-     */
     async findPendingByBusinessAndEmail(businessId, email) {
         const result = await this._query(
             `SELECT * FROM team_invites
@@ -147,10 +143,6 @@ class TeamInviteRepository extends BaseRepository {
         return result.rowCount > 0;
     }
 
-    /**
-     * Delete any pending invite for a (business, email) pair.
-     * Used before creating a new invite so the unique index doesn't clash.
-     */
     async deletePendingForEmail(businessId, email) {
         const result = await this._query(
             `DELETE FROM team_invites
