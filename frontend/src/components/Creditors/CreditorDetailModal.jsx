@@ -1,5 +1,8 @@
 // frontend/src/components/Creditors/CreditorDetailModal.jsx
+// v1.1.0-prod — Adds Internal Comments section.
+
 import { X, User, Calendar, DollarSign, FileText } from 'lucide-react';
+import CommentSection from '../Comments/CommentSection'; // ★ NEW
 
 const CreditorDetailModal = ({ isOpen, creditor, isLoading, onClose }) => {
   if (!isOpen) return null;
@@ -36,7 +39,7 @@ const CreditorDetailModal = ({ isOpen, creditor, isLoading, onClose }) => {
           </button>
         </div>
 
-        {isLoading ? (
+        {isLoading || !creditor ? (
           <div className="p-8 text-center">
             <div className="w-12 h-12 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto" />
             <p className="mt-4 text-gray-600 dark:text-gray-400">Loading details...</p>
@@ -48,13 +51,13 @@ const CreditorDetailModal = ({ isOpen, creditor, isLoading, onClose }) => {
                 <p className="text-xs text-gray-500 dark:text-gray-400">Supplier</p>
                 <p className="font-medium text-gray-900 dark:text-white flex items-center gap-2">
                   <User className="w-4 h-4 text-gray-400" />
-                  {creditor?.supplier_name || 'N/A'}
+                  {creditor.supplier_name || 'N/A'}
                 </p>
               </div>
               <div>
                 <p className="text-xs text-gray-500 dark:text-gray-400">Status</p>
-                <span className={`px-2 py-1 rounded-full text-xs font-medium inline-block ${getStatusBadge(creditor?.status, creditor?.balance_remaining).color}`}>
-                  {getStatusBadge(creditor?.status, creditor?.balance_remaining).label}
+                <span className={`px-2 py-1 rounded-full text-xs font-medium inline-block ${getStatusBadge(creditor.status, creditor.balance_remaining).color}`}>
+                  {getStatusBadge(creditor.status, creditor.balance_remaining).label}
                 </span>
               </div>
             </div>
@@ -63,19 +66,19 @@ const CreditorDetailModal = ({ isOpen, creditor, isLoading, onClose }) => {
               <div>
                 <p className="text-xs text-gray-500 dark:text-gray-400">Total Owed</p>
                 <p className="font-bold text-gray-900 dark:text-white">
-                  ₦{(creditor?.total_owed || 0).toLocaleString()}
+                  ₦{(creditor.total_owed || 0).toLocaleString()}
                 </p>
               </div>
               <div>
                 <p className="text-xs text-gray-500 dark:text-gray-400">Amount Paid</p>
                 <p className="font-bold text-green-600 dark:text-green-400">
-                  ₦{(creditor?.amount_paid || 0).toLocaleString()}
+                  ₦{(creditor.amount_paid || 0).toLocaleString()}
                 </p>
               </div>
               <div>
                 <p className="text-xs text-gray-500 dark:text-gray-400">Balance</p>
-                <p className={`font-bold ${creditor?.balance_remaining > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                  ₦{(creditor?.balance_remaining || 0).toLocaleString()}
+                <p className={`font-bold ${creditor.balance_remaining > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                  ₦{(creditor.balance_remaining || 0).toLocaleString()}
                 </p>
               </div>
             </div>
@@ -85,18 +88,18 @@ const CreditorDetailModal = ({ isOpen, creditor, isLoading, onClose }) => {
                 <p className="text-xs text-gray-500 dark:text-gray-400">Due Date</p>
                 <p className="font-medium text-gray-900 dark:text-white flex items-center gap-2">
                   <Calendar className="w-4 h-4 text-gray-400" />
-                  {formatDate(creditor?.due_date)}
+                  {formatDate(creditor.due_date)}
                 </p>
               </div>
               <div>
                 <p className="text-xs text-gray-500 dark:text-gray-400">Last Payment</p>
                 <p className="font-medium text-gray-900 dark:text-white">
-                  {formatDate(creditor?.last_payment_date)}
+                  {formatDate(creditor.last_payment_date)}
                 </p>
               </div>
             </div>
 
-            {creditor?.reference_type && (
+            {creditor.reference_type && (
               <div className="p-4 bg-gray-50 dark:bg-slate-700 rounded-lg">
                 <p className="text-xs text-gray-500 dark:text-gray-400">Reference</p>
                 <p className="font-medium text-gray-900 dark:text-white">
@@ -105,12 +108,15 @@ const CreditorDetailModal = ({ isOpen, creditor, isLoading, onClose }) => {
               </div>
             )}
 
-            {creditor?.notes && (
+            {creditor.notes && (
               <div className="p-3 bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-200 dark:border-yellow-800 rounded-lg">
                 <p className="text-xs text-gray-500 dark:text-gray-400">Notes</p>
                 <p className="text-sm text-gray-700 dark:text-gray-300">{creditor.notes}</p>
               </div>
             )}
+
+            {/* ★ NEW: Internal Comments */}
+            <CommentSection entityType="CREDITOR" entityId={creditor.id} />
 
             <div className="flex justify-end pt-4 border-t border-gray-200 dark:border-slate-700">
               <button

@@ -1,6 +1,5 @@
 // frontend/src/pages/Expenses.jsx
-// v1.2.0-prod — Uses isInitialLoading so refetches don't unmount the table.
-// v1.1.0-prod — Uses usePaginatedApi hook + Pagination. Summary via extra.
+// v1.4.0-prod — Opens ExpenseDetailModal immediately to eliminate perceived latency.
 
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -49,23 +48,26 @@ const Expenses = () => {
 
   const [formData, setFormData] = useState({
     category: 'OTHER',
-    amount: 0,
+    amount: '',
     description: '',
     date: new Date().toISOString().split('T')[0],
   });
 
+  // ★ FIXED: Open modal instantly, then fetch
   const fetchExpenseDetail = async (id) => {
+    setSelectedExpense(null);
+    setIsLoadingDetail(true);
+    setShowDetailModal(true);
+
     try {
-      setIsLoadingDetail(true);
-      setError('');
       const response = await api.get(`/expenses/${id}`);
       if (response.data?.success) {
         setSelectedExpense(response.data.data);
-        setShowDetailModal(true);
       }
     } catch (error) {
       console.error('Error fetching expense detail:', error);
       setError('Failed to load expense details');
+      setShowDetailModal(false);
     } finally {
       setIsLoadingDetail(false);
     }
@@ -80,7 +82,7 @@ const Expenses = () => {
       setError('Category is required');
       return;
     }
-    if (formData.amount <= 0) {
+    if (!formData.amount || parseFloat(formData.amount) <= 0) {
       setError('Amount must be greater than 0');
       return;
     }
@@ -113,7 +115,7 @@ const Expenses = () => {
         setConfirmData(null);
         setFormData({
           category: 'OTHER',
-          amount: 0,
+          amount: '',
           description: '',
           date: new Date().toISOString().split('T')[0],
         });

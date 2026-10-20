@@ -1,4 +1,6 @@
 // frontend/src/pages/Purchases.jsx
+// v1.2.0-prod — Opens PurchaseDetailModal immediately to eliminate perceived latency.
+
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
@@ -37,13 +39,15 @@ const Purchases = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const [formData, setFormData] = useState({
+  const initialFormData = {
     supplierName: '',
-    items: [{ name: '', quantity: 1, unitCost: 0 }],
+    items: [{ name: '', quantity: '', unitCost: '' }],
     paymentStatus: 'UNPAID',
     purchaseDate: new Date().toISOString().split('T')[0],
     notes: '',
-  });
+  };
+
+  const [formData, setFormData] = useState(initialFormData);
 
   useEffect(() => {
     fetchPurchases();
@@ -72,18 +76,21 @@ const Purchases = () => {
     }
   };
 
+  // ★ FIXED: Open modal instantly, then fetch data
   const fetchPurchaseDetail = async (id) => {
+    setSelectedPurchase(null);
+    setIsLoadingDetail(true);
+    setShowDetailModal(true);
+
     try {
-      setIsLoadingDetail(true);
-      setError('');
       const response = await api.get(`/purchases/${id}`);
       if (response.data?.success) {
         setSelectedPurchase(response.data.data);
-        setShowDetailModal(true);
       }
     } catch (error) {
       console.error('Error fetching purchase detail:', error);
       setError('Failed to load purchase details');
+      setShowDetailModal(false);
     } finally {
       setIsLoadingDetail(false);
     }
@@ -106,11 +113,11 @@ const Purchases = () => {
         setError('All items must have a name');
         return;
       }
-      if (item.quantity <= 0) {
+      if (!item.quantity || parseFloat(item.quantity) <= 0) {
         setError(`Quantity for "${item.name || 'item'}" must be greater than 0`);
         return;
       }
-      if (item.unitCost <= 0) {
+      if (!item.unitCost || parseFloat(item.unitCost) <= 0) {
         setError(`Unit cost for "${item.name || 'item'}" must be greater than 0`);
         return;
       }
@@ -135,7 +142,7 @@ const Purchases = () => {
       return;
     }
     
-    const totalCost = (confirmData.items || []).reduce((sum, item) => sum + (item.quantity * item.unitCost), 0);
+    const totalCost = (confirmData.items || []).reduce((sum, item) => sum + (parseFloat(item.quantity) * parseFloat(item.unitCost)), 0);
     
     if (amount > totalCost) {
       setError(`Payment amount (₦${amount.toLocaleString()}) exceeds total (₦${totalCost.toLocaleString()})`);
@@ -164,7 +171,7 @@ const Purchases = () => {
     try {
       const items = confirmData.items.map(item => ({
         name: item.name.trim(),
-        quantity: parseInt(item.quantity) || 1,
+        quantity: parseFloat(item.quantity) || 1,
         unitCost: parseFloat(item.unitCost) || 0,
       }));
 
@@ -189,13 +196,7 @@ const Purchases = () => {
         setShowPartialModal(false);
         setConfirmData(null);
         setPartialAmount('');
-        setFormData({
-          supplierName: '',
-          items: [{ name: '', quantity: 1, unitCost: 0 }],
-          paymentStatus: 'UNPAID',
-          purchaseDate: new Date().toISOString().split('T')[0],
-          notes: '',
-        });
+        setFormData(initialFormData);
         
         let message = `✅ Purchase recorded successfully! ${items.length} item(s) added to inventory.`;
         if (confirmData.paymentStatus === 'PARTIAL') {

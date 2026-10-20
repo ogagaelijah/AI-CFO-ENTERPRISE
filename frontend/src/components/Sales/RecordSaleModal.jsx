@@ -1,6 +1,5 @@
 // frontend/src/components/Sales/RecordSaleModal.jsx
-// v1.1.0-prod — Adds read-only guard. Submit button disables and shows
-//               an "upgrade to continue" banner when the plan is read-only.
+// v1.2.0-prod — Fixes empty inputs for quantity, cost, and selling price.
 
 import { useState, useEffect } from 'react';
 import { X, Plus, Trash2, AlertTriangle } from 'lucide-react';
@@ -11,12 +10,13 @@ import ReadOnlyBanner from '../common/ReadOnlyBanner';
 const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) => {
   const { canWrite, guardMessage } = useWriteGuard();
 
+  // ★ FIXED: Empty strings instead of defaults
   const [formData, setFormData] = useState({
     customerName: '',
     customerPhone: '',
     paymentStatus: 'PAID',
     date: new Date().toISOString().split('T')[0],
-    items: [{ name: '', quantity: 1, sellingPrice: 0, costPrice: 0, inventoryId: null }],
+    items: [{ name: '', quantity: '', sellingPrice: '', costPrice: '', inventoryId: null }],
     notes: '',
     skipInventory: false,
   });
@@ -59,13 +59,14 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
 
     const inventoryItem = findInventoryItem(value);
     if (inventoryItem && !formData.skipInventory) {
-      newItems[index].costPrice = inventoryItem.cost_price || 0;
-      newItems[index].sellingPrice = inventoryItem.selling_price || 0;
+      // ★ FIXED: Convert numbers to strings for the inputs
+      newItems[index].costPrice = String(inventoryItem.cost_price || '');
+      newItems[index].sellingPrice = String(inventoryItem.selling_price || '');
       newItems[index].inventoryId = inventoryItem.id;
       newItems[index].stock = inventoryItem.quantity || 0;
     } else if (!formData.skipInventory) {
-      newItems[index].costPrice = 0;
-      newItems[index].sellingPrice = 0;
+      newItems[index].costPrice = '';
+      newItems[index].sellingPrice = '';
       newItems[index].inventoryId = null;
       newItems[index].stock = 0;
     }
@@ -77,7 +78,8 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
   const addItem = () => {
     setFormData({
       ...formData,
-      items: [...formData.items, { name: '', quantity: 1, sellingPrice: 0, costPrice: 0, inventoryId: null, stock: 0 }],
+      // ★ FIXED: Empty strings
+      items: [...formData.items, { name: '', quantity: '', sellingPrice: '', costPrice: '', inventoryId: null, stock: 0 }],
     });
   };
 
@@ -90,15 +92,8 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
 
   const updateItem = (index, field, value) => {
     const newItems = [...formData.items];
-    newItems[index][field] = field === 'name' ? value : parseFloat(value) || 0;
-
-    if (field === 'quantity' || field === 'sellingPrice') {
-      const item = newItems[index];
-      const costPrice = item.costPrice || 0;
-      const sellPrice = item.sellingPrice || 0;
-      const qty = item.quantity || 0;
-    }
-
+    // ★ FIXED: Store raw string so it can be empty
+    newItems[index][field] = value;
     setFormData({ ...formData, items: newItems });
   };
 
@@ -108,9 +103,10 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
     let totalProfit = 0;
 
     for (const item of formData.items) {
-      const qty = item.quantity || 0;
-      const cost = item.costPrice || 0;
-      const sell = item.sellingPrice || 0;
+      // ★ FIXED: Safe parsing for display
+      const qty = parseFloat(item.quantity) || 0;
+      const cost = parseFloat(item.costPrice) || 0;
+      const sell = parseFloat(item.sellingPrice) || 0;
       totalCost += qty * cost;
       totalRevenue += qty * sell;
       totalProfit += qty * (sell - cost);
@@ -136,11 +132,11 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
     }
 
     for (const item of validItems) {
-      if (item.quantity <= 0) {
+      if (!item.quantity || parseFloat(item.quantity) <= 0) {
         setError(`Quantity for "${item.name}" must be greater than 0`);
         return;
       }
-      if (item.sellingPrice < 0) {
+      if (!item.sellingPrice || parseFloat(item.sellingPrice) < 0) {
         setError(`Selling price for "${item.name}" cannot be negative`);
         return;
       }
@@ -151,7 +147,7 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
     if (!formData.skipInventory) {
       for (const item of validItems) {
         const inventoryItem = findInventoryItem(item.name);
-        if (inventoryItem && inventoryItem.quantity < item.quantity) {
+        if (inventoryItem && inventoryItem.quantity < parseFloat(item.quantity)) {
           setError(`Insufficient stock for "${item.name}". Available: ${inventoryItem.quantity}, Requested: ${item.quantity}`);
           return;
         }
@@ -162,8 +158,9 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
       ...formData,
       items: validItems.map(item => ({
         ...item,
-        costPrice: item.costPrice || 0,
-        sellingPrice: item.sellingPrice || 0,
+        costPrice: parseFloat(item.costPrice) || 0,
+        sellingPrice: parseFloat(item.sellingPrice) || 0,
+        quantity: parseFloat(item.quantity) || 0,
       })),
       totalCost,
       totalRevenue,
@@ -262,7 +259,7 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
                 if (e.target.checked) {
                   const newItems = formData.items.map(item => ({
                     ...item,
-                    costPrice: 0,
+                    costPrice: '',
                     inventoryId: null,
                     stock: 0,
                   }));
@@ -272,7 +269,7 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
                     const inv = findInventoryItem(item.name);
                     return {
                       ...item,
-                      costPrice: inv?.cost_price || 0,
+                      costPrice: inv?.cost_price ? String(inv.cost_price) : '',
                       inventoryId: inv?.id || null,
                       stock: inv?.quantity || 0,
                     };
@@ -309,10 +306,11 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
             </div>
 
             {formData.items.map((item, index) => {
-              const itemTotal = (item.quantity || 0) * (item.sellingPrice || 0);
+              // ★ FIXED: Safe parsing for display
+              const itemTotal = (parseFloat(item.quantity) || 0) * (parseFloat(item.sellingPrice) || 0);
               const inventoryItem = findInventoryItem(item.name);
               const stockAvailable = inventoryItem?.quantity || 0;
-              const isLowStock = stockAvailable > 0 && stockAvailable < (item.quantity || 0);
+              const isLowStock = stockAvailable > 0 && stockAvailable < (parseFloat(item.quantity) || 0);
 
               return (
                 <div key={index} className="grid grid-cols-12 gap-2 mb-2 items-center">
@@ -333,7 +331,7 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
                     {!formData.skipInventory && item.name && !inventoryItem && (
                       <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">⚠️ Not in inventory</p>
                     )}
-                    {!formData.skipInventory && inventoryItem && item.quantity > 0 && (
+                    {!formData.skipInventory && inventoryItem && parseFloat(item.quantity) > 0 && (
                       <p className={`text-xs mt-1 ${isLowStock ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
                         {isLowStock ? `⚠️ Only ${stockAvailable} available` : `✅ ${stockAvailable} in stock`}
                       </p>
@@ -345,6 +343,7 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
                     onChange={(e) => updateItem(index, 'quantity', e.target.value)}
                     className="col-span-2 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-center"
                     min="1"
+                    placeholder="0"
                   />
                   <input
                     type="number"
@@ -353,6 +352,7 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
                     className="col-span-2 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-center"
                     min="0"
                     step="0.01"
+                    placeholder="0.00"
                     readOnly={!formData.skipInventory && !!inventoryItem}
                   />
                   <input
@@ -362,6 +362,7 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
                     className="col-span-2 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-center"
                     min="0"
                     step="0.01"
+                    placeholder="0.00"
                   />
                   <div className="col-span-1 text-center text-sm font-medium text-blue-600 dark:text-blue-400">
                     ₦{itemTotal.toFixed(0)}

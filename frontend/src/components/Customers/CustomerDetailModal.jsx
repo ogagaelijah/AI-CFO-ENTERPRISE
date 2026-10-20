@@ -1,6 +1,5 @@
 // frontend/src/components/Customers/CustomerDetailModal.jsx
-// v1.1.0-prod — Removed Tax ID display. Added DONOR badge.
-//               Accepts entityName prop for header wording.
+// v1.2.0-prod — Keeps spinner logic and handles history loading safely.
 
 import { useState, useEffect } from 'react';
 import { X, Phone, Mail, MapPin, FileText, Calendar } from 'lucide-react';
@@ -37,7 +36,8 @@ const CustomerDetailModal = ({ isOpen, customer, isLoading, onClose, entityName 
 
   if (!isOpen) return null;
 
-  if (isLoading) {
+  // ★ Renders spinner if the main fetch is still in progress OR if we are waiting for history
+  if (isLoading || !customer) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md p-6">
@@ -48,8 +48,6 @@ const CustomerDetailModal = ({ isOpen, customer, isLoading, onClose, entityName 
       </div>
     );
   }
-
-  if (!customer) return null;
 
   const getTypeBadge = (type) => {
     const types = {

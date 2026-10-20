@@ -1,7 +1,5 @@
 // frontend/src/pages/Sales.jsx
-// v1.2.0-prod — Uses isInitialLoading so search/filter/page changes don't
-//               unmount the table.
-// v1.1.0-prod — Uses usePaginatedApi hook + Pagination.
+// v1.2.1-prod — Opens SaleDetailModal immediately to eliminate perceived latency.
 
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -42,8 +40,11 @@ const Sales = () => {
   const [success, setSuccess] = useState('');
 
   const fetchSaleDetail = async (saleId) => {
+    setSelectedSale(null); // Clear previous data
+    setIsLoadingDetail(true); // Turn on spinner
+    setShowDetailModal(true); // Open the modal instantly
+    
     try {
-      setIsLoadingDetail(true);
       const response = await api.get(`/sales/${saleId}`);
       const saleData = response.data?.data || response.data;
 
@@ -52,10 +53,10 @@ const Sales = () => {
       }
 
       setSelectedSale(saleData);
-      setShowDetailModal(true);
     } catch (error) {
       console.error('❌ Error fetching sale detail:', error);
       setError('Failed to load sale details');
+      setShowDetailModal(false);
     } finally {
       setIsLoadingDetail(false);
     }

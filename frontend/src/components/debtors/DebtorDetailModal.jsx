@@ -1,5 +1,8 @@
 // frontend/src/components/debtors/DebtorDetailModal.jsx
+// v1.1.0-prod — Adds Internal Comments section.
+
 import { X, User, Calendar, CreditCard, Trash2, FileText, Phone } from 'lucide-react';
+import CommentSection from '../Comments/CommentSection'; // ★ NEW
 
 const DebtorDetailModal = ({ isOpen, onClose, debtor, onPaymentClick, onDeleteClick }) => {
   if (!isOpen || !debtor) return null;
@@ -145,6 +148,9 @@ const DebtorDetailModal = ({ isOpen, onClose, debtor, onPaymentClick, onDeleteCl
               </p>
             </div>
           )}
+
+          {/* ★ NEW: Internal Comments */}
+          <CommentSection entityType="DEBTOR" entityId={debtor.id} />
 
           {/* Action Buttons */}
           <div className="flex space-x-3 pt-4 border-t border-gray-200 dark:border-slate-700">

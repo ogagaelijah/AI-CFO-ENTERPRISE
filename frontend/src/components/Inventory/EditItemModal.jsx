@@ -1,10 +1,11 @@
 // frontend/src/components/Inventory/EditItemModal.jsx
-// v1.1.0-prod — Adds read-only guard: banner + disabled submit.
+// v1.2.0-prod — Adds Internal Comments section.
 
 import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { useWriteGuard } from '../../hooks/useWriteGuard';
 import ReadOnlyBanner from '../common/ReadOnlyBanner';
+import CommentSection from '../Comments/CommentSection'; // ★ NEW
 
 const EditItemModal = ({ isOpen, item, onClose, onSubmit }) => {
   const { canWrite, guardMessage } = useWriteGuard();
@@ -62,7 +63,7 @@ const EditItemModal = ({ isOpen, item, onClose, onSubmit }) => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between z-10">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Edit Item: {item.item_name}</h2>
           <button onClick={handleClose} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition">
@@ -130,6 +131,9 @@ const EditItemModal = ({ isOpen, item, onClose, onSubmit }) => {
               </p>
             </div>
           )}
+
+          {/* ★ NEW: Internal Comments */}
+          <CommentSection entityType="INVENTORY" entityId={item.id} />
 
           <div className="flex space-x-3 pt-4 border-t border-gray-200 dark:border-gray-700">
             <button

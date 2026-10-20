@@ -1,5 +1,5 @@
 // src/interfaces/http/server.js
-// v2.17.0-prod — Mounts /api/platform for internal staff (Admin Dashboard).
+// v2.19.0-prod — Mounts /api/comments.
 
 const { initSentry, Sentry } = require('../../shared/utils/sentry');
 initSentry();
@@ -118,7 +118,9 @@ const pledgeRoutes = require('./routes/pledgeRoutes');
 const donationRoutes = require('./routes/donationRoutes');
 const chatRoutes = require('./routes/chatRoutes');
 const teamRoutes = require('./routes/teamRoutes');
-const platformRoutes = require('./routes/platformRoutes'); // ★ NEW
+const platformRoutes = require('./routes/platformRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
+const commentRoutes = require('./routes/commentRoutes'); // ★ NEW
 
 app.use('/api/auth', authRoutes);
 app.use('/api/chat', chatRoutes);
@@ -126,7 +128,13 @@ app.use('/api/team', standardLimiter, teamRoutes);
 app.use('/api/subscription', standardLimiter, subscriptionRoutes);
 app.use('/api/payment', standardLimiter, paymentRoutes);
 
-// ★ NEW: Platform Admin Routes (God-mode for internal staff)
+// ★ NEW: Comment routes
+app.use('/api/comments', standardLimiter, authMiddleware, commentRoutes);
+
+// Notification routes
+app.use('/api/notifications', standardLimiter, authMiddleware, notificationRoutes);
+
+// Platform Admin Routes (God-mode for internal staff)
 app.use('/api/platform', standardLimiter, authMiddleware, platformRoutes);
 
 app.use('/api/users', standardLimiter, authMiddleware, userRoutes);
