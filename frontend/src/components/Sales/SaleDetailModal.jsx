@@ -1,17 +1,17 @@
 // frontend/src/components/Sales/SaleDetailModal.jsx
-// v1.1.0-prod — Added Print Receipt + Download PDF actions.
-//               Receipt shows customer-facing fields only (no COGS/profit).
+// v1.3.0-prod — Integrates the internal CommentSection.
 
 import { X, Printer, Download } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { printSaleReceipt, downloadSaleReceiptPDF } from '../../utils/saleReceipt';
+import CommentSection from '../Comments/CommentSection'; // ★ NEW
 
 const SaleDetailModal = ({ isOpen, sale, isLoading, onClose, businessInfo = null }) => {
   const { user } = useAuth();
 
   if (!isOpen) return null;
 
-  if (isLoading) {
+  if (isLoading || !sale) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
         <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-md p-6">
@@ -23,8 +23,6 @@ const SaleDetailModal = ({ isOpen, sale, isLoading, onClose, businessInfo = null
     );
   }
 
-  if (!sale) return null;
-
   const items = sale.items || [];
   const statusColor =
     sale.payment_status === 'PAID'
@@ -33,7 +31,6 @@ const SaleDetailModal = ({ isOpen, sale, isLoading, onClose, businessInfo = null
         ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
         : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
 
-  // Resolve business info: explicit prop wins, then auth user fields
   const resolvedBusinessInfo = businessInfo || {
     businessName: user?.businessName || user?.business_name || null,
     businessAddress: user?.businessAddress || user?.business_address || null,
@@ -181,6 +178,9 @@ const SaleDetailModal = ({ isOpen, sale, isLoading, onClose, businessInfo = null
               <span className="font-medium">Notes:</span> {sale.notes}
             </p>
           )}
+
+          {/* ★ NEW: Internal Comments Section */}
+          <CommentSection entityType="SALE" entityId={sale.id} />
 
           {/* Footer actions */}
           <div className="flex flex-col sm:flex-row sm:justify-end gap-2 pt-4 border-t border-gray-200 dark:border-slate-700">

@@ -1,5 +1,5 @@
 // frontend/src/services/api.js
-// v4.6.0-prod — Adds updateStaffRole to platformApi.
+// v4.7.0-prod — Adds commentApi endpoints.
 
 import axios from 'axios';
 import { reportError, reportWarning } from './telemetry';
@@ -193,8 +193,18 @@ export const platformApi = {
   getStats: () => api.get('/platform/stats'),
   getStaff: () => api.get('/platform/staff'),
   hireStaff: (email, platformRole) => api.post('/platform/staff', { email, platformRole }),
-  updateStaffRole: (id, platformRole) => api.put(`/platform/staff/${id}`, { platformRole }), // ★ NEW
+  updateStaffRole: (id, platformRole) => api.put(`/platform/staff/${id}`, { platformRole }),
   fireStaff: (id) => api.delete(`/platform/staff/${id}`),
+};
+
+// ★ NEW: Comments API
+export const commentApi = {
+  getByEntity: (entityType, entityId) => 
+    api.get(`/comments?entityType=${entityType}&entityId=${entityId}`),
+  create: (entityType, entityId, content) => 
+    api.post('/comments', { entityType, entityId, content }),
+  delete: (id) => 
+    api.delete(`/comments/${id}`),
 };
 
 export default api;

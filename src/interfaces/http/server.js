@@ -1,5 +1,5 @@
 // src/interfaces/http/server.js
-// v2.18.0-prod — Mounts /api/notifications.
+// v2.19.0-prod — Mounts /api/comments.
 
 const { initSentry, Sentry } = require('../../shared/utils/sentry');
 initSentry();
@@ -119,7 +119,8 @@ const donationRoutes = require('./routes/donationRoutes');
 const chatRoutes = require('./routes/chatRoutes');
 const teamRoutes = require('./routes/teamRoutes');
 const platformRoutes = require('./routes/platformRoutes');
-const notificationRoutes = require('./routes/notificationRoutes'); // ★ NEW
+const notificationRoutes = require('./routes/notificationRoutes');
+const commentRoutes = require('./routes/commentRoutes'); // ★ NEW
 
 app.use('/api/auth', authRoutes);
 app.use('/api/chat', chatRoutes);
@@ -127,7 +128,10 @@ app.use('/api/team', standardLimiter, teamRoutes);
 app.use('/api/subscription', standardLimiter, subscriptionRoutes);
 app.use('/api/payment', standardLimiter, paymentRoutes);
 
-// ★ NEW: Notification routes
+// ★ NEW: Comment routes
+app.use('/api/comments', standardLimiter, authMiddleware, commentRoutes);
+
+// Notification routes
 app.use('/api/notifications', standardLimiter, authMiddleware, notificationRoutes);
 
 // Platform Admin Routes (God-mode for internal staff)
