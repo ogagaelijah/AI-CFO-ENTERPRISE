@@ -1,5 +1,5 @@
 // frontend/src/components/Inventory/AdjustStockModal.jsx
-// v1.1.0-prod — Adds read-only guard: banner + disabled confirm.
+// v1.2.0-prod — Fixes empty input for quantity.
 
 import { useState } from 'react';
 import { X } from 'lucide-react';
@@ -10,7 +10,7 @@ const AdjustStockModal = ({ isOpen, item, onClose, onSubmit }) => {
   const { canWrite, guardMessage } = useWriteGuard();
 
   const [adjustType, setAdjustType] = useState('add');
-  const [quantity, setQuantity] = useState(1);
+  const [quantity, setQuantity] = useState(''); // ★ FIXED
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(1);
@@ -18,11 +18,11 @@ const AdjustStockModal = ({ isOpen, item, onClose, onSubmit }) => {
   if (!isOpen || !item) return null;
 
   const handleNext = () => {
-    if (!quantity || quantity <= 0) {
+    if (!quantity || parseFloat(quantity) <= 0) {
       setError('Quantity must be greater than 0');
       return;
     }
-    if (adjustType === 'remove' && quantity > item.quantity) {
+    if (adjustType === 'remove' && parseFloat(quantity) > item.quantity) {
       setError(`Cannot remove ${quantity} units. Only ${item.quantity} units available.`);
       return;
     }
@@ -41,10 +41,10 @@ const AdjustStockModal = ({ isOpen, item, onClose, onSubmit }) => {
     setLoading(true);
     setError('');
     try {
-      let adjustment = quantity;
-      if (adjustType === 'remove') adjustment = -quantity;
+      let adjustment = parseFloat(quantity);
+      if (adjustType === 'remove') adjustment = -parseFloat(quantity);
       else if (adjustType === 'set') {
-        adjustment = quantity - item.quantity;
+        adjustment = parseFloat(quantity) - item.quantity;
       }
       await onSubmit(item.id, { adjustment, reason: `Manual adjustment: ${adjustType} ${quantity} units` });
     } catch (err) {
@@ -56,16 +56,17 @@ const AdjustStockModal = ({ isOpen, item, onClose, onSubmit }) => {
 
   const handleClose = () => {
     setAdjustType('add');
-    setQuantity(1);
+    setQuantity('');
     setStep(1);
     setError('');
     onClose();
   };
 
   const getNewQuantity = () => {
-    if (adjustType === 'add') return (item.quantity || 0) + quantity;
-    if (adjustType === 'remove') return (item.quantity || 0) - quantity;
-    return quantity;
+    const qty = parseFloat(quantity) || 0;
+    if (adjustType === 'add') return (item.quantity || 0) + qty;
+    if (adjustType === 'remove') return (item.quantity || 0) - qty;
+    return qty;
   };
 
   const newQuantity = getNewQuantity();
@@ -117,9 +118,10 @@ const AdjustStockModal = ({ isOpen, item, onClose, onSubmit }) => {
               <input
                 type="number"
                 value={quantity}
-                onChange={(e) => { setQuantity(parseInt(e.target.value) || 0); setError(''); }}
+                onChange={(e) => { setQuantity(e.target.value); setError(''); }}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                 min="1"
+                placeholder="0"
               />
             </div>
 

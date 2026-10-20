@@ -1,5 +1,5 @@
 // frontend/src/components/Purchases/RecordPurchaseModal.jsx
-// v1.1.0-prod — Adds read-only guard: banner + disabled submit.
+// v1.2.0-prod — Fixes empty inputs for item qty and unit cost.
 
 import { useState } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
@@ -14,7 +14,7 @@ const RecordPurchaseModal = ({ isOpen, form, setForm, onSubmit, onClose, error }
   const handleAddItem = () => {
     setForm({
       ...form,
-      items: [...(form.items || []), { name: '', quantity: 1, unitCost: 0 }],
+      items: [...(form.items || []), { name: '', quantity: '', unitCost: '' }], // ★ FIXED
     });
   };
 
@@ -27,7 +27,8 @@ const RecordPurchaseModal = ({ isOpen, form, setForm, onSubmit, onClose, error }
 
   const handleItemChange = (index, field, value) => {
     const newItems = [...(form.items || [])];
-    newItems[index][field] = field === 'name' ? value : parseFloat(value) || 0;
+    // ★ FIXED: Store raw string so it can be empty
+    newItems[index][field] = value; 
     setForm({ ...form, items: newItems });
   };
 
@@ -38,12 +39,13 @@ const RecordPurchaseModal = ({ isOpen, form, setForm, onSubmit, onClose, error }
   };
 
   if (!form.items || form.items.length === 0) {
-    setForm({ ...form, items: [{ name: '', quantity: 1, unitCost: 0 }] });
+    setForm({ ...form, items: [{ name: '', quantity: '', unitCost: '' }] });
     return null;
   }
 
   const calculateItemTotal = (item) => {
-    return (item.quantity || 0) * (item.unitCost || 0);
+    // ★ FIXED: Parse safely for display
+    return (parseFloat(item.quantity) || 0) * (parseFloat(item.unitCost) || 0);
   };
 
   const calculateGrandTotal = () => {
@@ -181,6 +183,7 @@ const RecordPurchaseModal = ({ isOpen, form, setForm, onSubmit, onClose, error }
                     onChange={(e) => handleItemChange(index, 'quantity', e.target.value)}
                     className="col-span-3 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-center"
                     min="1"
+                    placeholder="0"
                     required
                   />
                   <input
@@ -188,7 +191,7 @@ const RecordPurchaseModal = ({ isOpen, form, setForm, onSubmit, onClose, error }
                     value={item.unitCost}
                     onChange={(e) => handleItemChange(index, 'unitCost', e.target.value)}
                     className="col-span-3 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-center"
-                    placeholder="0"
+                    placeholder="0.00"
                     min="0"
                     step="0.01"
                     required
@@ -219,7 +222,7 @@ const RecordPurchaseModal = ({ isOpen, form, setForm, onSubmit, onClose, error }
               <div>
                 <p className="text-gray-500 dark:text-gray-400">Total Quantity</p>
                 <p className="font-bold text-gray-900 dark:text-white">
-                  {(form.items || []).reduce((sum, item) => sum + (item.quantity || 0), 0)}
+                  {(form.items || []).reduce((sum, item) => sum + (parseFloat(item.quantity) || 0), 0)}
                 </p>
               </div>
               <div>

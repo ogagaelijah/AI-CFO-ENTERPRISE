@@ -1,5 +1,5 @@
 // frontend/src/components/Income/RecordIncomeModal.jsx
-// v1.1.0-prod — Adds read-only guard: banner + disabled submit.
+// v1.2.0-prod — Fixes empty input for amount.
 
 import { X } from 'lucide-react';
 import { useWriteGuard } from '../../hooks/useWriteGuard';
@@ -65,11 +65,13 @@ const RecordIncomeModal = ({ isOpen, form, setForm, onSubmit, onClose, error }) 
             </label>
             <input
               type="number"
-              value={form.amount || 0}
-              onChange={(e) => setForm({ ...form, amount: parseFloat(e.target.value) || 0 })}
+              // ★ FIXED: Removed || 0
+              value={form.amount}
+              onChange={(e) => setForm({ ...form, amount: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               min="0"
               step="0.01"
+              placeholder="0.00"
               required
             />
           </div>
