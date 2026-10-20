@@ -1,4 +1,5 @@
 // frontend/src/pages/Income.jsx
+// v1.2.0-prod — Opens IncomeDetailModal immediately to eliminate perceived latency.
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -36,7 +37,7 @@ const Income = () => {
 
   const [formData, setFormData] = useState({
     source: 'OTHER',
-    amount: 0,
+    amount: '',
     description: '',
     date: new Date().toISOString().split('T')[0],
   });
@@ -67,18 +68,21 @@ const Income = () => {
     }
   };
 
+  // ★ FIXED: Open modal instantly, then fetch data
   const fetchIncomeDetail = async (id) => {
+    setSelectedIncome(null);
+    setIsLoadingDetail(true);
+    setShowDetailModal(true);
+    
     try {
-      setIsLoadingDetail(true);
-      setError('');
       const response = await api.get(`/income/${id}`);
       if (response.data?.success) {
         setSelectedIncome(response.data.data);
-        setShowDetailModal(true);
       }
     } catch (error) {
       console.error('Error fetching income detail:', error);
       setError('Failed to load income details');
+      setShowDetailModal(false);
     } finally {
       setIsLoadingDetail(false);
     }
@@ -94,7 +98,7 @@ const Income = () => {
       return;
     }
 
-    if (formData.amount <= 0) {
+    if (!formData.amount || parseFloat(formData.amount) <= 0) {
       setError('Amount must be greater than 0');
       return;
     }
@@ -130,7 +134,7 @@ const Income = () => {
         setConfirmData(null);
         setFormData({
           source: 'OTHER',
-          amount: 0,
+          amount: '',
           description: '',
           date: new Date().toISOString().split('T')[0],
         });

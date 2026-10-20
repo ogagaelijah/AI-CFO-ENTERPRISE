@@ -1,5 +1,5 @@
 // frontend/src/components/Inventory/AddStockModal.jsx
-// v1.1.0-prod — Adds read-only guard: banner + disabled final submit.
+// v1.2.0-prod — Fixes empty inputs for quantity, cost, and selling price.
 
 import { useState } from 'react';
 import { X } from 'lucide-react';
@@ -10,11 +10,12 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
   const { canWrite, guardMessage } = useWriteGuard();
 
   const [step, setStep] = useState(1);
+  // ★ FIXED: Using empty strings instead of defaults
   const [formData, setFormData] = useState({
     itemName: '',
-    quantity: 1,
-    costPrice: 0,
-    sellingPrice: 0,
+    quantity: '',
+    costPrice: '',
+    sellingPrice: '',
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -26,11 +27,11 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
       setError('Item name is required');
       return;
     }
-    if (step === 2 && (!formData.quantity || formData.quantity <= 0)) {
+    if (step === 2 && (!formData.quantity || parseFloat(formData.quantity) <= 0)) {
       setError('Quantity must be greater than 0');
       return;
     }
-    if (step === 3 && (!formData.costPrice || formData.costPrice < 0)) {
+    if (step === 3 && (!formData.costPrice || parseFloat(formData.costPrice) < 0)) {
       setError('Cost price cannot be negative');
       return;
     }
@@ -46,15 +47,23 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!canWrite) return;
-    if (!formData.sellingPrice || formData.sellingPrice < 0) {
+    if (!formData.sellingPrice || parseFloat(formData.sellingPrice) < 0) {
       setError('Selling price cannot be negative');
       return;
     }
     setLoading(true);
     setError('');
     try {
-      await onSubmit(formData);
-      setFormData({ itemName: '', quantity: 1, costPrice: 0, sellingPrice: 0 });
+      // Convert to numbers before sending to backend
+      const payload = {
+        itemName: formData.itemName,
+        quantity: parseFloat(formData.quantity),
+        costPrice: parseFloat(formData.costPrice),
+        sellingPrice: parseFloat(formData.sellingPrice)
+      };
+      await onSubmit(payload);
+      // Reset to empty
+      setFormData({ itemName: '', quantity: '', costPrice: '', sellingPrice: '' });
       setStep(1);
     } catch (err) {
       // Error handled in parent
@@ -64,7 +73,7 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
   };
 
   const handleClose = () => {
-    setFormData({ itemName: '', quantity: 1, costPrice: 0, sellingPrice: 0 });
+    setFormData({ itemName: '', quantity: '', costPrice: '', sellingPrice: '' });
     setStep(1);
     setError('');
     onClose();
@@ -97,9 +106,10 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
             <input
               type="number"
               value={formData.quantity}
-              onChange={(e) => setFormData({ ...formData, quantity: parseInt(e.target.value) || 1 })}
+              onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               min="1"
+              placeholder="0"
             />
           </div>
         );
@@ -112,18 +122,24 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
             <input
               type="number"
               value={formData.costPrice}
-              onChange={(e) => setFormData({ ...formData, costPrice: parseFloat(e.target.value) || 0 })}
+              onChange={(e) => setFormData({ ...formData, costPrice: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               min="0"
               step="0.01"
+              placeholder="0.00"
             />
           </div>
         );
       case 4:
-        const totalCost = formData.quantity * formData.costPrice;
-        const totalSell = formData.quantity * formData.sellingPrice;
+        // ★ FIXED: Safe math parsing for preview
+        const qty = parseFloat(formData.quantity) || 0;
+        const cost = parseFloat(formData.costPrice) || 0;
+        const sell = parseFloat(formData.sellingPrice) || 0;
+        
+        const totalCost = qty * cost;
+        const totalSell = qty * sell;
         const totalProfit = totalSell - totalCost;
-        const margin = formData.costPrice > 0 ? ((formData.sellingPrice - formData.costPrice) / formData.costPrice * 100).toFixed(1) : 0;
+        const margin = cost > 0 ? ((sell - cost) / cost * 100).toFixed(1) : 0;
 
         return (
           <div className="space-y-4">
@@ -131,9 +147,9 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
               <p className="text-sm text-gray-600 dark:text-gray-400">Confirm stock addition:</p>
               <div className="space-y-1 text-sm">
                 <p><span className="font-medium text-gray-700 dark:text-gray-300">Item:</span> {formData.itemName}</p>
-                <p><span className="font-medium text-gray-700 dark:text-gray-300">Quantity:</span> {formData.quantity} units</p>
-                <p><span className="font-medium text-gray-700 dark:text-gray-300">Cost Price:</span> ₦{formData.costPrice.toLocaleString()} / unit</p>
-                <p><span className="font-medium text-gray-700 dark:text-gray-300">Selling Price:</span> ₦{formData.sellingPrice.toLocaleString()} / unit</p>
+                <p><span className="font-medium text-gray-700 dark:text-gray-300">Quantity:</span> {qty} units</p>
+                <p><span className="font-medium text-gray-700 dark:text-gray-300">Cost Price:</span> ₦{cost.toLocaleString()} / unit</p>
+                <p><span className="font-medium text-gray-700 dark:text-gray-300">Selling Price:</span> ₦{sell.toLocaleString()} / unit</p>
                 <div className="border-t border-gray-200 dark:border-gray-600 pt-2 mt-2">
                   <p><span className="font-medium text-gray-700 dark:text-gray-300">Total Cost:</span> ₦{totalCost.toLocaleString()}</p>
                   <p><span className="font-medium text-gray-700 dark:text-gray-300">Total Value:</span> ₦{totalSell.toLocaleString()}</p>
@@ -148,10 +164,11 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
               <input
                 type="number"
                 value={formData.sellingPrice}
-                onChange={(e) => setFormData({ ...formData, sellingPrice: parseFloat(e.target.value) || 0 })}
+                onChange={(e) => setFormData({ ...formData, sellingPrice: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                 min="0"
                 step="0.01"
+                placeholder="0.00"
               />
             </div>
           </div>

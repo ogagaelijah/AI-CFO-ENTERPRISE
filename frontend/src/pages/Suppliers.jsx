@@ -1,4 +1,5 @@
 // frontend/src/pages/Suppliers.jsx
+// v1.1.0-prod — Opens SupplierDetailModal immediately to eliminate perceived latency.
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -69,20 +70,23 @@ const Suppliers = () => {
     }
   };
 
+  // ★ FIXED: Open modal instantly, then fetch data
   const fetchSupplierDetail = async (id) => {
+    setSelectedSupplier(null);
+    setIsLoadingDetail(true);
+    setShowDetailModal(true);
+
     try {
-      setIsLoadingDetail(true);
-      setError('');
       const response = await api.get(`/suppliers/${id}`, {
         params: { businessId: user?.businessId || user?.id },
       });
       if (response.data?.success) {
         setSelectedSupplier(response.data.supplier);
-        setShowDetailModal(true);
       }
     } catch (error) {
       console.error('Error fetching supplier detail:', error);
       setError('Failed to load supplier details');
+      setShowDetailModal(false);
     } finally {
       setIsLoadingDetail(false);
     }

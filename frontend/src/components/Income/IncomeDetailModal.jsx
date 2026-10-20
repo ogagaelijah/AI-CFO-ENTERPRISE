@@ -1,4 +1,5 @@
 // frontend/src/components/Income/IncomeDetailModal.jsx
+// v1.1.0-prod — Keeps header visible during loading.
 
 import { X } from 'lucide-react';
 
