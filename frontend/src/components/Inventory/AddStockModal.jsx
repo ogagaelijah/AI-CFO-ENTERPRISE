@@ -1,5 +1,5 @@
 // frontend/src/components/Inventory/AddStockModal.jsx
-// v1.2.0-prod — Fixes empty inputs for quantity, cost, and selling price.
+// v2.0.0-prod — Adds Base Unit and Carton Multipliers.
 
 import { useState } from 'react';
 import { X } from 'lucide-react';
@@ -10,12 +10,15 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
   const { canWrite, guardMessage } = useWriteGuard();
 
   const [step, setStep] = useState(1);
-  // ★ FIXED: Using empty strings instead of defaults
   const [formData, setFormData] = useState({
     itemName: '',
+    baseUnit: 'Piece', // ★ NEW
     quantity: '',
     costPrice: '',
     sellingPrice: '',
+    packName: '', // ★ NEW (e.g. 'Carton')
+    packMultiplier: '', // ★ NEW (e.g. 12)
+    packPrice: '', // ★ NEW
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -54,16 +57,21 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
     setLoading(true);
     setError('');
     try {
-      // Convert to numbers before sending to backend
       const payload = {
         itemName: formData.itemName,
+        baseUnit: formData.baseUnit,
         quantity: parseFloat(formData.quantity),
         costPrice: parseFloat(formData.costPrice),
-        sellingPrice: parseFloat(formData.sellingPrice)
+        sellingPrice: parseFloat(formData.sellingPrice),
+        // Optional Carton data
+        packs: formData.packName && formData.packMultiplier ? [{
+          packName: formData.packName,
+          multiplier: parseFloat(formData.packMultiplier),
+          sellingPrice: parseFloat(formData.packPrice) || 0
+        }] : []
       };
       await onSubmit(payload);
-      // Reset to empty
-      setFormData({ itemName: '', quantity: '', costPrice: '', sellingPrice: '' });
+      setFormData({ itemName: '', baseUnit: 'Piece', quantity: '', costPrice: '', sellingPrice: '', packName: '', packMultiplier: '', packPrice: '' });
       setStep(1);
     } catch (err) {
       // Error handled in parent
@@ -73,7 +81,7 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
   };
 
   const handleClose = () => {
-    setFormData({ itemName: '', quantity: '', costPrice: '', sellingPrice: '' });
+    setFormData({ itemName: '', baseUnit: 'Piece', quantity: '', costPrice: '', sellingPrice: '', packName: '', packMultiplier: '', packPrice: '' });
     setStep(1);
     setError('');
     onClose();
@@ -83,41 +91,74 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
     switch (step) {
       case 1:
         return (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Item Name <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={formData.itemName}
-              onChange={(e) => setFormData({ ...formData, itemName: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              placeholder="Enter item name"
-              autoFocus
-            />
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Item Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={formData.itemName}
+                onChange={(e) => setFormData({ ...formData, itemName: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                placeholder="Enter item name"
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Base Unit <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={formData.baseUnit}
+                onChange={(e) => setFormData({ ...formData, baseUnit: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              >
+                <option value="Piece">Piece</option>
+                <option value="Kg">Kilogram (Kg)</option>
+                <option value="Bag">Bag</option>
+                <option value="Litre">Litre</option>
+              </select>
+            </div>
           </div>
         );
       case 2:
         return (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Quantity <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="number"
-              value={formData.quantity}
-              onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              min="1"
-              placeholder="0"
-            />
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Opening Stock Quantity ({formData.baseUnit}s) <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="number"
+                value={formData.quantity}
+                onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                min="1"
+                placeholder="0"
+              />
+            </div>
+            
+            <div className="border-t border-gray-200 dark:border-gray-700 pt-4 mt-2">
+              <p className="text-xs text-gray-500 mb-2">Optional: Define a wholesale pack (e.g. Carton)</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Pack Name</label>
+                  <input type="text" placeholder="e.g. Carton" value={formData.packName} onChange={(e) => setFormData({ ...formData, packName: e.target.value })} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:text-white dark:border-gray-600" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Qty per Pack</label>
+                  <input type="number" placeholder="e.g. 12" value={formData.packMultiplier} onChange={(e) => setFormData({ ...formData, packMultiplier: e.target.value })} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:text-white dark:border-gray-600" />
+                </div>
+              </div>
+            </div>
           </div>
         );
       case 3:
         return (
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Cost Price per Unit <span className="text-red-500">*</span>
+              Cost Price per {formData.baseUnit} <span className="text-red-500">*</span>
             </label>
             <input
               type="number"
@@ -131,7 +172,6 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
           </div>
         );
       case 4:
-        // ★ FIXED: Safe math parsing for preview
         const qty = parseFloat(formData.quantity) || 0;
         const cost = parseFloat(formData.costPrice) || 0;
         const sell = parseFloat(formData.sellingPrice) || 0;
@@ -147,29 +187,48 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
               <p className="text-sm text-gray-600 dark:text-gray-400">Confirm stock addition:</p>
               <div className="space-y-1 text-sm">
                 <p><span className="font-medium text-gray-700 dark:text-gray-300">Item:</span> {formData.itemName}</p>
-                <p><span className="font-medium text-gray-700 dark:text-gray-300">Quantity:</span> {qty} units</p>
-                <p><span className="font-medium text-gray-700 dark:text-gray-300">Cost Price:</span> ₦{cost.toLocaleString()} / unit</p>
-                <p><span className="font-medium text-gray-700 dark:text-gray-300">Selling Price:</span> ₦{sell.toLocaleString()} / unit</p>
+                <p><span className="font-medium text-gray-700 dark:text-gray-300">Quantity:</span> {qty} {formData.baseUnit}s</p>
+                <p><span className="font-medium text-gray-700 dark:text-gray-300">Cost Price:</span> ₦{cost.toLocaleString()} / {formData.baseUnit}</p>
+                {formData.packName && (
+                  <p className="text-blue-600 dark:text-blue-400 font-medium">Pack: 1 {formData.packName} = {formData.packMultiplier} {formData.baseUnit}s</p>
+                )}
                 <div className="border-t border-gray-200 dark:border-gray-600 pt-2 mt-2">
                   <p><span className="font-medium text-gray-700 dark:text-gray-300">Total Cost:</span> ₦{totalCost.toLocaleString()}</p>
-                  <p><span className="font-medium text-gray-700 dark:text-gray-300">Total Value:</span> ₦{totalSell.toLocaleString()}</p>
                   <p><span className="font-medium text-green-600 dark:text-green-400">Potential Profit:</span> ₦{totalProfit.toLocaleString()} ({margin}% margin)</p>
                 </div>
               </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Selling Price per Unit <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="number"
-                value={formData.sellingPrice}
-                onChange={(e) => setFormData({ ...formData, sellingPrice: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                min="0"
-                step="0.01"
-                placeholder="0.00"
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Selling Price per {formData.baseUnit} <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  value={formData.sellingPrice}
+                  onChange={(e) => setFormData({ ...formData, sellingPrice: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                />
+              </div>
+              {formData.packName && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Selling Price per {formData.packName}
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.packPrice}
+                    onChange={(e) => setFormData({ ...formData, packPrice: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                  />
+                </div>
+              )}
             </div>
           </div>
         );
@@ -180,15 +239,13 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
 
   const getStepTitle = () => {
     switch (step) {
-      case 1: return 'Enter Item Name';
-      case 2: return 'Enter Quantity';
+      case 1: return 'Enter Item Name & Unit';
+      case 2: return 'Enter Quantity & Pack';
       case 3: return 'Enter Cost Price';
       case 4: return 'Enter Selling Price & Confirm';
       default: return '';
     }
   };
-
-  const getStepProgress = () => `${step}/4`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
@@ -196,7 +253,7 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
         <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between z-10">
           <div>
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Add Stock</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400">{getStepTitle()} ({getStepProgress()})</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">{getStepTitle()} ({step}/4)</p>
           </div>
           <button onClick={handleClose} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition">
             <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />

@@ -1,5 +1,5 @@
 // frontend/src/components/Sales/RecordSaleModal.jsx
-// v1.2.0-prod — Fixes empty inputs for quantity, cost, and selling price.
+// v2.0.0-prod — Adds Multi-Pack (Carton/Piece) selection.
 
 import { useState, useEffect } from 'react';
 import { X, Plus, Trash2, AlertTriangle } from 'lucide-react';
@@ -10,13 +10,13 @@ import ReadOnlyBanner from '../common/ReadOnlyBanner';
 const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) => {
   const { canWrite, guardMessage } = useWriteGuard();
 
-  // ★ FIXED: Empty strings instead of defaults
   const [formData, setFormData] = useState({
     customerName: '',
     customerPhone: '',
     paymentStatus: 'PAID',
     date: new Date().toISOString().split('T')[0],
-    items: [{ name: '', quantity: '', sellingPrice: '', costPrice: '', inventoryId: null }],
+    // ★ NEW: Added soldUnit and unitMultiplier
+    items: [{ name: '', quantity: '', sellingPrice: '', costPrice: '', inventoryId: null, soldUnit: 'Piece', unitMultiplier: 1 }],
     notes: '',
     skipInventory: false,
   });
@@ -59,27 +59,58 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
 
     const inventoryItem = findInventoryItem(value);
     if (inventoryItem && !formData.skipInventory) {
-      // ★ FIXED: Convert numbers to strings for the inputs
       newItems[index].costPrice = String(inventoryItem.cost_price || '');
       newItems[index].sellingPrice = String(inventoryItem.selling_price || '');
       newItems[index].inventoryId = inventoryItem.id;
       newItems[index].stock = inventoryItem.quantity || 0;
+      newItems[index].soldUnit = 'Piece';
+      newItems[index].unitMultiplier = 1;
     } else if (!formData.skipInventory) {
       newItems[index].costPrice = '';
       newItems[index].sellingPrice = '';
       newItems[index].inventoryId = null;
       newItems[index].stock = 0;
+      newItems[index].soldUnit = 'Piece';
+      newItems[index].unitMultiplier = 1;
     }
 
     setFormData({ ...formData, items: newItems });
     setShowInventoryWarning(false);
   };
 
+  // ★ NEW: Handle changing from Piece to Carton
+  const handleUnitChange = (index, packString) => {
+    const newItems = [...formData.items];
+    const inventoryItem = findInventoryItem(newItems[index].name);
+    
+    if (!inventoryItem) return;
+
+    // packString will be something like "1|Piece" or "12|Carton"
+    const [multiplier, unitName] = packString.split('|');
+    newItems[index].unitMultiplier = parseInt(multiplier);
+    newItems[index].soldUnit = unitName;
+
+    // Auto-update prices if they exist for this pack
+    if (unitName !== 'Piece' && inventoryItem.packs) {
+      const packData = inventoryItem.packs.find(p => p.pack_name === unitName);
+      if (packData) {
+        newItems[index].sellingPrice = String(packData.selling_price || '');
+        // Cost price for a carton is base cost * multiplier
+        newItems[index].costPrice = String((inventoryItem.cost_price || 0) * parseInt(multiplier));
+      }
+    } else {
+      // Revert to base prices
+      newItems[index].sellingPrice = String(inventoryItem.selling_price || '');
+      newItems[index].costPrice = String(inventoryItem.cost_price || '');
+    }
+
+    setFormData({ ...formData, items: newItems });
+  };
+
   const addItem = () => {
     setFormData({
       ...formData,
-      // ★ FIXED: Empty strings
-      items: [...formData.items, { name: '', quantity: '', sellingPrice: '', costPrice: '', inventoryId: null, stock: 0 }],
+      items: [...formData.items, { name: '', quantity: '', sellingPrice: '', costPrice: '', inventoryId: null, stock: 0, soldUnit: 'Piece', unitMultiplier: 1 }],
     });
   };
 
@@ -92,7 +123,6 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
 
   const updateItem = (index, field, value) => {
     const newItems = [...formData.items];
-    // ★ FIXED: Store raw string so it can be empty
     newItems[index][field] = value;
     setFormData({ ...formData, items: newItems });
   };
@@ -103,7 +133,6 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
     let totalProfit = 0;
 
     for (const item of formData.items) {
-      // ★ FIXED: Safe parsing for display
       const qty = parseFloat(item.quantity) || 0;
       const cost = parseFloat(item.costPrice) || 0;
       const sell = parseFloat(item.sellingPrice) || 0;
@@ -147,9 +176,13 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
     if (!formData.skipInventory) {
       for (const item of validItems) {
         const inventoryItem = findInventoryItem(item.name);
-        if (inventoryItem && inventoryItem.quantity < parseFloat(item.quantity)) {
-          setError(`Insufficient stock for "${item.name}". Available: ${inventoryItem.quantity}, Requested: ${item.quantity}`);
-          return;
+        if (inventoryItem) {
+          // ★ NEW: Multiply requested quantity by the multiplier to check base stock
+          const requestedBaseStock = parseFloat(item.quantity) * item.unitMultiplier;
+          if (inventoryItem.quantity < requestedBaseStock) {
+            setError(`Insufficient stock for "${item.name}". Available: ${inventoryItem.quantity} pieces, Requested: ${requestedBaseStock} pieces`);
+            return;
+          }
         }
       }
     }
@@ -161,6 +194,9 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
         costPrice: parseFloat(item.costPrice) || 0,
         sellingPrice: parseFloat(item.sellingPrice) || 0,
         quantity: parseFloat(item.quantity) || 0,
+        // ★ NEW: Pass these to the backend
+        unitMultiplier: item.unitMultiplier || 1,
+        soldUnit: item.soldUnit || 'Piece',
       })),
       totalCost,
       totalRevenue,
@@ -297,7 +333,7 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
             </div>
 
             <div className="grid grid-cols-12 gap-2 mb-1 text-xs text-gray-500 dark:text-gray-400">
-              <div className="col-span-4">Item Name</div>
+              <div className="col-span-4">Item & Unit</div>
               <div className="col-span-2 text-center">Qty</div>
               <div className="col-span-2 text-center">Cost Price</div>
               <div className="col-span-2 text-center">Sell Price</div>
@@ -306,15 +342,25 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
             </div>
 
             {formData.items.map((item, index) => {
-              // ★ FIXED: Safe parsing for display
               const itemTotal = (parseFloat(item.quantity) || 0) * (parseFloat(item.sellingPrice) || 0);
               const inventoryItem = findInventoryItem(item.name);
               const stockAvailable = inventoryItem?.quantity || 0;
-              const isLowStock = stockAvailable > 0 && stockAvailable < (parseFloat(item.quantity) || 0);
+              const requestedBaseStock = (parseFloat(item.quantity) || 0) * (item.unitMultiplier || 1);
+              const isLowStock = stockAvailable > 0 && stockAvailable < requestedBaseStock;
+
+              // ★ NEW: Build pack options for the dropdown
+              const packOptions = [
+                { label: `Piece (${inventoryItem?.base_unit || 'Unit'})`, value: `1|Piece` }
+              ];
+              if (inventoryItem?.packs && inventoryItem.packs.length > 0) {
+                inventoryItem.packs.forEach(p => {
+                  packOptions.push({ label: `${p.pack_name} (${p.multiplier} pcs)`, value: `${p.multiplier}|${p.pack_name}` });
+                });
+              }
 
               return (
-                <div key={index} className="grid grid-cols-12 gap-2 mb-2 items-center">
-                  <div className="col-span-4 relative">
+                <div key={index} className="grid grid-cols-12 gap-2 mb-4 items-start">
+                  <div className="col-span-4 relative space-y-1">
                     <input
                       type="text"
                       value={item.name}
@@ -328,12 +374,26 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
                         <option key={inv.id} value={inv.item_name} />
                       ))}
                     </datalist>
+                    
+                    {/* ★ NEW: Pack Selector Dropdown */}
+                    {inventoryItem && inventoryItem.packs && inventoryItem.packs.length > 0 && (
+                      <select
+                        value={`${item.unitMultiplier}|${item.soldUnit}`}
+                        onChange={(e) => handleUnitChange(index, e.target.value)}
+                        className="w-full px-2 py-1 text-xs border border-blue-200 bg-blue-50 dark:bg-slate-700 dark:border-slate-600 dark:text-white rounded"
+                      >
+                        {packOptions.map(opt => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
+                    )}
+
                     {!formData.skipInventory && item.name && !inventoryItem && (
-                      <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">⚠️ Not in inventory</p>
+                      <p className="text-xs text-yellow-600 dark:text-yellow-400">⚠️ Not in inventory</p>
                     )}
                     {!formData.skipInventory && inventoryItem && parseFloat(item.quantity) > 0 && (
-                      <p className={`text-xs mt-1 ${isLowStock ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                        {isLowStock ? `⚠️ Only ${stockAvailable} available` : `✅ ${stockAvailable} in stock`}
+                      <p className={`text-xs ${isLowStock ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                        {isLowStock ? `⚠️ Only ${stockAvailable} base units available` : `✅ ${stockAvailable} base units in stock`}
                       </p>
                     )}
                   </div>
@@ -341,7 +401,7 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
                     type="number"
                     value={item.quantity}
                     onChange={(e) => updateItem(index, 'quantity', e.target.value)}
-                    className="col-span-2 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-center"
+                    className="col-span-2 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-center mt-0.5"
                     min="1"
                     placeholder="0"
                   />
@@ -349,7 +409,7 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
                     type="number"
                     value={item.costPrice}
                     onChange={(e) => updateItem(index, 'costPrice', e.target.value)}
-                    className="col-span-2 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-center"
+                    className="col-span-2 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-center mt-0.5"
                     min="0"
                     step="0.01"
                     placeholder="0.00"
@@ -359,15 +419,15 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
                     type="number"
                     value={item.sellingPrice}
                     onChange={(e) => updateItem(index, 'sellingPrice', e.target.value)}
-                    className="col-span-2 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-center"
+                    className="col-span-2 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-center mt-0.5"
                     min="0"
                     step="0.01"
                     placeholder="0.00"
                   />
-                  <div className="col-span-1 text-center text-sm font-medium text-blue-600 dark:text-blue-400">
+                  <div className="col-span-1 text-center text-sm font-medium text-blue-600 dark:text-blue-400 mt-2">
                     ₦{itemTotal.toFixed(0)}
                   </div>
-                  <div className="col-span-1 text-center">
+                  <div className="col-span-1 text-center mt-1">
                     {formData.items.length > 1 && (
                       <button
                         type="button"

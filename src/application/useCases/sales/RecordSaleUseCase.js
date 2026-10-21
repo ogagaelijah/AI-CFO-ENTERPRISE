@@ -1,9 +1,5 @@
 // src/application/useCases/sales/RecordSaleUseCase.js
-// v3.1.0-prod — Writes OUT inventory movements on sale. Fixes out-of-stock
-//               bug (zero-quantity now blocked). Movement writes are
-//               guarded — a failure never blocks the sale.
-// v3.0.0-prod — All writes wrapped in a single withTransaction.
-//               Per-business SALE-NNNN invoice numbering.
+// v3.2.0-prod — Multi-Pack support (Cartons, Pieces). Writes OUT inventory movements.
 
 const Sale = require('../../../domain/entities/Sale');
 const { withTransaction } = require('../../../infrastructure/database/sqlite/connection');
@@ -44,6 +40,8 @@ class RecordSaleUseCase {
         totalRevenue = 0,
         totalProfit = 0,
         notes = '',
+        unitMultiplier = 1, // ★ NEW
+        soldUnit = 'Piece', // ★ NEW
     }) {
         if (!userId) throw new Error('User ID is required');
         if (!businessId) throw new Error('Business ID is required');
@@ -59,29 +57,13 @@ class RecordSaleUseCase {
             userId, businessId, itemName, quantity, unitPrice,
             customerName, customerId, customerType, paymentStatus, amountPaid,
             skipInventory, inventoryId, saleDate, notes,
+            unitMultiplier, soldUnit, // ★ Pass down
         });
     }
 
     // ─────────────────────────────────────────────
     // Movement writer — guarded, additive, non-blocking
     // ─────────────────────────────────────────────
-
-    /**
-     * Write one OUT movement per reduced stock line.
-     * Never throws — a failure logs but does not block the sale.
-     *
-     * @param {Object} params
-     * @param {number} params.businessId
-     * @param {number} params.userId
-     * @param {number} params.inventoryItemId
-     * @param {number} params.quantity - positive quantity being removed
-     * @param {number} params.unitCost - cost at time of sale
-     * @param {number} params.quantityBefore - stock level BEFORE this reduction
-     * @param {number} params.quantityAfter - stock level AFTER this reduction
-     * @param {number|string} params.referenceId - sale ID
-     * @param {Date} params.createdAt
-     * @param {string} params.notes
-     */
     async _writeStockMovement({
         businessId, userId, inventoryItemId, quantity, unitCost,
         quantityBefore, quantityAfter, referenceId, createdAt, notes = '',
@@ -111,7 +93,6 @@ class RecordSaleUseCase {
                 createdAt,
             });
         } catch (err) {
-            // Movement write failure must NOT block the sale.
             console.error(
                 '[RecordSaleUseCase] movement write failed:',
                 err.message,
@@ -123,7 +104,6 @@ class RecordSaleUseCase {
     // ─────────────────────────────────────────────
     // Helpers shared by both paths
     // ─────────────────────────────────────────────
-
     async _findOrCreateCustomer({ businessId, customerName, customerId, customerType, userId }) {
         let finalCustomerId = customerId || null;
         let finalCustomerType = customerType || 'CUSTOMER';
@@ -167,7 +147,6 @@ class RecordSaleUseCase {
         }
         if (item) return item;
 
-        // Auto-create with zero stock. Sale records, stock not reduced.
         const newItem = await this.inventoryRepository.create({
             user_id: userId,
             business_id: businessId,
@@ -234,7 +213,6 @@ class RecordSaleUseCase {
     // ─────────────────────────────────────────────
     // Multi-item path
     // ─────────────────────────────────────────────
-
     async _executeMultiItem({
         userId, businessId, items, customerName, customerId, customerType,
         paymentStatus, amountPaid, saleDate, skipInventory, notes,
@@ -255,7 +233,12 @@ class RecordSaleUseCase {
             let totalRevenueValue = 0;
 
             for (const raw of items) {
-                const qty = Number(raw.quantity) || 1;
+                // ★ NEW: Multi-Pack Logic
+                const unitMultiplier = Number(raw.unitMultiplier) || 1;
+                const soldUnit = raw.soldUnit || 'Piece';
+                const qty = Number(raw.quantity) || 1; // Packs sold
+                const baseQty = qty * unitMultiplier; // Base units deducted
+                
                 const sellPrice = Number(raw.sellingPrice ?? raw.unitPrice) || 0;
                 let unitCost = 0;
                 let finalItemName = raw.name;
@@ -271,27 +254,26 @@ class RecordSaleUseCase {
                         finalItemName = item.item_name || raw.name;
                         unitCost = Number(item.cost_price) || 0;
 
-                        // ★ FIX: block sales when stock is insufficient (including zero)
-                        if (item.quantity < qty) {
+                        // ★ FIX: block sales when stock is insufficient (using baseQty)
+                        if (item.quantity < baseQty) {
                             throw new Error(
                                 `Insufficient stock for "${finalItemName}". ` +
-                                `Available: ${item.quantity}, Requested: ${qty}`
+                                `Available: ${item.quantity}, Requested: ${baseQty}`
                             );
                         }
 
-                        // Track for reduction + movement write
                         stockToReduce.push({
                             id: finalInventoryId,
-                            quantity: qty,
+                            quantity: baseQty, // ★ Deduct base units
                             unitCost,
                             quantityBefore: Number(item.quantity) || 0,
-                            quantityAfter: (Number(item.quantity) || 0) - qty,
+                            quantityAfter: (Number(item.quantity) || 0) - baseQty,
                         });
                     }
                 }
 
-                const itemRevenue = qty * sellPrice;
-                const itemCogs = qty * unitCost;
+                const itemRevenue = qty * sellPrice; // Revenue = packs * price
+                const itemCogs = baseQty * unitCost; // Cost = base units * cost
 
                 totalQuantity += qty;
                 totalRevenueValue += itemRevenue;
@@ -300,6 +282,8 @@ class RecordSaleUseCase {
                 processedItems.push({
                     name: finalItemName,
                     quantity: qty,
+                    soldUnit: soldUnit,
+                    unitMultiplier: unitMultiplier,
                     unitCost,
                     sellingPrice: sellPrice,
                     inventoryId: finalInventoryId,
@@ -413,13 +397,14 @@ class RecordSaleUseCase {
     // ─────────────────────────────────────────────
     // Single-item path
     // ─────────────────────────────────────────────
-
     async _executeSingleItem({
         userId, businessId, itemName, quantity, unitPrice,
         customerName, customerId, customerType, paymentStatus, amountPaid,
         skipInventory, inventoryId, saleDate, notes,
+        unitMultiplier = 1, soldUnit = 'Piece', // ★ NEW
     }) {
-        const qty = Number(quantity);
+        const qty = Number(quantity); // Packs sold
+        const baseQty = qty * unitMultiplier; // Base units deducted
         const unitPriceNum = Number(unitPrice);
 
         if (!qty || qty <= 0) throw new Error('Quantity must be greater than 0');
@@ -453,18 +438,18 @@ class RecordSaleUseCase {
                     finalItemName = inventoryItem.item_name || itemName;
                     unitCost = Number(inventoryItem.cost_price) || 0;
 
-                    // ★ FIX: block sales when stock is insufficient (including zero)
-                    if (inventoryItem.quantity < qty) {
+                    // ★ FIX: block sales when stock is insufficient (using baseQty)
+                    if (inventoryItem.quantity < baseQty) {
                         throw new Error(
                             `Insufficient stock for "${finalItemName}". ` +
-                            `Available: ${inventoryItem.quantity}, Requested: ${qty}`
+                            `Available: ${inventoryItem.quantity}, Requested: ${baseQty}`
                         );
                     }
 
                     quantityBefore = Number(inventoryItem.quantity) || 0;
-                    quantityAfter = quantityBefore - qty;
+                    quantityAfter = quantityBefore - baseQty;
 
-                    cogs = qty * unitCost;
+                    cogs = baseQty * unitCost;
                     grossProfit = totalPrice - cogs;
                     marginPct = totalPrice > 0 ? (grossProfit / totalPrice) * 100 : 0;
                 }
@@ -498,6 +483,8 @@ class RecordSaleUseCase {
             const itemsArray = [{
                 name: finalItemName,
                 quantity: qty,
+                soldUnit: soldUnit,           // ★ NEW
+                unitMultiplier: unitMultiplier, // ★ NEW
                 unitCost,
                 sellingPrice: unitPriceNum,
                 inventoryId: finalInventoryId,
@@ -530,14 +517,14 @@ class RecordSaleUseCase {
             });
 
             if (!skipInventory && finalInventoryId && inventoryItem) {
-                await this.inventoryRepository.reduceStock(finalInventoryId, qty);
+                await this.inventoryRepository.reduceStock(finalInventoryId, baseQty);
 
                 // ★ NEW: write OUT movement
                 await this._writeStockMovement({
                     businessId,
                     userId,
                     inventoryItemId: finalInventoryId,
-                    quantity: qty,
+                    quantity: baseQty,
                     unitCost,
                     quantityBefore,
                     quantityAfter,
