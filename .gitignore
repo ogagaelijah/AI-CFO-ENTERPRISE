@@ -105,3 +105,8 @@ ai-cfo.db*
 load-tests/results/*.json
 
 prod-users-backup-*.json
+
+# Local database backups and scripts
+.backups/
+backup.js
+prod_backup.json
