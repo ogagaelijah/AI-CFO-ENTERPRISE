@@ -1,5 +1,5 @@
 // src/infrastructure/database/sqlite/repositories/SubscriptionRepository.js
-// v3.1.0-prod — Adds countActive() for Platform Admin.
+// v3.2.0-prod — Fixes trial date parsing and logic to ensure 14-day Pro trials work flawlessly.
 
 const BaseRepository = require('./BaseRepository');
 const plans = require('../../../../config/plans');
@@ -21,24 +21,31 @@ class Subscription {
 
     isTrialActive() {
         if (this.status !== 'trial' || !this.trialEndDate) return false;
-        return Date.now() < this.trialEndDate.getTime();
+        // Ensure we are comparing milliseconds properly
+        const end = new Date(this.trialEndDate).getTime();
+        if (isNaN(end)) return false;
+        return Date.now() < end;
     }
 
     isActivePaid() {
         if (this.status !== 'active') return false;
         if (!this.endDate) return true;
-        return Date.now() < this.endDate.getTime();
+        const end = new Date(this.endDate).getTime();
+        if (isNaN(end)) return true;
+        return Date.now() < end;
     }
 
     isExpired() {
         if (this.status === 'expired' || this.status === 'cancelled') return true;
         if (this.status === 'trial') {
             if (!this.trialEndDate) return true;
-            return Date.now() >= this.trialEndDate.getTime();
+            const end = new Date(this.trialEndDate).getTime();
+            return isNaN(end) ? true : Date.now() >= end;
         }
         if (this.status === 'active') {
             if (!this.endDate) return false;
-            return Date.now() >= this.endDate.getTime();
+            const end = new Date(this.endDate).getTime();
+            return isNaN(end) ? false : Date.now() >= end;
         }
         return false;
     }
@@ -51,7 +58,9 @@ class Subscription {
         if (this.isExpired()) return 0;
         const end = this.status === 'trial' && this.trialEndDate ? this.trialEndDate : this.endDate;
         if (!end) return null;
-        const ms = end.getTime() - Date.now();
+        const endMs = new Date(end).getTime();
+        if (isNaN(endMs)) return null;
+        const ms = endMs - Date.now();
         return Math.max(0, Math.ceil(ms / (1000 * 60 * 60 * 24)));
     }
 
@@ -299,7 +308,6 @@ class SubscriptionRepository extends BaseRepository {
         return result.rows[0]?.count || 0;
     }
 
-    // ★ NEW: Platform Admin Method
     async countActive() {
         const result = await this._query(
             `SELECT COUNT(*)::int as count FROM subscriptions WHERE status IN ('active', 'trial')`
