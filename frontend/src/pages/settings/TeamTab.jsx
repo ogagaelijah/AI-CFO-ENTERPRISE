@@ -1,11 +1,10 @@
 // frontend/src/pages/settings/TeamTab.jsx
-// v1.3.0-prod — Fixes trial bug. Bypasses plan limits for Platform Staff.
+// v1.5.0-prod — Uses user.planData from AuthContext to fix trial gating.
 
 import { useState, useEffect, useCallback } from 'react';
 import { UserPlus, RefreshCw, Loader2, AlertCircle, Mail, Lock } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { usePlan } from '../../hooks/usePlan';
 import useRole from '../../hooks/useRole';
 import api from '../../services/api';
 import InviteMemberModal from '../../components/team/InviteMemberModal';
@@ -13,7 +12,6 @@ import MemberRow from '../../components/team/MemberRow';
 
 const TeamTab = () => {
   const { user } = useAuth();
-  const { planData } = usePlan();
   const { isPlatformStaff } = useRole();
   
   const [members, setMembers] = useState([]);
@@ -27,11 +25,17 @@ const TeamTab = () => {
   const isOwner = user?.role === 'OWNER';
   const isAdmin = user?.role === 'ADMIN';
 
-  // ★ FIXED: If status is 'trial', treat them as Pro (do not block)
+  // ★ THE REAL FIX: Read from user.planData (which your AuthContext sets)
+  const planData = user?.planData || {};
+  
+  // If status is 'trial', treat them as Pro.
   const isTrial = planData?.status === 'trial' || planData?.isTrial === true;
+  
+  // They are basic ONLY if they are not trial, not platform staff, and their plan is basic/free
   const isBasicPlan = !isPlatformStaff && !isTrial && (planData?.id === 'basic' || planData?.id === 'free');
   
-  const maxUsers = isPlatformStaff ? -1 : (planData?.limits?.users || (isTrial ? 3 : 1));
+  // If trial, allow 3 users. Otherwise use plan limit.
+  const maxUsers = isPlatformStaff ? -1 : (isTrial ? 3 : (planData?.limits?.users || 1));
   const isLimitReached = maxUsers !== -1 && members.length >= maxUsers;
 
   const loadTeam = useCallback(async () => {
