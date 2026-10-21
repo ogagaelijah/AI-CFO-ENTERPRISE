@@ -1,0 +1,2 @@
+ALTER TABLE sales ADD COLUMN sold_unit VARCHAR(50) DEFAULT 'Piece';
+ALTER TABLE sales ADD COLUMN unit_multiplier INTEGER DEFAULT 1;

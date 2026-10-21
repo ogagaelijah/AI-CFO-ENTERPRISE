@@ -1,5 +1,5 @@
 // src/infrastructure/database/sqlite/repositories/InventoryRepository.js
-// v2.3.0-prod — Full case-insensitive and space-insensitive matching.
+// v2.4.0-prod — Adds Multi-Pack (base_unit) support.
 
 const BaseRepository = require('./BaseRepository');
 
@@ -12,19 +12,20 @@ class InventoryRepository extends BaseRepository {
         const result = await this._query(
             `INSERT INTO inventory (
                 user_id, business_id, item_name, quantity,
-                cost_price, selling_price, last_purchase_cost, reorder_level
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                cost_price, selling_price, last_purchase_cost, reorder_level,
+                base_unit
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING id`,
             [
                 inventoryData.userId ?? inventoryData.user_id ?? null,
                 inventoryData.businessId ?? inventoryData.business_id ?? null,
-                // ★ Trim and Title Case on save
                 String(inventoryData.item_name || inventoryData.itemName || '').trim().replace(/\b\w/g, c => c.toUpperCase()),
                 inventoryData.quantity || 0,
                 inventoryData.cost_price || inventoryData.costPrice || 0,
                 inventoryData.selling_price || inventoryData.sellingPrice || 0,
                 inventoryData.last_purchase_cost || inventoryData.lastPurchaseCost || 0,
                 inventoryData.reorder_level || inventoryData.reorderLevel || 5,
+                inventoryData.base_unit || inventoryData.baseUnit || 'Piece',
             ]
         );
         return this.findById(result.rows[0].id);
@@ -120,7 +121,6 @@ class InventoryRepository extends BaseRepository {
 
         if (data.item_name !== undefined || data.itemName !== undefined) {
             fields.push(`item_name = $${i++}`);
-            // ★ Trim and Title Case on update
             values.push(String(data.item_name ?? data.itemName ?? '').trim().replace(/\b\w/g, c => c.toUpperCase()));
         }
         if (data.quantity !== undefined) {
@@ -150,6 +150,10 @@ class InventoryRepository extends BaseRepository {
         if (data.userId !== undefined || data.user_id !== undefined) {
             fields.push(`user_id = $${i++}`);
             values.push(data.userId ?? data.user_id);
+        }
+        if (data.base_unit !== undefined || data.baseUnit !== undefined) {
+            fields.push(`base_unit = $${i++}`);
+            values.push(data.base_unit ?? data.baseUnit);
         }
 
         fields.push('updated_at = NOW()');
