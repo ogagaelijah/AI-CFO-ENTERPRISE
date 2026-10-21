@@ -1,21 +1,19 @@
 // src/interfaces/http/routes/inventoryRoutes.js
+// v1.6.0-prod — Adds Multi-Pack (base_unit + inventory_packs) support.
 // v1.5.0-prod — Writes IN / ADJUSTMENT_IN / ADJUSTMENT_OUT movements.
-// v1.4.1-prod — Error classification: user errors return 400/404/409, not 500.
-// v1.4.0-prod — Write endpoints require OWNER/ADMIN/MANAGER.
-// v1.3.0-prod — Adds search param passthrough.
-// v1.2.0-prod — Pagination at TOP LEVEL.
 
 const express = require('express');
 const router = express.Router();
 const InventoryRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryRepository');
-const InventoryMovementRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryMovementRepository'); // ★ NEW
+const InventoryMovementRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryMovementRepository');
+const { query } = require('../../../infrastructure/database/sqlite/connection'); // ★ NEW: For saving packs
 const { authMiddleware } = require('../middleware/authMiddleware');
 const { requireRole } = require('../middleware/requireRole');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
 const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 
 const inventoryRepo = new InventoryRepository();
-const inventoryMovementRepo = new InventoryMovementRepository(); // ★ NEW
+const inventoryMovementRepo = new InventoryMovementRepository();
 
 router.use(authMiddleware);
 
@@ -119,7 +117,6 @@ router.get('/summary', async (req, res) => {
         }
 
         const summary = await inventoryRepo.getSummary(businessId);
-
         res.json({ success: true, data: summary });
 
     } catch (error) {
@@ -170,6 +167,10 @@ router.get('/:id', async (req, res) => {
             return res.status(403).json({ success: false, message: 'Access denied' });
         }
 
+        // ★ NEW: Fetch packs for this item
+        const packsResult = await query('SELECT * FROM inventory_packs WHERE inventory_id = $1', [id]);
+        item.packs = packsResult.rows || [];
+
         res.json({ success: true, data: item });
 
     } catch (error) {
@@ -186,7 +187,8 @@ router.post('/', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, 
     try {
         const userId = req.user.id;
         const businessId = req.user.businessId;
-        const { itemName, quantity, costPrice, sellingPrice, reorderLevel = 5 } = req.body;
+        // ★ NEW: Accept baseUnit and packs
+        const { itemName, quantity, costPrice, sellingPrice, reorderLevel = 5, baseUnit = 'Piece', packs = [] } = req.body;
 
         if (!businessId) {
             return res.status(400).json({ success: false, message: 'Business context required' });
@@ -221,8 +223,20 @@ router.post('/', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, 
             cost_price: costPrice,
             selling_price: sellingPrice,
             last_purchase_cost: costPrice,
-            reorder_level: reorderLevel
+            reorder_level: reorderLevel,
+            base_unit: baseUnit // ★ Pass to repository
         });
+
+        // ★ NEW: Save packs to the new table
+        if (packs && packs.length > 0) {
+            for (const pack of packs) {
+                await query(
+                    `INSERT INTO inventory_packs (inventory_id, pack_name, multiplier, selling_price) 
+                     VALUES ($1, $2, $3, $4)`,
+                    [newItem.id, pack.packName, pack.multiplier, pack.sellingPrice || 0]
+                );
+            }
+        }
 
         // ★ NEW: write IN movement for the initial stock
         const qty = Number(quantity);
@@ -261,14 +275,14 @@ router.post('/', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, 
 
 // =============================================
 // PUT /api/inventory/:id — OWNER / ADMIN / MANAGER
-// Metadata update only — no quantity change. No movement written.
 // =============================================
 router.put('/:id', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
         const businessId = req.user.businessId;
-        const { itemName, costPrice, sellingPrice, reorderLevel } = req.body;
+        // ★ NEW: Accept baseUnit and packs
+        const { itemName, costPrice, sellingPrice, reorderLevel, baseUnit, packs } = req.body;
 
         const existing = await inventoryRepo.findById(id);
         if (!existing) {
@@ -283,8 +297,23 @@ router.put('/:id', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req
         if (costPrice !== undefined) updateData.cost_price = costPrice;
         if (sellingPrice !== undefined) updateData.selling_price = sellingPrice;
         if (reorderLevel !== undefined) updateData.reorder_level = reorderLevel;
+        if (baseUnit !== undefined) updateData.base_unit = baseUnit; // ★ NEW
 
         const updated = await inventoryRepo.update(id, updateData);
+
+        // ★ NEW: Update packs (Delete old, insert new)
+        if (packs !== undefined) {
+            await query('DELETE FROM inventory_packs WHERE inventory_id = $1', [id]);
+            if (packs && packs.length > 0) {
+                for (const pack of packs) {
+                    await query(
+                        `INSERT INTO inventory_packs (inventory_id, pack_name, multiplier, selling_price) 
+                         VALUES ($1, $2, $3, $4)`,
+                        [id, pack.packName, pack.multiplier, pack.sellingPrice || 0]
+                    );
+                }
+            }
+        }
 
         res.json({
             success: true,
@@ -336,7 +365,6 @@ router.patch('/:id/stock', requireRole(...WRITE_ROLES), invalidateAfterWrite, as
 
         const updated = await inventoryRepo.update(id, { quantity: newQuantity });
 
-        // ★ NEW: write adjustment movement
         const adj = Number(adjustment);
         const absQty = Math.abs(adj);
         const cost = Number(existing.cost_price) || 0;
