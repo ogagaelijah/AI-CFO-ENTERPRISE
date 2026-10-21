@@ -1,12 +1,12 @@
 // frontend/src/pages/settings/TeamTab.jsx
-// v1.2.0-prod — Bypasses plan limits for Platform Staff.
+// v1.3.0-prod — Fixes trial bug. Bypasses plan limits for Platform Staff.
 
 import { useState, useEffect, useCallback } from 'react';
 import { UserPlus, RefreshCw, Loader2, AlertCircle, Mail, Lock } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { usePlan } from '../../hooks/usePlan';
-import useRole from '../../hooks/useRole'; // ★ Import useRole
+import useRole from '../../hooks/useRole';
 import api from '../../services/api';
 import InviteMemberModal from '../../components/team/InviteMemberModal';
 import MemberRow from '../../components/team/MemberRow';
@@ -14,7 +14,7 @@ import MemberRow from '../../components/team/MemberRow';
 const TeamTab = () => {
   const { user } = useAuth();
   const { planData } = usePlan();
-  const { isPlatformStaff } = useRole(); // ★ Check if Superadmin
+  const { isPlatformStaff } = useRole();
   
   const [members, setMembers] = useState([]);
   const [pendingInvites, setPendingInvites] = useState([]);
@@ -27,9 +27,11 @@ const TeamTab = () => {
   const isOwner = user?.role === 'OWNER';
   const isAdmin = user?.role === 'ADMIN';
 
-  // ★ FIXED: If you are platform staff, you NEVER hit the plan limit
-  const isBasicPlan = !isPlatformStaff && (planData?.id === 'basic' || planData?.id === 'free');
-  const maxUsers = isPlatformStaff ? -1 : (planData?.limits?.users || 1);
+  // ★ FIXED: If status is 'trial', treat them as Pro (do not block)
+  const isTrial = planData?.status === 'trial' || planData?.isTrial === true;
+  const isBasicPlan = !isPlatformStaff && !isTrial && (planData?.id === 'basic' || planData?.id === 'free');
+  
+  const maxUsers = isPlatformStaff ? -1 : (planData?.limits?.users || (isTrial ? 3 : 1));
   const isLimitReached = maxUsers !== -1 && members.length >= maxUsers;
 
   const loadTeam = useCallback(async () => {
@@ -103,7 +105,7 @@ const TeamTab = () => {
     );
   }
 
-  const canInvite = isOwner || isAdmin || isPlatformStaff; // ★ Superadmin can always invite
+  const canInvite = isOwner || isAdmin || isPlatformStaff;
 
   return (
     <div className="space-y-6">
