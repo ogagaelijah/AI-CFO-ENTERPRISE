@@ -1,5 +1,5 @@
 // src/infrastructure/database/sqlite/repositories/InventoryRepository.js
-// Postgres async. Same logic as SQLite.
+// v2.3.0-prod — Full case-insensitive and space-insensitive matching.
 
 const BaseRepository = require('./BaseRepository');
 
@@ -18,7 +18,8 @@ class InventoryRepository extends BaseRepository {
             [
                 inventoryData.userId ?? inventoryData.user_id ?? null,
                 inventoryData.businessId ?? inventoryData.business_id ?? null,
-                inventoryData.item_name || inventoryData.itemName,
+                // ★ Trim and Title Case on save
+                String(inventoryData.item_name || inventoryData.itemName || '').trim().replace(/\b\w/g, c => c.toUpperCase()),
                 inventoryData.quantity || 0,
                 inventoryData.cost_price || inventoryData.costPrice || 0,
                 inventoryData.selling_price || inventoryData.sellingPrice || 0,
@@ -40,8 +41,8 @@ class InventoryRepository extends BaseRepository {
         let i = 2;
 
         if (options.search) {
-            query += ` AND LOWER(item_name) LIKE LOWER($${i++})`;
-            params.push(`%${options.search}%`);
+            query += ` AND LOWER(TRIM(item_name)) LIKE LOWER($${i++})`;
+            params.push(`%${String(options.search).trim()}%`);
         }
 
         query += ' ORDER BY item_name ASC';
@@ -69,16 +70,16 @@ class InventoryRepository extends BaseRepository {
 
     async findByName(businessId, itemName) {
         const result = await this._query(
-            'SELECT * FROM inventory WHERE business_id = $1 AND item_name = $2',
-            [businessId, itemName]
+            'SELECT * FROM inventory WHERE business_id = $1 AND LOWER(TRIM(item_name)) = LOWER(TRIM($2))',
+            [businessId, String(itemName || '')]
         );
         return result.rows[0] || null;
     }
 
     async findByNameIgnoreCase(businessId, itemName) {
         const result = await this._query(
-            'SELECT * FROM inventory WHERE business_id = $1 AND LOWER(item_name) = LOWER($2)',
-            [businessId, itemName]
+            'SELECT * FROM inventory WHERE business_id = $1 AND LOWER(TRIM(item_name)) = LOWER(TRIM($2))',
+            [businessId, String(itemName || '')]
         );
         return result.rows[0] || null;
     }
@@ -86,18 +87,19 @@ class InventoryRepository extends BaseRepository {
     async searchByName(businessId, searchTerm) {
         const result = await this._query(
             `SELECT * FROM inventory
-             WHERE business_id = $1 AND LOWER(item_name) LIKE LOWER($2)
+             WHERE business_id = $1 AND LOWER(TRIM(item_name)) LIKE LOWER($2)
              ORDER BY item_name ASC`,
-            [businessId, `%${searchTerm}%`]
+            [businessId, `%${String(searchTerm || '').trim()}%`]
         );
         return result.rows;
     }
 
     async findByNameWithFallback(businessId, itemName) {
-        const item = await this.findByNameIgnoreCase(businessId, itemName);
+        const cleanName = String(itemName || '').trim();
+        const item = await this.findByNameIgnoreCase(businessId, cleanName);
         if (item) return item;
 
-        const results = await this.searchByName(businessId, itemName);
+        const results = await this.searchByName(businessId, cleanName);
         return results.length > 0 ? results[0] : null;
     }
 
@@ -118,7 +120,8 @@ class InventoryRepository extends BaseRepository {
 
         if (data.item_name !== undefined || data.itemName !== undefined) {
             fields.push(`item_name = $${i++}`);
-            values.push(data.item_name ?? data.itemName);
+            // ★ Trim and Title Case on update
+            values.push(String(data.item_name ?? data.itemName ?? '').trim().replace(/\b\w/g, c => c.toUpperCase()));
         }
         if (data.quantity !== undefined) {
             fields.push(`quantity = $${i++}`);
@@ -295,8 +298,8 @@ class InventoryRepository extends BaseRepository {
         let i = 2;
 
         if (filters.search) {
-            query += ` AND LOWER(item_name) LIKE LOWER($${i++})`;
-            params.push(`%${filters.search}%`);
+            query += ` AND LOWER(TRIM(item_name)) LIKE LOWER($${i++})`;
+            params.push(`%${String(filters.search).trim()}%`);
         }
 
         const result = await this._query(query, params);
