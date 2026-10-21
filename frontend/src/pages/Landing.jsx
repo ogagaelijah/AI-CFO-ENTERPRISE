@@ -1,13 +1,5 @@
 // frontend/src/pages/Landing.jsx
-// v1.9.0 — Mounts <ChatWidget /> here. Chat widget now only appears on
-//           the landing page (previously rendered globally on every route).
-// v1.8.0 — Extracts header to <Navbar />. Adds mega-menu navigation.
-// v1.7.0 — Adds <AboutSection /> and <ContactSection />.
-// v1.6.0 — Extracts footer to <Footer /> component. Adds <ResourcesSection />.
-// v1.5.0 — Adds <ResourcesSection /> between FAQ and Footer.
-// v1.4.0 — Adds <LoyaltyBanner /> between Pricing and FAQ.
-// v1.3.0 — Adds <ProblemStatement /> and <FAQSection />.
-// v1.2.1 — Renames "Consultancy" to "Consultancy / Services".
+// v2.0.0 — Fixes mobile overflow on Hero section.
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -128,7 +120,7 @@ const Landing = () => {
   }, [plans]);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-slate-900 transition-colors duration-300">
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-900 transition-colors duration-300 overflow-x-hidden">
       {/* Navbar */}
       <Navbar />
 
@@ -139,18 +131,19 @@ const Landing = () => {
             <Zap className="w-4 h-4 mr-2" />
             Built for African SMEs
           </div>
-          <h1 className="text-4xl md:text-6xl font-bold text-gray-900 dark:text-white mb-6 leading-tight">
+          {/* ★ FIXED: text-3xl on mobile, added break-words */}
+          <h1 className="text-3xl md:text-6xl font-bold text-gray-900 dark:text-white mb-6 leading-tight break-words">
             Manage your business like a <span className="text-primary-600 dark:text-gold-400">CFO</span>
           </h1>
-          <p className="text-xl text-gray-600 dark:text-gray-300 mb-10 max-w-2xl mx-auto">
+          <p className="text-lg md:text-xl text-gray-600 dark:text-gray-300 mb-10 max-w-2xl mx-auto break-words">
             AI CFO ENTERPRISE helps African SMEs track sales, inventory, debtors, and profits — all in one place.
           </p>
           <div className="flex flex-col sm:flex-row justify-center gap-4">
-            <Link to="/register" className="px-8 py-4 text-lg font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-xl transition shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] inline-flex items-center justify-center">
+            <Link to="/register" className="px-6 py-3 md:px-8 md:py-4 text-base md:text-lg font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-xl transition shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] inline-flex items-center justify-center">
               Start 14-day free trial
               <ChevronRight className="w-5 h-5 ml-2" />
             </Link>
-            <a href="#features" className="px-8 py-4 text-lg font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-xl transition inline-flex items-center justify-center">
+            <a href="#features" className="px-6 py-3 md:px-8 md:py-4 text-base md:text-lg font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-xl transition inline-flex items-center justify-center">
               See how it works
             </a>
           </div>
@@ -169,7 +162,7 @@ const Landing = () => {
       {/* Features */}
       <section id="features" className="py-20 px-4 bg-white dark:bg-slate-800 transition-colors duration-300">
         <div className="max-w-6xl mx-auto">
-          <h2 className="text-3xl font-bold text-center text-gray-900 dark:text-white mb-12 fade-in">
+          <h2 className="text-2xl md:text-3xl font-bold text-center text-gray-900 dark:text-white mb-12 fade-in">
             Everything you need to run your business
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -194,7 +187,7 @@ const Landing = () => {
       {/* Industries */}
       <section id="industries" className="py-20 px-4 bg-gray-50 dark:bg-slate-900 transition-colors duration-300">
         <div className="max-w-6xl mx-auto text-center">
-          <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4 fade-in">Built for 9 Industries</h2>
+          <h2 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mb-4 fade-in">Built for 9 Industries</h2>
           <p className="text-gray-600 dark:text-gray-400 mb-12 fade-in">
             5 live today, more coming soon.
           </p>
@@ -230,7 +223,7 @@ const Landing = () => {
       {/* Pricing */}
       <section id="pricing" className="py-20 px-4 bg-white dark:bg-slate-800 transition-colors duration-300">
         <div className="max-w-6xl mx-auto">
-          <h2 className="text-3xl font-bold text-center text-gray-900 dark:text-white mb-4 fade-in">
+          <h2 className="text-2xl md:text-3xl font-bold text-center text-gray-900 dark:text-white mb-4 fade-in">
             Simple, transparent pricing
           </h2>
           <p className="text-center text-gray-600 dark:text-gray-400 mb-8 fade-in">
@@ -241,7 +234,7 @@ const Landing = () => {
             <div className="inline-flex items-center bg-gray-100 dark:bg-slate-900 rounded-full p-1">
               <button
                 onClick={() => setBillingCycle('monthly')}
-                className={`px-5 py-2 text-sm font-medium rounded-full transition ${
+                className={`px-4 py-2 md:px-5 md:py-2 text-xs md:text-sm font-medium rounded-full transition ${
                   billingCycle === 'monthly'
                     ? 'bg-white dark:bg-slate-700 text-gray-900 dark:text-white shadow'
                     : 'text-gray-600 dark:text-gray-400'
@@ -251,7 +244,7 @@ const Landing = () => {
               </button>
               <button
                 onClick={() => setBillingCycle('yearly')}
-                className={`px-5 py-2 text-sm font-medium rounded-full transition flex items-center gap-2 ${
+                className={`px-4 py-2 md:px-5 md:py-2 text-xs md:text-sm font-medium rounded-full transition flex items-center gap-2 ${
                   billingCycle === 'yearly'
                     ? 'bg-white dark:bg-slate-700 text-gray-900 dark:text-white shadow'
                     : 'text-gray-600 dark:text-gray-400'
@@ -297,7 +290,7 @@ const Landing = () => {
                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 min-h-[40px]">{plan.description}</p>
 
                     <div className="my-4">
-                      <span className="text-4xl font-bold text-primary-600 dark:text-gold-400">
+                      <span className="text-3xl md:text-4xl font-bold text-primary-600 dark:text-gold-400">
                         ₦{Number(amount || 0).toLocaleString()}
                       </span>
                       <span className="text-base font-normal text-gray-500 dark:text-gray-400">
