@@ -4,18 +4,19 @@ import { Ionicons } from '@expo/vector-icons';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useOffline } from '../context/OfflineContext';
-import { useTheme } from '../context/ThemeContext'; // ★ NEW
+import { useTheme } from '../context/ThemeContext';
 
 // ─── RECORD SALE SCREEN ──────────────────────────────────────────
 export const RecordSaleScreen = ({ navigation }) => {
   const { user } = useAuth();
   const { addSaleToQueue } = useOffline();
-  const { theme } = useTheme(); // ★ NEW
+  const { theme } = useTheme();
   const [inventory, setInventory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [customerName, setCustomerName] = useState('');
   const [paymentStatus, setPaymentStatus] = useState('PAID');
   const [amountPaid, setAmountPaid] = useState('');
+  const [dueDays, setDueDays] = useState(3); // ★ NEW: Default to 3 days
   const [items, setItems] = useState([{ name: '', quantity: '', price: '', unitMultiplier: 1, soldUnit: 'Piece', inventoryId: null }]);
 
   useEffect(() => { fetchInventory(); }, []);
@@ -88,6 +89,7 @@ export const RecordSaleScreen = ({ navigation }) => {
         customerName: customerName.trim(),
         paymentStatus,
         amountPaid: paid,
+        dueDays: (paymentStatus === 'UNPAID' || paymentStatus === 'PARTIAL') ? dueDays : null, // ★ NEW
         items: validItems.map(i => ({
           name: i.name.trim(),
           quantity: parseFloat(i.quantity),
@@ -141,6 +143,24 @@ export const RecordSaleScreen = ({ navigation }) => {
           </TouchableOpacity>
         ))}
       </View>
+
+      {/* ★ NEW: Due Date Selector (Only shows for Unpaid/Partial) */}
+      {(paymentStatus === 'UNPAID' || paymentStatus === 'PARTIAL') && (
+        <View style={{ marginBottom: 16 }}>
+          <Text style={{ fontSize: 14, fontWeight: '600', color: theme.text, marginBottom: 8 }}>When is this payment due?</Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {[3, 7, 14, 30].map(days => (
+              <TouchableOpacity
+                key={days}
+                onPress={() => setDueDays(days)}
+                style={[{ flex: 1, padding: 12, borderRadius: 8, borderWidth: 1, alignItems: 'center', backgroundColor: theme.cardBg, borderColor: theme.border }, dueDays === days && { backgroundColor: theme.warning, borderColor: theme.warning }]}
+              >
+                <Text style={[{ fontSize: 14, fontWeight: 'bold', color: theme.text }, dueDays === days && { color: '#fff' }]}>{days} Days</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
 
       <Text style={[styles.sectionTitle, { color: theme.text }]}>Items</Text>
       {items.map((item, index) => {
@@ -374,27 +394,38 @@ export const DebtorsScreen = () => {
       {debtors.length === 0 ? (
         <Text style={{ textAlign: 'center', marginTop: 20, color: theme.textMuted }}>No debtors found. Great!</Text>
       ) : (
-        debtors.map(debtor => (
-          <View key={debtor.id} style={[styles.debtorCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
-              <View style={[{ width: 40, height: 40, borderRadius: 20, backgroundColor: theme.inputBg, justifyContent: 'center', alignItems: 'center', marginRight: 12 }]}>
-                <Text style={{ fontSize: 18, fontWeight: 'bold', color: theme.primary }}>{debtor.customer_name?.charAt(0) || 'D'}</Text>
+        debtors.map(debtor => {
+          // ★ NEW: Check if the debtor is overdue
+          const isOverdue = debtor.due_date && new Date(debtor.due_date) < new Date() && Number(debtor.balance_remaining) > 0;
+
+          return (
+            <View key={debtor.id} style={[styles.debtorCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                <View style={[{ width: 40, height: 40, borderRadius: 20, backgroundColor: theme.inputBg, justifyContent: 'center', alignItems: 'center', marginRight: 12 }]}>
+                  <Text style={{ fontSize: 18, fontWeight: 'bold', color: theme.primary }}>{debtor.customer_name?.charAt(0) || 'D'}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 16, fontWeight: '600', color: theme.text }}>{debtor.customer_name}</Text>
+                  <Text style={{ fontSize: 12, color: theme.textMuted }}>{debtor.customer_phone || 'No phone'}</Text>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.danger }}>₦{Number(debtor.balance_remaining).toLocaleString()}</Text>
+                  {isOverdue ? (
+                    <View style={{ backgroundColor: theme.badgeRed, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginTop: 4 }}>
+                      <Text style={{ fontSize: 10, fontWeight: 'bold', color: theme.danger }}>OVERDUE</Text>
+                    </View>
+                  ) : (
+                    <Text style={{ fontSize: 10, color: theme.textMuted, textTransform: 'uppercase', marginTop: 4 }}>{debtor.status}</Text>
+                  )}
+                </View>
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 16, fontWeight: '600', color: theme.text }}>{debtor.customer_name}</Text>
-                <Text style={{ fontSize: 12, color: theme.textMuted }}>{debtor.customer_phone || 'No phone'}</Text>
-              </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.danger }}>₦{Number(debtor.balance_remaining).toLocaleString()}</Text>
-                <Text style={{ fontSize: 10, color: theme.textMuted, textTransform: 'uppercase' }}>{debtor.status}</Text>
-              </View>
+              <TouchableOpacity style={[{ flexDirection: 'row', backgroundColor: theme.success, padding: 10, borderRadius: 8, justifyContent: 'center', alignItems: 'center', gap: 6 }]} onPress={() => setSelectedDebtor(debtor)}>
+                <Ionicons name="cash-outline" size={16} color="#fff" />
+                <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 14 }}>Record Payment</Text>
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity style={[{ flexDirection: 'row', backgroundColor: theme.success, padding: 10, borderRadius: 8, justifyContent: 'center', alignItems: 'center', gap: 6 }]} onPress={() => setSelectedDebtor(debtor)}>
-              <Ionicons name="cash-outline" size={16} color="#fff" />
-              <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 14 }}>Record Payment</Text>
-            </TouchableOpacity>
-          </View>
-        ))
+          );
+        })
       )}
 
       <Modal visible={!!selectedDebtor} animationType="slide" transparent={true}>

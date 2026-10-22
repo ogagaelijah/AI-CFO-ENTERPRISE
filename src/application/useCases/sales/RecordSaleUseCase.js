@@ -1,5 +1,5 @@
 // src/application/useCases/sales/RecordSaleUseCase.js
-// v3.2.0-prod — Multi-Pack support (Cartons, Pieces). Writes OUT inventory movements.
+// v3.3.0-prod — Adds customizable due dates for debtors.
 
 const Sale = require('../../../domain/entities/Sale');
 const { withTransaction } = require('../../../infrastructure/database/sqlite/connection');
@@ -40,16 +40,24 @@ class RecordSaleUseCase {
         totalRevenue = 0,
         totalProfit = 0,
         notes = '',
-        unitMultiplier = 1, // ★ NEW
-        soldUnit = 'Piece', // ★ NEW
+        unitMultiplier = 1,
+        soldUnit = 'Piece',
+        dueDays = null, // ★ NEW
     }) {
         if (!userId) throw new Error('User ID is required');
         if (!businessId) throw new Error('Business ID is required');
 
+        // ★ NEW: Calculate the absolute due date based on dueDays
+        let finalDueDate = null;
+        if (dueDays !== null && dueDays !== undefined) {
+            finalDueDate = new Date();
+            finalDueDate.setDate(finalDueDate.getDate() + Number(dueDays));
+        }
+
         if (items && items.length > 0) {
             return this._executeMultiItem({
                 userId, businessId, items, customerName, customerId, customerType,
-                paymentStatus, amountPaid, saleDate, skipInventory, notes,
+                paymentStatus, amountPaid, saleDate, skipInventory, notes, finalDueDate,
             });
         }
 
@@ -57,7 +65,7 @@ class RecordSaleUseCase {
             userId, businessId, itemName, quantity, unitPrice,
             customerName, customerId, customerType, paymentStatus, amountPaid,
             skipInventory, inventoryId, saleDate, notes,
-            unitMultiplier, soldUnit, // ★ Pass down
+            unitMultiplier, soldUnit, finalDueDate,
         });
     }
 
@@ -179,7 +187,7 @@ class RecordSaleUseCase {
 
     async _createOrUpdateDebtor({
         businessId, userId, customerName, customerId, balanceRemaining, paidAmount,
-        referenceId, notes,
+        referenceId, notes, finalDueDate,
     }) {
         if (!customerName || balanceRemaining <= 0) return;
 
@@ -187,13 +195,22 @@ class RecordSaleUseCase {
         const openDebtor = (existing || []).find(d => Number(d.balance_remaining) > 0);
 
         if (openDebtor) {
-            await this.debtorRepository.update(openDebtor.id, {
+            // ★ NEW: Update existing debtor with the new due date if provided
+            const updateData = {
                 total_owed: Number(openDebtor.total_owed || 0) + balanceRemaining,
                 balance_remaining: Number(openDebtor.balance_remaining || 0) + balanceRemaining,
                 amount_paid: Number(openDebtor.amount_paid || 0) + paidAmount,
                 status: 'ACTIVE',
-            });
+            };
+            if (finalDueDate) updateData.due_date = finalDueDate.toISOString();
+
+            await this.debtorRepository.update(openDebtor.id, updateData);
         } else {
+            // ★ NEW: If no date provided, fallback to 3 days
+            const fallbackDate = new Date();
+            fallbackDate.setDate(fallbackDate.getDate() + 3);
+            const dueDateToSave = finalDueDate ? finalDueDate.toISOString() : fallbackDate.toISOString();
+
             await this.debtorRepository.create({
                 user_id: userId,
                 business_id: businessId,
@@ -206,6 +223,7 @@ class RecordSaleUseCase {
                 reference_type: 'SALE',
                 reference_id: referenceId,
                 notes: notes || '',
+                due_date: dueDateToSave, // ★ Save the due date
             });
         }
     }
@@ -215,7 +233,7 @@ class RecordSaleUseCase {
     // ─────────────────────────────────────────────
     async _executeMultiItem({
         userId, businessId, items, customerName, customerId, customerType,
-        paymentStatus, amountPaid, saleDate, skipInventory, notes,
+        paymentStatus, amountPaid, saleDate, skipInventory, notes, finalDueDate,
     }) {
         if (items.length === 0) throw new Error('At least one item is required');
         if (!customerName) throw new Error('Customer name is required');
@@ -233,11 +251,10 @@ class RecordSaleUseCase {
             let totalRevenueValue = 0;
 
             for (const raw of items) {
-                // ★ NEW: Multi-Pack Logic
                 const unitMultiplier = Number(raw.unitMultiplier) || 1;
                 const soldUnit = raw.soldUnit || 'Piece';
-                const qty = Number(raw.quantity) || 1; // Packs sold
-                const baseQty = qty * unitMultiplier; // Base units deducted
+                const qty = Number(raw.quantity) || 1;
+                const baseQty = qty * unitMultiplier;
                 
                 const sellPrice = Number(raw.sellingPrice ?? raw.unitPrice) || 0;
                 let unitCost = 0;
@@ -254,7 +271,6 @@ class RecordSaleUseCase {
                         finalItemName = item.item_name || raw.name;
                         unitCost = Number(item.cost_price) || 0;
 
-                        // ★ FIX: block sales when stock is insufficient (using baseQty)
                         if (item.quantity < baseQty) {
                             throw new Error(
                                 `Insufficient stock for "${finalItemName}". ` +
@@ -264,7 +280,7 @@ class RecordSaleUseCase {
 
                         stockToReduce.push({
                             id: finalInventoryId,
-                            quantity: baseQty, // ★ Deduct base units
+                            quantity: baseQty,
                             unitCost,
                             quantityBefore: Number(item.quantity) || 0,
                             quantityAfter: (Number(item.quantity) || 0) - baseQty,
@@ -272,8 +288,8 @@ class RecordSaleUseCase {
                     }
                 }
 
-                const itemRevenue = qty * sellPrice; // Revenue = packs * price
-                const itemCogs = baseQty * unitCost; // Cost = base units * cost
+                const itemRevenue = qty * sellPrice;
+                const itemCogs = baseQty * unitCost;
 
                 totalQuantity += qty;
                 totalRevenueValue += itemRevenue;
@@ -349,8 +365,6 @@ class RecordSaleUseCase {
             if (!skipInventory) {
                 for (const inv of stockToReduce) {
                     await this.inventoryRepository.reduceStock(inv.id, inv.quantity);
-
-                    // ★ NEW: write OUT movement per reduced line
                     await this._writeStockMovement({
                         businessId,
                         userId,
@@ -378,7 +392,7 @@ class RecordSaleUseCase {
             await this._createOrUpdateDebtor({
                 businessId, userId, customerName, customerId: finalCustomerId,
                 balanceRemaining, paidAmount: amountPaidValue,
-                referenceId: savedSale.id, notes,
+                referenceId: savedSale.id, notes, finalDueDate,
             });
 
             return {
@@ -401,10 +415,10 @@ class RecordSaleUseCase {
         userId, businessId, itemName, quantity, unitPrice,
         customerName, customerId, customerType, paymentStatus, amountPaid,
         skipInventory, inventoryId, saleDate, notes,
-        unitMultiplier = 1, soldUnit = 'Piece', // ★ NEW
+        unitMultiplier = 1, soldUnit = 'Piece', finalDueDate,
     }) {
-        const qty = Number(quantity); // Packs sold
-        const baseQty = qty * unitMultiplier; // Base units deducted
+        const qty = Number(quantity);
+        const baseQty = qty * unitMultiplier;
         const unitPriceNum = Number(unitPrice);
 
         if (!qty || qty <= 0) throw new Error('Quantity must be greater than 0');
@@ -438,7 +452,6 @@ class RecordSaleUseCase {
                     finalItemName = inventoryItem.item_name || itemName;
                     unitCost = Number(inventoryItem.cost_price) || 0;
 
-                    // ★ FIX: block sales when stock is insufficient (using baseQty)
                     if (inventoryItem.quantity < baseQty) {
                         throw new Error(
                             `Insufficient stock for "${finalItemName}". ` +
@@ -483,8 +496,8 @@ class RecordSaleUseCase {
             const itemsArray = [{
                 name: finalItemName,
                 quantity: qty,
-                soldUnit: soldUnit,           // ★ NEW
-                unitMultiplier: unitMultiplier, // ★ NEW
+                soldUnit: soldUnit,
+                unitMultiplier: unitMultiplier,
                 unitCost,
                 sellingPrice: unitPriceNum,
                 inventoryId: finalInventoryId,
@@ -518,8 +531,6 @@ class RecordSaleUseCase {
 
             if (!skipInventory && finalInventoryId && inventoryItem) {
                 await this.inventoryRepository.reduceStock(finalInventoryId, baseQty);
-
-                // ★ NEW: write OUT movement
                 await this._writeStockMovement({
                     businessId,
                     userId,
@@ -546,7 +557,7 @@ class RecordSaleUseCase {
             await this._createOrUpdateDebtor({
                 businessId, userId, customerName, customerId: finalCustomerId,
                 balanceRemaining, paidAmount: amountPaidValue,
-                referenceId: savedSale.id, notes,
+                referenceId: savedSale.id, notes, finalDueDate,
             });
 
             return {

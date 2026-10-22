@@ -1,5 +1,5 @@
 // frontend/src/components/Sales/RecordSaleModal.jsx
-// v2.0.0-prod — Adds Multi-Pack (Carton/Piece) selection.
+// v2.1.1-prod — Shows inventory stock immediately upon item selection.
 
 import { useState, useEffect } from 'react';
 import { X, Plus, Trash2, AlertTriangle } from 'lucide-react';
@@ -15,7 +15,7 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
     customerPhone: '',
     paymentStatus: 'PAID',
     date: new Date().toISOString().split('T')[0],
-    // ★ NEW: Added soldUnit and unitMultiplier
+    dueDays: 3, 
     items: [{ name: '', quantity: '', sellingPrice: '', costPrice: '', inventoryId: null, soldUnit: 'Piece', unitMultiplier: 1 }],
     notes: '',
     skipInventory: false,
@@ -78,28 +78,23 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
     setShowInventoryWarning(false);
   };
 
-  // ★ NEW: Handle changing from Piece to Carton
   const handleUnitChange = (index, packString) => {
     const newItems = [...formData.items];
     const inventoryItem = findInventoryItem(newItems[index].name);
     
     if (!inventoryItem) return;
 
-    // packString will be something like "1|Piece" or "12|Carton"
     const [multiplier, unitName] = packString.split('|');
     newItems[index].unitMultiplier = parseInt(multiplier);
     newItems[index].soldUnit = unitName;
 
-    // Auto-update prices if they exist for this pack
     if (unitName !== 'Piece' && inventoryItem.packs) {
       const packData = inventoryItem.packs.find(p => p.pack_name === unitName);
       if (packData) {
         newItems[index].sellingPrice = String(packData.selling_price || '');
-        // Cost price for a carton is base cost * multiplier
         newItems[index].costPrice = String((inventoryItem.cost_price || 0) * parseInt(multiplier));
       }
     } else {
-      // Revert to base prices
       newItems[index].sellingPrice = String(inventoryItem.selling_price || '');
       newItems[index].costPrice = String(inventoryItem.cost_price || '');
     }
@@ -177,7 +172,6 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
       for (const item of validItems) {
         const inventoryItem = findInventoryItem(item.name);
         if (inventoryItem) {
-          // ★ NEW: Multiply requested quantity by the multiplier to check base stock
           const requestedBaseStock = parseFloat(item.quantity) * item.unitMultiplier;
           if (inventoryItem.quantity < requestedBaseStock) {
             setError(`Insufficient stock for "${item.name}". Available: ${inventoryItem.quantity} pieces, Requested: ${requestedBaseStock} pieces`);
@@ -194,7 +188,6 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
         costPrice: parseFloat(item.costPrice) || 0,
         sellingPrice: parseFloat(item.sellingPrice) || 0,
         quantity: parseFloat(item.quantity) || 0,
-        // ★ NEW: Pass these to the backend
         unitMultiplier: item.unitMultiplier || 1,
         soldUnit: item.soldUnit || 'Piece',
       })),
@@ -222,7 +215,6 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
           <ReadOnlyBanner />
 
-          {/* Customer Section */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -277,6 +269,24 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
               />
             </div>
           </div>
+
+          {(formData.paymentStatus === 'PARTIAL' || formData.paymentStatus === 'UNPAID') && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Payment Terms
+              </label>
+              <select
+                value={formData.dueDays}
+                onChange={(e) => setFormData({ ...formData, dueDays: parseInt(e.target.value) })}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              >
+                <option value={3}>Due in 3 Days (Default)</option>
+                <option value={7}>Due in 7 Days</option>
+                <option value={14}>Due in 14 Days</option>
+                <option value={30}>Due in 30 Days</option>
+              </select>
+            </div>
+          )}
 
           {showInventoryWarning && (
             <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 text-yellow-700 dark:text-yellow-400 px-4 py-3 rounded-lg flex items-center space-x-2">
@@ -348,7 +358,6 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
               const requestedBaseStock = (parseFloat(item.quantity) || 0) * (item.unitMultiplier || 1);
               const isLowStock = stockAvailable > 0 && stockAvailable < requestedBaseStock;
 
-              // ★ NEW: Build pack options for the dropdown
               const packOptions = [
                 { label: `Piece (${inventoryItem?.base_unit || 'Unit'})`, value: `1|Piece` }
               ];
@@ -375,7 +384,6 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
                       ))}
                     </datalist>
                     
-                    {/* ★ NEW: Pack Selector Dropdown */}
                     {inventoryItem && inventoryItem.packs && inventoryItem.packs.length > 0 && (
                       <select
                         value={`${item.unitMultiplier}|${item.soldUnit}`}
@@ -388,11 +396,9 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
                       </select>
                     )}
 
-                    {!formData.skipInventory && item.name && !inventoryItem && (
-                      <p className="text-xs text-yellow-600 dark:text-yellow-400">⚠️ Not in inventory</p>
-                    )}
-                    {!formData.skipInventory && inventoryItem && parseFloat(item.quantity) > 0 && (
-                      <p className={`text-xs ${isLowStock ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                    {/* ★ FIXED: Shows stock immediately upon item selection, regardless of quantity */}
+                    {!formData.skipInventory && inventoryItem && (
+                      <p className={`text-xs mt-1 ${isLowStock ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
                         {isLowStock ? `⚠️ Only ${stockAvailable} base units available` : `✅ ${stockAvailable} base units in stock`}
                       </p>
                     )}
