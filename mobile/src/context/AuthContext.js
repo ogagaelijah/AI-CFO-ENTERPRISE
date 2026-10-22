@@ -28,9 +28,13 @@ export const AuthProvider = ({ children }) => {
   const login = async (credentials) => {
     try {
       const response = await api.post('/auth/login', credentials);
+      
+      // Handle both the standard response and the wrapped production response
       const data = response.data;
+      const token = data.token || data.data?.token;
+      const userData = data.user || data.data?.user;
 
-      // 1. Handle 2FA (Your backend returns success:true, requires2FA:true)
+      // 1. Handle 2FA
       if (data.requires2FA) {
         return { 
           success: false, 
@@ -40,15 +44,14 @@ export const AuthProvider = ({ children }) => {
         };
       }
 
-      // 2. Handle successful login (backend sends 'token' and 'user')
-      if (data.success && data.token && data.user) {
-        await SecureStore.setItemAsync('userToken', data.token);
-        await SecureStore.setItemAsync('userData', JSON.stringify(data.user));
-        setUser(data.user);
+      // 2. Handle successful login
+      if (token && userData) {
+        await SecureStore.setItemAsync('userToken', token);
+        await SecureStore.setItemAsync('userData', JSON.stringify(userData));
+        setUser(userData);
         return { success: true };
       }
 
-      // 3. Fallback debug if something is still missing
       return { success: false, message: "UNKNOWN RESPONSE: " + JSON.stringify(data) };
 
     } catch (error) {
