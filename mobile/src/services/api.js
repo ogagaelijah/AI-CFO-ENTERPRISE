@@ -1,8 +1,8 @@
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 
-// Pointing to your local backend
-const API_URL = 'http://192.168.1.6:5000/api'; 
+// ★ THE FIX: Point to the actual API subdomain
+const API_URL = 'https://api.aicfotechnologies.com/api'; 
 
 const api = axios.create({
   baseURL: API_URL,
