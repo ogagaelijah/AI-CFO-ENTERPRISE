@@ -1,5 +1,5 @@
 // frontend/src/components/debtors/AddDebtorModal.jsx
-// v1.1.0-prod — Adds read-only guard: banner + disabled submit.
+// v1.2.0-prod — Replaces free-text date with Due Date dropdown (3, 7, 14, 30 days).
 
 import { useState } from 'react';
 import { X, AlertCircle, CheckCircle } from 'lucide-react';
@@ -14,7 +14,7 @@ const AddDebtorModal = ({ isOpen, onClose, onSuccess }) => {
     customerName: '',
     phone: '',
     totalOwed: 0,
-    dueDate: '',
+    dueDays: 3, // ★ NEW: Default to 3 days
     notes: '',
   });
   const [isLoading, setIsLoading] = useState(false);
@@ -25,7 +25,7 @@ const AddDebtorModal = ({ isOpen, onClose, onSuccess }) => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
-      [name]: name === 'totalOwed' ? parseFloat(value) || 0 : value
+      [name]: name === 'totalOwed' || name === 'dueDays' ? parseFloat(value) || 0 : value
     }));
   };
 
@@ -48,12 +48,16 @@ const AddDebtorModal = ({ isOpen, onClose, onSuccess }) => {
       return;
     }
 
+    // ★ NEW: Calculate the actual due date based on the selected days
+    const dueDateObj = new Date();
+    dueDateObj.setDate(dueDateObj.getDate() + Number(formData.dueDays));
+
     try {
       const response = await api.post('/debtors', {
         customerName: formData.customerName.trim(),
         phone: formData.phone.trim() || null,
         totalOwed: formData.totalOwed,
-        dueDate: formData.dueDate || null,
+        dueDate: dueDateObj.toISOString(), // Send the calculated date
         notes: formData.notes.trim() || '',
       });
 
@@ -66,7 +70,7 @@ const AddDebtorModal = ({ isOpen, onClose, onSuccess }) => {
             customerName: '',
             phone: '',
             totalOwed: 0,
-            dueDate: '',
+            dueDays: 3,
             notes: '',
           });
           setSuccess('');
@@ -160,18 +164,23 @@ const AddDebtorModal = ({ isOpen, onClose, onSuccess }) => {
             />
           </div>
 
+          {/* ★ NEW: Due Days Dropdown */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Due Date <span className="text-gray-400 text-xs">(Optional)</span>
+              Payment Terms
             </label>
-            <input
-              type="date"
-              name="dueDate"
-              value={formData.dueDate}
+            <select
+              name="dueDays"
+              value={formData.dueDays}
               onChange={handleChange}
               className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               disabled={isLoading}
-            />
+            >
+              <option value={3}>Due in 3 Days (Default)</option>
+              <option value={7}>Due in 7 Days</option>
+              <option value={14}>Due in 14 Days</option>
+              <option value={30}>Due in 30 Days</option>
+            </select>
           </div>
 
           <div>
