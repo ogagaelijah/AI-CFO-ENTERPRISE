@@ -1,12 +1,12 @@
 // frontend/src/pages/Landing.jsx
-// v2.0.0 — Fixes mobile overflow on Hero section.
+// v2.1.0 — Adds direct APK download button to Hero section.
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   TrendingUp, Package, Users, FileText, BarChart3, Zap,
-  ChevronRight, Check, Loader2,
-} from 'lucide-react';
+  ChevronRight, Check, Loader2, Smartphone
+} from 'lucide-react'; // ★ Added Smartphone icon
 import Navbar from '../components/Landing/Navbar';
 import ProblemStatement from '../components/Landing/ProblemStatement';
 import AboutSection from '../components/Landing/AboutSection';
@@ -138,7 +138,9 @@ const Landing = () => {
           <p className="text-lg md:text-xl text-gray-600 dark:text-gray-300 mb-10 max-w-2xl mx-auto break-words">
             AI CFO ENTERPRISE helps African SMEs track sales, inventory, debtors, and profits — all in one place.
           </p>
-          <div className="flex flex-col sm:flex-row justify-center gap-4">
+          
+          {/* Main Call to Actions */}
+          <div className="flex flex-col sm:flex-row justify-center gap-4 mb-4">
             <Link to="/register" className="px-6 py-3 md:px-8 md:py-4 text-base md:text-lg font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-xl transition shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] inline-flex items-center justify-center">
               Start 14-day free trial
               <ChevronRight className="w-5 h-5 ml-2" />
@@ -147,7 +149,23 @@ const Landing = () => {
               See how it works
             </a>
           </div>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-4">
+
+          {/* ★ NEW: APK Download Link */}
+          <div className="mt-6 flex flex-col items-center justify-center">
+            <a 
+              href="/ai-cfo-app.apk" 
+              download
+              className="inline-flex items-center justify-center gap-2 px-6 py-3 text-sm md:text-base font-medium text-gray-900 dark:text-white bg-white dark:bg-slate-800 border-2 border-gray-200 dark:border-slate-600 rounded-xl hover:bg-gray-50 dark:hover:bg-slate-700 transition shadow-sm hover:shadow-md"
+            >
+              <Smartphone className="w-5 h-5 text-green-500" />
+              Download the Android App
+            </a>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+              Available as a direct download for Android devices (.apk)
+            </p>
+          </div>
+          
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-6">
             No card required · Full Pro access for 14 days
           </p>
         </div>

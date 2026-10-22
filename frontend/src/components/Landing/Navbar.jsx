@@ -1,12 +1,10 @@
 // frontend/src/components/Landing/Navbar.jsx
-// v1.0.0 — Extracted from Landing.jsx. Adds mega-menu on desktop hover,
-//           accordion sections on mobile. Handles theme toggle internally.
-//           Simple links (About / Pricing / FAQ) remain plain anchors.
+// v1.1.0 — Adds direct APK download button for Desktop and Mobile.
 
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
-import { Moon, Sun, Menu, X, ChevronDown } from 'lucide-react';
+import { Moon, Sun, Menu, X, ChevronDown, Smartphone } from 'lucide-react'; // ★ Added Smartphone icon
 import MegaMenu from './MegaMenu';
 import { NAV_ITEMS } from '../../data/navigation';
 
@@ -119,6 +117,17 @@ export default function Navbar() {
                 <Moon className="w-5 h-5 text-gray-600" />
               )}
             </button>
+
+            {/* ★ NEW: Desktop Download Button */}
+            <a
+              href="/ai-cfo-app.apk"
+              download
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition border border-gray-200 dark:border-slate-700"
+            >
+              <Smartphone className="w-4 h-4 text-green-500" />
+              Get App
+            </a>
+
             <Link
               to="/login"
               className="px-4 py-2 text-sm font-medium text-primary-600 dark:text-gold-400 hover:underline transition"
@@ -256,10 +265,22 @@ export default function Navbar() {
             })}
 
             <hr className="border-gray-200 dark:border-slate-700 my-3" />
+
+            {/* ★ NEW: Mobile Download Button */}
+            <a
+              href="/ai-cfo-app.apk"
+              download
+              onClick={handleMobileLinkClick}
+              className="flex items-center justify-center gap-2 text-gray-700 dark:text-gray-300 font-medium py-3 border border-gray-200 dark:border-slate-700 rounded-lg mb-2"
+            >
+              <Smartphone className="w-5 h-5 text-green-500" />
+              Download Android App
+            </a>
+
             <Link
               to="/login"
               onClick={handleMobileLinkClick}
-              className="block text-primary-600 dark:text-gold-400 font-medium py-3"
+              className="block text-primary-600 dark:text-gold-400 font-medium py-3 text-center"
             >
               Log in
             </Link>
