@@ -1,7 +1,6 @@
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 
-// ★ THE FIX: Point to the actual API subdomain
 const API_URL = 'https://api.aicfotechnologies.com/api'; 
 
 const api = axios.create({

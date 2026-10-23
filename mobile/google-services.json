@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "264411909899",
+    "project_id": "ai-cfo-enterprise",
+    "storage_bucket": "ai-cfo-enterprise.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:264411909899:android:987b7f264d298df7b59c0e",
+        "android_client_info": {
+          "package_name": "com.aicfotechnologies.enterprise"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBP1SmJKhU3EoZpPHfWVlovMRORETGnXuw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
