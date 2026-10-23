@@ -16,7 +16,7 @@ export const RecordSaleScreen = ({ navigation }) => {
   const [customerName, setCustomerName] = useState('');
   const [paymentStatus, setPaymentStatus] = useState('PAID');
   const [amountPaid, setAmountPaid] = useState('');
-  const [dueDays, setDueDays] = useState(3); // ★ NEW: Default to 3 days
+  const [dueDays, setDueDays] = useState(3); 
   const [items, setItems] = useState([{ name: '', quantity: '', price: '', unitMultiplier: 1, soldUnit: 'Piece', inventoryId: null }]);
 
   useEffect(() => { fetchInventory(); }, []);
@@ -89,7 +89,7 @@ export const RecordSaleScreen = ({ navigation }) => {
         customerName: customerName.trim(),
         paymentStatus,
         amountPaid: paid,
-        dueDays: (paymentStatus === 'UNPAID' || paymentStatus === 'PARTIAL') ? dueDays : null, // ★ NEW
+        dueDays: (paymentStatus === 'UNPAID' || paymentStatus === 'PARTIAL') ? dueDays : null,
         items: validItems.map(i => ({
           name: i.name.trim(),
           quantity: parseFloat(i.quantity),
@@ -144,7 +144,6 @@ export const RecordSaleScreen = ({ navigation }) => {
         ))}
       </View>
 
-      {/* ★ NEW: Due Date Selector (Only shows for Unpaid/Partial) */}
       {(paymentStatus === 'UNPAID' || paymentStatus === 'PARTIAL') && (
         <View style={{ marginBottom: 16 }}>
           <Text style={{ fontSize: 14, fontWeight: '600', color: theme.text, marginBottom: 8 }}>When is this payment due?</Text>
@@ -285,43 +284,73 @@ export const SalesHistoryScreen = () => {
   );
 };
 
-// ─── INVENTORY SCREEN ──────────────────────────────────────────
+// ─── INVENTORY SCREEN (UPDATED WITH TOTAL VALUE) ───────────────────
 export const InventoryScreen = () => {
   const { theme } = useTheme();
   const [inventory, setInventory] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchInventory = async () => {
+    try {
+      const res = await api.get('/inventory');
+      const fetchedItems = res.data?.data?.items || res.data?.data || res.data || [];
+      setInventory(Array.isArray(fetchedItems) ? fetchedItems : []);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchInventory = async () => {
-      try {
-        const res = await api.get('/inventory');
-        const fetchedItems = res.data?.data?.items || res.data?.data || res.data || [];
-        setInventory(Array.isArray(fetchedItems) ? fetchedItems : []);
-      } catch (error) {
-        console.error(error);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchInventory();
   }, []);
 
+  const onRefresh = () => { setRefreshing(true); fetchInventory(); };
+
   if (loading) return <View style={[styles.center, { backgroundColor: theme.background }]}><ActivityIndicator size="large" color={theme.primary} /></View>;
 
+  // Calculate total inventory value
+  const totalValue = inventory.reduce((sum, item) => {
+    return sum + (Number(item.quantity) * Number(item.selling_price));
+  }, 0);
+
   return (
-    <ScrollView style={[styles.container, { backgroundColor: theme.background }]}>
+    <ScrollView 
+      style={[styles.container, { backgroundColor: theme.background }]}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
+    >
+      {/* ★ NEW: Total Inventory Value Card */}
+      <View style={[styles.summaryCard, { backgroundColor: theme.primary }]}>
+        <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14, fontWeight: '600', marginBottom: 4 }}>Total Inventory Value</Text>
+        <Text style={{ color: '#fff', fontSize: 28, fontWeight: 'bold' }}>₦{totalValue.toLocaleString()}</Text>
+      </View>
+
+      <Text style={[styles.sectionTitle, { color: theme.text }]}>All Items</Text>
+
       {inventory.length === 0 ? (
         <Text style={{ textAlign: 'center', marginTop: 20, color: theme.textMuted }}>No items in inventory</Text>
       ) : (
-        inventory.map(item => (
-          <View key={item.id} style={[styles.invCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 16, fontWeight: '600', color: theme.text }}>{item.item_name}</Text>
-              <Text style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>{item.quantity} {item.base_unit || 'Pieces'} in stock</Text>
+        inventory.map(item => {
+          const itemValue = Number(item.quantity) * Number(item.selling_price);
+          
+          return (
+            <View key={item.id} style={[styles.invCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 16, fontWeight: '600', color: theme.text }}>{item.item_name}</Text>
+                <Text style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>
+                  {item.quantity} {item.base_unit || 'Pieces'} @ ₦{Number(item.selling_price).toLocaleString()}
+                </Text>
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.success }}>₦{itemValue.toLocaleString()}</Text>
+                <Text style={{ fontSize: 10, color: theme.textMuted }}>Total Value</Text>
+              </View>
             </View>
-            <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.primary }}>₦{Number(item.selling_price).toLocaleString()}</Text>
-          </View>
-        ))
+          );
+        })
       )}
     </ScrollView>
   );
@@ -395,7 +424,6 @@ export const DebtorsScreen = () => {
         <Text style={{ textAlign: 'center', marginTop: 20, color: theme.textMuted }}>No debtors found. Great!</Text>
       ) : (
         debtors.map(debtor => {
-          // ★ NEW: Check if the debtor is overdue
           const isOverdue = debtor.due_date && new Date(debtor.due_date) < new Date() && Number(debtor.balance_remaining) > 0;
 
           return (
