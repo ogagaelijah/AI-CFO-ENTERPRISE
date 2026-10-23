@@ -1,10 +1,10 @@
 // frontend/src/pages/Sales.jsx
-// v1.2.1-prod — Opens SaleDetailModal immediately to eliminate perceived latency.
+// v1.3.0-prod — Adds local search + page size selector.
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
-import { Plus } from 'lucide-react';
+import { Plus, Search, X } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import Pagination from '../components/common/Pagination';
 import usePaginatedApi from '../hooks/usePaginatedApi';
@@ -15,6 +15,7 @@ import PartialPaymentModal from '../components/Sales/PartialPaymentModal';
 
 const Sales = () => {
   const { user } = useAuth();
+  const [searchQuery, setSearchQuery] = useState('');
 
   const {
     items: sales,
@@ -23,8 +24,10 @@ const Sales = () => {
     isInitialLoading,
     error: loadError,
     goToPage,
+    setLimit,
+    currentLimit,
     refresh,
-  } = usePaginatedApi('/sales', { itemKey: 'sales' });
+  } = usePaginatedApi('/sales', { itemKey: 'sales', initialLimit: 10 });
 
   const [showModal, setShowModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -39,11 +42,23 @@ const Sales = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  // Local search filter (only filters the current page of results)
+  const filteredSales = useMemo(() => {
+    if (!searchQuery.trim()) return sales;
+    const q = searchQuery.toLowerCase();
+    return sales.filter(
+      (sale) =>
+        (sale.customer_name || sale.customerName || '').toLowerCase().includes(q) ||
+        (sale.item_name || '').toLowerCase().includes(q) ||
+        (sale.invoice_no || sale.invoiceNo || '').toLowerCase().includes(q)
+    );
+  }, [sales, searchQuery]);
+
   const fetchSaleDetail = async (saleId) => {
-    setSelectedSale(null); // Clear previous data
-    setIsLoadingDetail(true); // Turn on spinner
-    setShowDetailModal(true); // Open the modal instantly
-    
+    setSelectedSale(null);
+    setIsLoadingDetail(true);
+    setShowDetailModal(true);
+
     try {
       const response = await api.get(`/sales/${saleId}`);
       const saleData = response.data?.data || response.data;
@@ -139,6 +154,26 @@ const Sales = () => {
       {displayError && <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg">{displayError}</div>}
       {success && <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-400 px-4 py-3 rounded-lg">{success}</div>}
 
+      {/* Search Bar */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+        <input
+          type="text"
+          placeholder="Search customer, item, or invoice on this page..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full pl-10 pr-10 py-2.5 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
+      </div>
+
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -154,14 +189,14 @@ const Sales = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-slate-700">
-              {sales.length === 0 ? (
+              {filteredSales.length === 0 ? (
                 <tr>
                   <td colSpan="7" className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
-                    No sales recorded yet. Record your first sale!
+                    {searchQuery ? 'No sales match your search on this page.' : 'No sales recorded yet. Record your first sale!'}
                   </td>
                 </tr>
               ) : (
-                sales.map((sale) => {
+                filteredSales.map((sale) => {
                   const status = sale.payment_status || sale.paymentStatus || 'UNPAID';
                   const statusColor = status === 'PAID' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
                                       status === 'PARTIAL' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
@@ -199,7 +234,12 @@ const Sales = () => {
             </tbody>
           </table>
         </div>
-        <Pagination pagination={pagination} onPageChange={goToPage} />
+        <Pagination 
+          pagination={pagination} 
+          onPageChange={goToPage} 
+          onLimitChange={setLimit}
+          currentLimit={currentLimit}
+        />
       </div>
 
       <RecordSaleModal
