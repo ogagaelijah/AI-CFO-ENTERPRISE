@@ -14,14 +14,9 @@ import { SalesHistoryScreen } from './src/screens/SalesHistoryScreen';
 import { InventoryScreen } from './src/screens/InventoryScreen';
 import { DebtorsScreen } from './src/screens/DebtorsScreen';
 import { ActivityIndicator, View } from 'react-native';
-import api from './src/services/api';
-import { registerForPushNotificationsAsync } from './src/services/notifications';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
-
-// ★ SAFE: Standard ref that works in production
-const navigationRef = React.createRef();
 
 function MainTabs() {
   const { theme } = useTheme();
@@ -55,36 +50,21 @@ function MainTabs() {
 function AppNavigator() {
   const { user, isLoading } = useAuth();
   const { isDark, theme } = useTheme();
+  
   const notificationListener = useRef();
   const responseListener = useRef();
 
   useEffect(() => {
-    if (user) {
-      registerForPushNotificationsAsync().then(token => {
-        if (token) {
-          api.post('/notifications/push-token', { pushToken: token }).catch(err => {
-             console.log('Failed to sync push token:', err.message);
-          });
-        }
-      });
+    // 1. Listener for notifications received while app is OPEN
+    notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
+      console.log('Notification received:', notification);
+    });
 
-      notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
-        console.log('Notification received:', notification);
-      });
-
-      responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
-        const data = response.notification.request.content.data;
-        
-        // Safe navigation check
-        if (data?.screen && navigationRef.current) {
-          try {
-            navigationRef.current.navigate(data.screen);
-          } catch (e) {
-            console.log('Navigation error:', e);
-          }
-        }
-      });
-    }
+    // 2. Listener for when user TAPS a notification (we just log it safely here to prevent crashes)
+    responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
+      const data = response.notification.request.content.data;
+      console.log('Notification tapped, payload:', data);
+    });
 
     return () => {
       if (notificationListener.current) {
@@ -94,7 +74,7 @@ function AppNavigator() {
         Notifications.removeNotificationSubscription(responseListener.current);
       }
     };
-  }, [user]);
+  }, []);
 
   if (isLoading) {
     return (
@@ -105,7 +85,7 @@ function AppNavigator() {
   }
 
   return (
-    <NavigationContainer ref={navigationRef} theme={isDark ? DarkTheme : DefaultTheme}>
+    <NavigationContainer theme={isDark ? DarkTheme : DefaultTheme}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {user ? (
           <Stack.Screen name="Main" component={MainTabs} />
