@@ -6,7 +6,7 @@ import { Link } from 'react-router-dom';
 import {
   TrendingUp, Package, Users, FileText, BarChart3, Zap,
   ChevronRight, Check, Loader2, Smartphone
-} from 'lucide-react'; // ★ Added Smartphone icon
+} from 'lucide-react';
 import Navbar from '../components/Landing/Navbar';
 import ProblemStatement from '../components/Landing/ProblemStatement';
 import AboutSection from '../components/Landing/AboutSection';
@@ -131,7 +131,6 @@ const Landing = () => {
             <Zap className="w-4 h-4 mr-2" />
             Built for African SMEs
           </div>
-          {/* ★ FIXED: text-3xl on mobile, added break-words */}
           <h1 className="text-3xl md:text-6xl font-bold text-gray-900 dark:text-white mb-6 leading-tight break-words">
             Manage your business like a <span className="text-primary-600 dark:text-gold-400">CFO</span>
           </h1>
@@ -150,7 +149,7 @@ const Landing = () => {
             </a>
           </div>
 
-          {/* ★ NEW: APK Download Link */}
+          {/* APK Download Link */}
           <div className="mt-6 flex flex-col items-center justify-center">
             <a 
               href="/ai-cfo-app.apk" 
