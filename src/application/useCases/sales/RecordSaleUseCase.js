@@ -1,8 +1,10 @@
 // src/application/useCases/sales/RecordSaleUseCase.js
-// v3.3.0-prod — Adds customizable due dates for debtors.
+// v3.5.0-prod — Adds mobile push notifications on sale creation.
 
 const Sale = require('../../../domain/entities/Sale');
 const { withTransaction } = require('../../../infrastructure/database/sqlite/connection');
+const UserRepository = require('../../../infrastructure/database/sqlite/repositories/UserRepository');
+const { sendBulkPushNotifications } = require('../../../infrastructure/services/notifications/ExpoPushService');
 
 class RecordSaleUseCase {
     constructor(
@@ -19,6 +21,7 @@ class RecordSaleUseCase {
         this.customerRepository = customerRepository;
         this.paymentRepository = paymentRepository;
         this.inventoryMovementRepository = inventoryMovementRepository;
+        this.userRepository = new UserRepository(); // ★ NEW: For fetching push tokens
     }
 
     async execute({
@@ -28,6 +31,7 @@ class RecordSaleUseCase {
         quantity,
         unitPrice,
         customerName,
+        customerPhone = null, 
         customerId = null,
         customerType = 'CUSTOMER',
         paymentStatus = 'UNPAID',
@@ -42,12 +46,11 @@ class RecordSaleUseCase {
         notes = '',
         unitMultiplier = 1,
         soldUnit = 'Piece',
-        dueDays = null, // ★ NEW
+        dueDays = null,
     }) {
         if (!userId) throw new Error('User ID is required');
         if (!businessId) throw new Error('Business ID is required');
 
-        // ★ NEW: Calculate the absolute due date based on dueDays
         let finalDueDate = null;
         if (dueDays !== null && dueDays !== undefined) {
             finalDueDate = new Date();
@@ -56,22 +59,42 @@ class RecordSaleUseCase {
 
         if (items && items.length > 0) {
             return this._executeMultiItem({
-                userId, businessId, items, customerName, customerId, customerType,
+                userId, businessId, items, customerName, customerPhone, customerId, customerType,
                 paymentStatus, amountPaid, saleDate, skipInventory, notes, finalDueDate,
             });
         }
 
         return this._executeSingleItem({
             userId, businessId, itemName, quantity, unitPrice,
-            customerName, customerId, customerType, paymentStatus, amountPaid,
+            customerName, customerPhone, customerId, customerType, paymentStatus, amountPaid,
             skipInventory, inventoryId, saleDate, notes,
             unitMultiplier, soldUnit, finalDueDate,
         });
     }
 
-    // ─────────────────────────────────────────────
-    // Movement writer — guarded, additive, non-blocking
-    // ─────────────────────────────────────────────
+    // ★ NEW: Helper function to send the push notification safely
+    async _sendSalePushNotification({ businessId, cashierId, customerName, itemNames, totalRevenue, invoiceNo }) {
+        try {
+            // Fetch all users with push tokens for this business, excluding the cashier
+            const members = await this.userRepository.findByBusinessIdWithPushTokens(businessId, cashierId);
+            const tokens = members.map(m => m.push_token).filter(Boolean);
+
+            if (tokens.length > 0) {
+                const bodyText = `${customerName} bought ${itemNames} for ₦${Number(totalRevenue).toLocaleString()}`;
+                await sendBulkPushNotifications(
+                    tokens,
+                    `🛒 New Sale: ${invoiceNo}`,
+                    bodyText,
+                    { screen: 'History', saleId: invoiceNo }
+                );
+                console.log(`[RecordSaleUseCase] Push notification sent to ${tokens.length} devices.`);
+            }
+        } catch (error) {
+            // We catch the error so a failed push notification never rolls back a successful sale
+            console.error('[RecordSaleUseCase] Failed to send sale push notification:', error.message);
+        }
+    }
+
     async _writeStockMovement({
         businessId, userId, inventoryItemId, quantity, unitCost,
         quantityBefore, quantityAfter, referenceId, createdAt, notes = '',
@@ -109,10 +132,7 @@ class RecordSaleUseCase {
         }
     }
 
-    // ─────────────────────────────────────────────
-    // Helpers shared by both paths
-    // ─────────────────────────────────────────────
-    async _findOrCreateCustomer({ businessId, customerName, customerId, customerType, userId }) {
+    async _findOrCreateCustomer({ businessId, customerName, customerPhone, customerId, customerType, userId }) {
         let finalCustomerId = customerId || null;
         let finalCustomerType = customerType || 'CUSTOMER';
 
@@ -125,6 +145,13 @@ class RecordSaleUseCase {
             { search: customerName, limit: 1 }
         );
         if (existing && existing.length > 0) {
+            if (customerPhone && !existing[0].phone) {
+                try {
+                    await this.customerRepository.update(existing[0].id, { phone: customerPhone });
+                } catch (e) {
+                    console.error('Failed to update customer phone:', e.message);
+                }
+            }
             return {
                 customerId: existing[0].id,
                 customerType: existing[0].type || 'CUSTOMER',
@@ -135,6 +162,7 @@ class RecordSaleUseCase {
         const created = await this.customerRepository.create(new Customer({
             businessId,
             name: customerName,
+            phone: customerPhone || null, 
             type: 'CUSTOMER',
         }));
         return {
@@ -186,7 +214,7 @@ class RecordSaleUseCase {
     }
 
     async _createOrUpdateDebtor({
-        businessId, userId, customerName, customerId, balanceRemaining, paidAmount,
+        businessId, userId, customerName, customerPhone, customerId, balanceRemaining, paidAmount,
         referenceId, notes, finalDueDate,
     }) {
         if (!customerName || balanceRemaining <= 0) return;
@@ -195,7 +223,6 @@ class RecordSaleUseCase {
         const openDebtor = (existing || []).find(d => Number(d.balance_remaining) > 0);
 
         if (openDebtor) {
-            // ★ NEW: Update existing debtor with the new due date if provided
             const updateData = {
                 total_owed: Number(openDebtor.total_owed || 0) + balanceRemaining,
                 balance_remaining: Number(openDebtor.balance_remaining || 0) + balanceRemaining,
@@ -203,10 +230,10 @@ class RecordSaleUseCase {
                 status: 'ACTIVE',
             };
             if (finalDueDate) updateData.due_date = finalDueDate.toISOString();
+            if (customerPhone && !openDebtor.customer_phone) updateData.customer_phone = customerPhone;
 
             await this.debtorRepository.update(openDebtor.id, updateData);
         } else {
-            // ★ NEW: If no date provided, fallback to 3 days
             const fallbackDate = new Date();
             fallbackDate.setDate(fallbackDate.getDate() + 3);
             const dueDateToSave = finalDueDate ? finalDueDate.toISOString() : fallbackDate.toISOString();
@@ -215,6 +242,7 @@ class RecordSaleUseCase {
                 user_id: userId,
                 business_id: businessId,
                 customer_name: customerName,
+                customer_phone: customerPhone || null, 
                 customer_id: customerId || null,
                 total_owed: balanceRemaining,
                 balance_remaining: balanceRemaining,
@@ -223,25 +251,25 @@ class RecordSaleUseCase {
                 reference_type: 'SALE',
                 reference_id: referenceId,
                 notes: notes || '',
-                due_date: dueDateToSave, // ★ Save the due date
+                due_date: dueDateToSave,
             });
         }
     }
 
-    // ─────────────────────────────────────────────
-    // Multi-item path
-    // ─────────────────────────────────────────────
     async _executeMultiItem({
-        userId, businessId, items, customerName, customerId, customerType,
+        userId, businessId, items, customerName, customerPhone, customerId, customerType,
         paymentStatus, amountPaid, saleDate, skipInventory, notes, finalDueDate,
     }) {
         if (items.length === 0) throw new Error('At least one item is required');
         if (!customerName) throw new Error('Customer name is required');
 
-        return withTransaction(async () => {
+        // ★ NEW: Capture the result outside the transaction so we can send the push safely
+        let resultToReturn = null;
+
+        await withTransaction(async () => {
             const { customerId: finalCustomerId, customerType: finalCustomerType } =
                 await this._findOrCreateCustomer({
-                    businessId, customerName, customerId, customerType, userId,
+                    businessId, customerName, customerPhone, customerId, customerType, userId,
                 });
 
             const processedItems = [];
@@ -271,6 +299,7 @@ class RecordSaleUseCase {
                         finalItemName = item.item_name || raw.name;
                         unitCost = Number(item.cost_price) || 0;
 
+                        // ★ UNTOUCHED: Stock validation logic
                         if (item.quantity < baseQty) {
                             throw new Error(
                                 `Insufficient stock for "${finalItemName}". ` +
@@ -390,12 +419,12 @@ class RecordSaleUseCase {
             }
 
             await this._createOrUpdateDebtor({
-                businessId, userId, customerName, customerId: finalCustomerId,
+                businessId, userId, customerName, customerPhone, customerId: finalCustomerId,
                 balanceRemaining, paidAmount: amountPaidValue,
                 referenceId: savedSale.id, notes, finalDueDate,
             });
 
-            return {
+            resultToReturn = {
                 success: true,
                 sale: savedSale,
                 customerId: finalCustomerId,
@@ -404,16 +433,29 @@ class RecordSaleUseCase {
                 totalRevenue: totalRevenueValue,
                 totalProfit: grossProfit,
                 items: processedItems,
+                invoiceNo: invoiceNo, // Passed out for notification
+                itemNames: itemNames  // Passed out for notification
             };
         });
+
+        // ★ NEW: Send notification AFTER transaction completes successfully
+        if (resultToReturn) {
+            await this._sendSalePushNotification({
+                businessId,
+                cashierId: userId,
+                customerName,
+                itemNames: resultToReturn.itemNames,
+                totalRevenue: resultToReturn.totalRevenue,
+                invoiceNo: resultToReturn.invoiceNo,
+            });
+        }
+
+        return resultToReturn;
     }
 
-    // ─────────────────────────────────────────────
-    // Single-item path
-    // ─────────────────────────────────────────────
     async _executeSingleItem({
         userId, businessId, itemName, quantity, unitPrice,
-        customerName, customerId, customerType, paymentStatus, amountPaid,
+        customerName, customerPhone, customerId, customerType, paymentStatus, amountPaid,
         skipInventory, inventoryId, saleDate, notes,
         unitMultiplier = 1, soldUnit = 'Piece', finalDueDate,
     }) {
@@ -431,7 +473,9 @@ class RecordSaleUseCase {
         }
         const balanceRemaining = paymentStatus === 'PAID' ? 0 : totalPrice - amountPaidValue;
 
-        return withTransaction(async () => {
+        let resultToReturn = null;
+
+        await withTransaction(async () => {
             let unitCost = 0;
             let cogs = 0;
             let grossProfit = 0;
@@ -452,6 +496,7 @@ class RecordSaleUseCase {
                     finalItemName = inventoryItem.item_name || itemName;
                     unitCost = Number(inventoryItem.cost_price) || 0;
 
+                    // ★ UNTOUCHED: Stock validation logic
                     if (inventoryItem.quantity < baseQty) {
                         throw new Error(
                             `Insufficient stock for "${finalItemName}". ` +
@@ -470,7 +515,7 @@ class RecordSaleUseCase {
 
             const { customerId: finalCustomerId, customerType: finalCustomerType } =
                 await this._findOrCreateCustomer({
-                    businessId, customerName, customerId, customerType, userId,
+                    businessId, customerName, customerPhone, customerId, customerType, userId,
                 });
 
             const saleDateObj = saleDate instanceof Date ? saleDate : new Date(saleDate);
@@ -555,22 +600,38 @@ class RecordSaleUseCase {
             }
 
             await this._createOrUpdateDebtor({
-                businessId, userId, customerName, customerId: finalCustomerId,
+                businessId, userId, customerName, customerPhone, customerId: finalCustomerId,
                 balanceRemaining, paidAmount: amountPaidValue,
                 referenceId: savedSale.id, notes, finalDueDate,
             });
 
-            return {
+            resultToReturn = {
                 success: true,
                 sale: savedSale,
                 customerId: finalCustomerId,
                 customerType: finalCustomerType,
                 unitCost, cogs, grossProfit, marginPercentage: marginPct,
+                invoiceNo: invoiceNo,
+                itemNames: finalItemName,
+                totalRevenue: totalPrice,
                 inventoryRemaining: finalInventoryId
                     ? (await this.inventoryRepository.findById(finalInventoryId))?.quantity
                     : null,
             };
         });
+
+        if (resultToReturn) {
+            await this._sendSalePushNotification({
+                businessId,
+                cashierId: userId,
+                customerName,
+                itemNames: resultToReturn.itemNames,
+                totalRevenue: resultToReturn.totalRevenue,
+                invoiceNo: resultToReturn.invoiceNo,
+            });
+        }
+
+        return resultToReturn;
     }
 }
 

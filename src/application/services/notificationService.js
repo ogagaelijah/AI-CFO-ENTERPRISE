@@ -1,14 +1,19 @@
 // src/application/services/notificationService.js
+// v1.1.0-prod — Adds Expo Push Notifications for mobile devices alongside web notifications.
+
 const logger = require('../../shared/utils/logger');
+const UserRepository = require('../../infrastructure/database/sqlite/repositories/UserRepository');
+const { sendBulkPushNotifications } = require('../../infrastructure/services/notifications/ExpoPushService');
 
 class NotificationService {
     constructor({ debtorRepository, notificationRepository }) {
         this.debtorRepository = debtorRepository;
         this.notificationRepository = notificationRepository;
+        this.userRepo = new UserRepository();
     }
 
-    // ✅ Create notification in database for web users
-    async createNotification(userId, debtor, daysOverdue) {
+    // ✅ Create notification in database for web users AND send mobile push
+    async createNotification(userId, debtor, daysOverdue, businessId) {
         try {
             const notification = {
                 user_id: userId,
@@ -21,7 +26,24 @@ class NotificationService {
             };
 
             const result = await this.notificationRepository.create(notification);
-            logger.info(`✅ Notification created for user ${userId}: ${debtor.customer_name}`);
+            logger.info(`✅ Web Notification created for user ${userId}: ${debtor.customer_name}`);
+
+            // ★ NEW: Send Push Notification to all active members with a token
+            if (businessId) {
+                const membersWithTokens = await this.userRepo.findByBusinessIdWithPushTokens(businessId);
+                const tokens = membersWithTokens.map(m => m.push_token).filter(Boolean);
+                
+                if (tokens.length > 0) {
+                    await sendBulkPushNotifications(
+                        tokens,
+                        `⚠️ Overdue Debtor: ${debtor.customer_name}`,
+                        `${debtor.customer_name} owes ₦${debtor.balance_remaining.toLocaleString()} and is ${daysOverdue} days overdue.`,
+                        { screen: 'Debtors', debtorId: debtor.id }
+                    );
+                    logger.info(`✅ Push Notification sent to ${tokens.length} devices`);
+                }
+            }
+
             return result;
         } catch (error) {
             logger.error('❌ Failed to create notification:', error.message);
@@ -29,7 +51,7 @@ class NotificationService {
         }
     }
 
-    // ✅ Check and create overdue notifications for web users
+    // ✅ Check and create overdue notifications
     async checkAndNotifyOverdueDebtors() {
         try {
             logger.info('🔍 Checking for overdue debtors...');
@@ -49,14 +71,15 @@ class NotificationService {
                     );
 
                     if (!existing) {
-                        await this.createNotification(debtor.user_id, debtor, daysOverdue);
+                        // Pass debtor.business_id to the createNotification function
+                        await this.createNotification(debtor.user_id, debtor, daysOverdue, debtor.business_id);
                         notificationsCreated++;
                         await new Promise(resolve => setTimeout(resolve, 100));
                     }
                 }
             }
 
-            logger.info(`✅ Created ${notificationsCreated} overdue notifications for web users`);
+            logger.info(`✅ Created ${notificationsCreated} overdue notifications`);
             return { notificationsCreated };
 
         } catch (error) {
