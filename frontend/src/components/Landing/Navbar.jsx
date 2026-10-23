@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
-import { Moon, Sun, Menu, X, ChevronDown, Smartphone } from 'lucide-react'; // ★ Added Smartphone icon
+import { Moon, Sun, Menu, X, ChevronDown, Smartphone } from 'lucide-react'; 
 import MegaMenu from './MegaMenu';
 import { NAV_ITEMS } from '../../data/navigation';
 
@@ -13,8 +13,8 @@ const HOVER_CLOSE_DELAY = 120; // ms — prevents flicker when moving into panel
 export default function Navbar() {
   const { theme, toggleTheme } = useTheme();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
-  const [openMenu, setOpenMenu] = useState(null);       // label of currently open mega panel
-  const [expandedMobile, setExpandedMobile] = useState(null); // label of expanded accordion on mobile
+  const [openMenu, setOpenMenu] = useState(null);       
+  const [expandedMobile, setExpandedMobile] = useState(null); 
   const closeTimer = useRef(null);
 
   // Clear any pending close timer on unmount
@@ -118,7 +118,7 @@ export default function Navbar() {
               )}
             </button>
 
-            {/* ★ NEW: Desktop Download Button */}
+            {/* Desktop Download Button */}
             <a
               href="/ai-cfo-app.apk"
               download
@@ -170,7 +170,7 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* Desktop mega panel — anchored to header bottom */}
+      {/* Desktop mega panel */}
       {openMenu && (
         <div className="hidden md:block">
           {NAV_ITEMS.filter((i) => i.label === openMenu).map((item) => (
@@ -266,7 +266,7 @@ export default function Navbar() {
 
             <hr className="border-gray-200 dark:border-slate-700 my-3" />
 
-            {/* ★ NEW: Mobile Download Button */}
+            {/* Mobile Download Button */}
             <a
               href="/ai-cfo-app.apk"
               download
