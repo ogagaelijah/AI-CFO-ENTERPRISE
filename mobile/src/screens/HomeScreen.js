@@ -2,21 +2,25 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, RefreshControl } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { useOffline } from '../context/OfflineContext';
-import { useTheme } from '../context/ThemeContext'; // ★ NEW
+import { useTheme } from '../context/ThemeContext';
 import api from '../services/api';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function HomeScreen({ navigation }) {
   const { user, logout } = useAuth();
   const { queue, syncQueue } = useOffline();
-  const { isDark, theme, toggleTheme } = useTheme(); // ★ NEW
+  const { isDark, theme, toggleTheme } = useTheme();
   const [stats, setStats] = useState({ sales: 0, profit: 0 });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchStats = async () => {
     try {
+      console.log("📊 Fetching dashboard stats...");
       const response = await api.get('/sales');
+      // Print the first 200 characters of the response to see the structure
+      console.log("📊 Sales response:", JSON.stringify(response.data).substring(0, 200)); 
+      
       const sales = response.data?.data?.sales || response.data?.data || response.data || [];
       const today = new Date().toISOString().split('T')[0];
       let todaySales = 0;
@@ -31,9 +35,12 @@ export default function HomeScreen({ navigation }) {
           }
         });
       }
+
+      console.log(`📊 Calculated: Today is ${today}, Sales: ${todaySales}, Profit: ${todayProfit}`);
       setStats({ sales: todaySales, profit: todayProfit });
     } catch (error) {
-      console.error('Failed to calculate dashboard stats:', error);
+      console.log("❌ Dashboard fetch error:", error.message);
+      console.log("❌ Response data:", error.response?.data);
     } finally {
       setLoading(false);
       setRefreshing(false);
