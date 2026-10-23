@@ -1,26 +1,24 @@
 // src/interfaces/http/routes/riskRoutes.js
-// SSOT v2.0.0-prod | Pure Forecast consumer · Zero base calculation · Production-ready
+// v2.1.0-prod — All routes require OWNER/ADMIN/MANAGER/ACCOUNTANT.
+// v2.0.0-prod — Pure Forecast consumer · Zero base calculation.
 
 'use strict';
 
 const express = require('express');
 const router = express.Router();
 const { authMiddleware } = require('../middleware/authMiddleware');
+const { requireRole } = require('../middleware/requireRole');
 
-// ===== Risk Core =====
 const RiskOrchestrator = require('../../../application/services/risk/RiskOrchestrator');
 const RiskDataProvider = require('../../../application/services/risk/integration/RiskDataProvider');
 
-// ===== Forecast (already exists – we only consume it) =====
 const ForecastOrchestrator = require('../../../application/services/forecast/ForecastOrchestrator');
 const ForecastDataProvider = require('../../../application/services/forecast/integration/ForecastDataProvider');
 const ProjectionEngine = require('../../../application/services/forecast/core/ProjectionEngine');
 
-// ===== Analytics (needed by Forecast) =====
 const AnalyticsProvider = require('../../../application/services/analytics/integration/AnalyticsProvider');
 const ReportEngineAdapter = require('../../../application/services/analytics/integration/ReportEngineAdapter');
 
-// ===== Report Services =====
 const ProfitLossService = require('../../../application/services/reports/ProfitLossService');
 const CashFlowService = require('../../../application/services/reports/CashFlowService');
 const BalanceSheetService = require('../../../application/services/reports/BalanceSheetService');
@@ -32,7 +30,6 @@ const YearlyReportService = require('../../../application/services/reports/Yearl
 const AgingService = require('../../../application/services/reports/AgingService');
 const InventoryReportService = require('../../../application/services/reports/InventoryReportService');
 
-// ===== Repositories =====
 const SaleRepository = require('../../../infrastructure/database/sqlite/repositories/SaleRepository');
 const PurchaseRepository = require('../../../infrastructure/database/sqlite/repositories/PurchaseRepository');
 const ExpenseRepository = require('../../../infrastructure/database/sqlite/repositories/ExpenseRepository');
@@ -43,7 +40,6 @@ const InventoryRepository = require('../../../infrastructure/database/sqlite/rep
 const ReportRepository = require('../../../infrastructure/database/sqlite/repositories/ReportRepository');
 const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository');
 
-// ===== Initialize Repositories =====
 const saleRepo = new SaleRepository();
 const purchaseRepo = new PurchaseRepository();
 const expenseRepo = new ExpenseRepository();
@@ -54,7 +50,6 @@ const inventoryRepo = new InventoryRepository();
 const reportRepo = new ReportRepository();
 const paymentRepo = new PaymentRepository();
 
-// ===== Initialize Report Services =====
 const profitLossService = new ProfitLossService({
   saleRepository: saleRepo,
   expenseRepository: expenseRepo,
@@ -151,7 +146,6 @@ const inventoryReportService = new InventoryReportService({
   reportRepository: reportRepo,
 });
 
-// ===== Report Engine Adapter =====
 const reportEngineAdapter = new ReportEngineAdapter({
   profitLossService,
   cashFlowService,
@@ -165,82 +159,53 @@ const reportEngineAdapter = new ReportEngineAdapter({
   inventoryReportService,
 });
 
-// ===== Analytics Provider =====
-const analyticsProvider = new AnalyticsProvider({
-  reportEngineAdapter,
-});
+const analyticsProvider = new AnalyticsProvider({ reportEngineAdapter });
 
-// ===== Forecast stack (pure consumer of Analytics) =====
-const forecastDataProvider = new ForecastDataProvider({
-  analyticsProvider,
-});
+const forecastDataProvider = new ForecastDataProvider({ analyticsProvider });
 
 const forecastOrchestrator = new ForecastOrchestrator({
   forecastDataProvider,
   projectionEngine: new ProjectionEngine(),
 });
 
-// ===== Risk stack (pure consumer of Forecast) =====
-const riskDataProvider = new RiskDataProvider({
-  forecastProvider: forecastOrchestrator,
-});
+const riskDataProvider = new RiskDataProvider({ forecastProvider: forecastOrchestrator });
 
-const riskOrchestrator = new RiskOrchestrator({
-  riskDataProvider,
-});
+const riskOrchestrator = new RiskOrchestrator({ riskDataProvider });
 
-// Apply auth
 router.use(authMiddleware);
+
+const FINANCIAL_ROLES = ['OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
 
 // =============================================
 // POST /api/risk/assess
 // =============================================
-router.post('/assess', async (req, res) => {
+router.post('/assess', requireRole(...FINANCIAL_ROLES), async (req, res) => {
   try {
     const userId = req.user.id || req.user.userId;
     const businessId = req.user.businessId || req.body.businessId;
     const { horizon = '30D', whatIfChanges = null } = req.body;
 
     if (!userId || !businessId) {
-      return res.status(400).json({
-        success: false,
-        message: 'userId and businessId are required',
-      });
+      return res.status(400).json({ success: false, message: 'userId and businessId are required' });
     }
 
     const validHorizons = ['7D', '14D', '30D', '60D', '90D', '6M', '12M'];
     if (!validHorizons.includes(horizon)) {
-      return res.status(400).json({
-        success: false,
-        message: `Invalid horizon. Allowed: ${validHorizons.join(', ')}`,
-      });
+      return res.status(400).json({ success: false, message: `Invalid horizon. Allowed: ${validHorizons.join(', ')}` });
     }
 
-    console.log(
-      `🛡️ [POST /api/risk/assess] userId=${userId} businessId=${businessId} horizon=${horizon}`
-    );
+    console.log(`🛡️ [POST /api/risk/assess] userId=${userId} businessId=${businessId} horizon=${horizon}`);
 
     const result = await riskOrchestrator.assess({
-      userId,
-      businessId,
-      horizon,
+      userId, businessId, horizon,
       whatIfChanges: Array.isArray(whatIfChanges) ? whatIfChanges : null,
     });
 
     if (result.error) {
-      return res.status(400).json({
-        success: false,
-        message: result.message || result.reason || 'Risk assessment failed',
-        data: result,
-      });
+      return res.status(400).json({ success: false, message: result.message || result.reason || 'Risk assessment failed', data: result });
     }
 
-    res.json({
-      success: true,
-      data: result,
-      horizon,
-      timestamp: new Date().toISOString(),
-    });
+    res.json({ success: true, data: result, horizon, timestamp: new Date().toISOString() });
   } catch (error) {
     console.error('❌ Error assessing risk:', error);
     res.status(500).json({
@@ -254,26 +219,18 @@ router.post('/assess', async (req, res) => {
 // =============================================
 // POST /api/risk/quick
 // =============================================
-router.post('/quick', async (req, res) => {
+router.post('/quick', requireRole(...FINANCIAL_ROLES), async (req, res) => {
   try {
     const userId = req.user.id || req.user.userId;
     const businessId = req.user.businessId || req.body.businessId;
     const { horizon = '30D' } = req.body;
 
     if (!userId || !businessId) {
-      return res.status(400).json({
-        success: false,
-        message: 'userId and businessId are required',
-      });
+      return res.status(400).json({ success: false, message: 'userId and businessId are required' });
     }
 
-    const result = await riskOrchestrator.assess({
-      userId,
-      businessId,
-      horizon,
-    });
+    const result = await riskOrchestrator.assess({ userId, businessId, horizon });
 
-    // Lightweight projection
     const quick = {
       overallScore: result.summary?.overallScore ?? 0,
       overallSeverity: result.summary?.overallSeverity ?? 'LOW',
@@ -283,43 +240,23 @@ router.post('/quick', async (req, res) => {
       summary: result.executiveSummary?.summary || '',
     };
 
-    res.json({
-      success: true,
-      data: quick,
-      timestamp: new Date().toISOString(),
-    });
+    res.json({ success: true, data: quick, timestamp: new Date().toISOString() });
   } catch (error) {
     console.error('❌ Error in quick risk:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Quick risk assessment failed',
-    });
+    res.status(500).json({ success: false, message: error.message || 'Quick risk assessment failed' });
   }
 });
 
 // =============================================
 // GET /api/risk/horizons
 // =============================================
-router.get('/horizons', (req, res) => {
+router.get('/horizons', requireRole(...FINANCIAL_ROLES), (req, res) => {
   res.json({
     success: true,
-    data: {
-      '7D': 7,
-      '14D': 14,
-      '30D': 30,
-      '60D': 60,
-      '90D': 90,
-      '6M': 180,
-      '12M': 365,
-    },
+    data: { '7D': 7, '14D': 14, '30D': 30, '60D': 60, '90D': 90, '6M': 180, '12M': 365 },
     labels: {
-      '7D': '7 Days',
-      '14D': '14 Days',
-      '30D': '30 Days',
-      '60D': '60 Days',
-      '90D': '90 Days',
-      '6M': '6 Months',
-      '12M': '12 Months',
+      '7D': '7 Days', '14D': '14 Days', '30D': '30 Days',
+      '60D': '60 Days', '90D': '90 Days', '6M': '6 Months', '12M': '12 Months',
     },
   });
 });
@@ -327,7 +264,7 @@ router.get('/horizons', (req, res) => {
 // =============================================
 // POST /api/risk/health-check
 // =============================================
-router.post('/health-check', (req, res) => {
+router.post('/health-check', requireRole(...FINANCIAL_ROLES), (req, res) => {
   res.json({
     success: true,
     message: 'Risk service is running',

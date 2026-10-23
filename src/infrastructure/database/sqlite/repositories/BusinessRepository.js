@@ -1,5 +1,5 @@
 // src/infrastructure/database/sqlite/repositories/BusinessRepository.js
-// Postgres async. Same logic as SQLite.
+// v1.1.0-prod — Adds count() and getIndustryDistribution() for Platform Admin.
 
 const BaseRepository = require('./BaseRepository');
 
@@ -121,6 +121,36 @@ class BusinessRepository extends BaseRepository {
             [userId]
         );
         return result.rows[0].count;
+    }
+
+    // ★ NEW: Platform Admin Methods
+    async count() {
+        const result = await this._query('SELECT COUNT(*)::int as count FROM businesses');
+        return result.rows[0]?.count || 0;
+    }
+
+    async getIndustryDistribution() {
+        const result = await this._query(
+            'SELECT industry, COUNT(*)::int as count FROM businesses GROUP BY industry'
+        );
+        
+        const colorMap = {
+            'Retail / Wholesale': 'bg-blue-500',
+            'Manufacturing': 'bg-orange-500',
+            'Construction': 'bg-amber-500',
+            'Healthcare': 'bg-red-500',
+            'Consultancy': 'bg-purple-500',
+            'Real Estate': 'bg-emerald-500',
+            'Education': 'bg-indigo-500',
+            'Logistics': 'bg-cyan-500',
+            'NGO': 'bg-rose-500',
+        };
+
+        return result.rows.map(row => ({
+            name: row.industry || 'Unknown',
+            count: row.count,
+            color: colorMap[row.industry] || 'bg-gray-500',
+        }));
     }
 }
 

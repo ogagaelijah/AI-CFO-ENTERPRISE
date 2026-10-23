@@ -1,5 +1,8 @@
 // src/interfaces/http/routes/timeEntryRoutes.js
-// v2.0.0-prod — Rate removed from POST/PUT (monthly retainer model).
+// v2.1.0-prod — Reads require OWNER/ADMIN/MANAGER/ACCOUNTANT.
+//               Writes require OWNER/ADMIN/MANAGER.
+//               Error classification applied.
+// v2.0.0-prod — Rate removed (monthly retainer model).
 
 'use strict';
 
@@ -16,6 +19,7 @@ const UpdateTimeEntryUseCase = require('../../../application/useCases/timeEntrie
 const DeleteTimeEntryUseCase = require('../../../application/useCases/timeEntries/DeleteTimeEntryUseCase');
 
 const { authMiddleware } = require('../middleware/authMiddleware');
+const { requireRole } = require('../middleware/requireRole');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
 
 const timeEntryRepo = new TimeEntryRepository();
@@ -35,8 +39,20 @@ const deleteTimeEntryUseCase = new DeleteTimeEntryUseCase({ timeEntryRepository:
 
 router.use(authMiddleware);
 
+const READ_ROLES = ['OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
+const WRITE_ROLES = ['OWNER', 'ADMIN', 'MANAGER'];
+
+function classifyError(error) {
+  const msg = String(error?.message || '');
+  if (/not found|does not exist/i.test(msg)) return 404;
+  if (/access denied|forbidden|permission/i.test(msg)) return 403;
+  if (/already exists|duplicate/i.test(msg)) return 409;
+  if (/required|invalid|must be|cannot|exceed|only whitespace|too long/i.test(msg)) return 400;
+  return 500;
+}
+
 // GET /api/time-entries
-router.get('/', async (req, res) => {
+router.get('/', requireRole(...READ_ROLES), async (req, res) => {
     try {
         const businessId = req.user.businessId;
         if (!businessId) {
@@ -57,19 +73,18 @@ router.get('/', async (req, res) => {
             fromDate: fromDate || null,
             toDate: toDate || null,
             search: search || null,
-            limit,
-            offset,
+            limit, offset,
         });
 
         res.json(result);
     } catch (error) {
         console.error('❌ [GET /api/time-entries]', error.message);
-        res.status(500).json({ success: false, message: error.message || 'Failed to fetch time entries' });
+        res.status(classifyError(error)).json({ success: false, message: error.message || 'Failed to fetch time entries' });
     }
 });
 
 // GET /api/time-entries/:id
-router.get('/:id', async (req, res) => {
+router.get('/:id', requireRole(...READ_ROLES), async (req, res) => {
     try {
         const businessId = req.user.businessId;
         const { id } = req.params;
@@ -81,76 +96,60 @@ router.get('/:id', async (req, res) => {
 
         res.json(result);
     } catch (error) {
-        const status = /not found/i.test(error.message) ? 404 : 500;
         console.error('❌ [GET /api/time-entries/:id]', error.message);
-        res.status(status).json({ success: false, message: error.message });
+        res.status(classifyError(error)).json({ success: false, message: error.message });
     }
 });
 
-// POST /api/time-entries
-router.post('/', invalidateAfterWrite, async (req, res) => {
+// POST /api/time-entries — OWNER / ADMIN / MANAGER
+router.post('/', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const businessId = req.user.businessId;
         if (!businessId) {
             return res.status(400).json({ success: false, message: 'Business ID is required' });
         }
 
-        const {
-            projectId, customerId, entryDate, hours,
-            description, billable, metadata,
-        } = req.body;
+        const { projectId, customerId, entryDate, hours, description, billable, metadata } = req.body;
 
         const result = await createTimeEntryUseCase.execute({
             businessId,
             projectId: projectId || null,
             customerId: customerId || null,
             entryDate: entryDate ? new Date(entryDate) : new Date(),
-            hours,
-            description,
-            billable,
-            metadata,
+            hours, description, billable, metadata,
         });
 
         res.status(201).json(result);
     } catch (error) {
         console.error('❌ [POST /api/time-entries]', error.message);
-        res.status(400).json({ success: false, message: error.message });
+        res.status(classifyError(error)).json({ success: false, message: error.message });
     }
 });
 
-// PUT /api/time-entries/:id
-router.put('/:id', invalidateAfterWrite, async (req, res) => {
+// PUT /api/time-entries/:id — OWNER / ADMIN / MANAGER
+router.put('/:id', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const businessId = req.user.businessId;
         const { id } = req.params;
 
-        const {
-            projectId, customerId, entryDate, hours,
-            description, billable, metadata,
-        } = req.body;
+        const { projectId, customerId, entryDate, hours, description, billable, metadata } = req.body;
 
         const result = await updateTimeEntryUseCase.execute({
             timeEntryId: parseInt(id, 10),
-            businessId,
-            projectId,
-            customerId,
+            businessId, projectId, customerId,
             entryDate: entryDate !== undefined ? (entryDate ? new Date(entryDate) : null) : undefined,
-            hours,
-            description,
-            billable,
-            metadata,
+            hours, description, billable, metadata,
         });
 
         res.json(result);
     } catch (error) {
-        const status = /not found/i.test(error.message) ? 404 : /access denied/i.test(error.message) ? 403 : 400;
         console.error('❌ [PUT /api/time-entries/:id]', error.message);
-        res.status(status).json({ success: false, message: error.message });
+        res.status(classifyError(error)).json({ success: false, message: error.message });
     }
 });
 
-// DELETE /api/time-entries/:id
-router.delete('/:id', invalidateAfterWrite, async (req, res) => {
+// DELETE /api/time-entries/:id — OWNER / ADMIN / MANAGER
+router.delete('/:id', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const businessId = req.user.businessId;
         const { id } = req.params;
@@ -162,9 +161,8 @@ router.delete('/:id', invalidateAfterWrite, async (req, res) => {
 
         res.json(result);
     } catch (error) {
-        const status = /not found/i.test(error.message) ? 404 : 400;
         console.error('❌ [DELETE /api/time-entries/:id]', error.message);
-        res.status(status).json({ success: false, message: error.message });
+        res.status(classifyError(error)).json({ success: false, message: error.message });
     }
 });
 

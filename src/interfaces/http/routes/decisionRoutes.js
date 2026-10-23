@@ -1,26 +1,24 @@
 // src/interfaces/http/routes/decisionRoutes.js
-// SSOT v2.0.0-prod | Pure Risk consumer · Zero base calculation · Production-ready
+// v2.1.0-prod — All routes require OWNER/ADMIN/MANAGER/ACCOUNTANT.
+// v2.0.0-prod — Pure Risk consumer · Zero base calculation.
 
 'use strict';
 
 const express = require('express');
 const router = express.Router();
 const { authMiddleware } = require('../middleware/authMiddleware');
+const { requireRole } = require('../middleware/requireRole');
 
-// ===== Decision Core =====
 const DecisionEngine = require('../../../application/services/decision/DecisionEngine');
 const DecisionDataProvider = require('../../../application/services/decision/integration/DecisionDataProvider');
 
-// ===== Risk stack (we only consume it) =====
 const RiskOrchestrator = require('../../../application/services/risk/RiskOrchestrator');
 const RiskDataProvider = require('../../../application/services/risk/integration/RiskDataProvider');
 
-// ===== Forecast stack =====
 const ForecastOrchestrator = require('../../../application/services/forecast/ForecastOrchestrator');
 const ForecastDataProvider = require('../../../application/services/forecast/integration/ForecastDataProvider');
 const ProjectionEngine = require('../../../application/services/forecast/core/ProjectionEngine');
 
-// ===== Analytics + Reports (same wiring as forecastRoutes / riskRoutes) =====
 const AnalyticsProvider = require('../../../application/services/analytics/integration/AnalyticsProvider');
 const ReportEngineAdapter = require('../../../application/services/analytics/integration/ReportEngineAdapter');
 
@@ -45,7 +43,6 @@ const InventoryRepository = require('../../../infrastructure/database/sqlite/rep
 const ReportRepository = require('../../../infrastructure/database/sqlite/repositories/ReportRepository');
 const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository');
 
-// ===== Initialize =====
 const saleRepo = new SaleRepository();
 const purchaseRepo = new PurchaseRepository();
 const expenseRepo = new ExpenseRepository();
@@ -62,6 +59,7 @@ const profitLossService = new ProfitLossService({
   incomeRepository: incomeRepo,
   reportRepository: reportRepo,
 });
+
 const cashFlowService = new CashFlowService({
   paymentRepository: paymentRepo,
   saleRepository: saleRepo,
@@ -71,6 +69,7 @@ const cashFlowService = new CashFlowService({
   creditorRepository: creditorRepo,
   reportRepository: reportRepo,
 });
+
 const balanceSheetService = new BalanceSheetService({
   saleRepository: saleRepo,
   expenseRepository: expenseRepo,
@@ -80,6 +79,7 @@ const balanceSheetService = new BalanceSheetService({
   inventoryRepository: inventoryRepo,
   reportRepository: reportRepo,
 });
+
 const dailyReportService = new DailyReportService({
   saleRepository: saleRepo,
   expenseRepository: expenseRepo,
@@ -90,6 +90,7 @@ const dailyReportService = new DailyReportService({
   paymentRepository: paymentRepo,
   reportRepository: reportRepo,
 });
+
 const weeklyReportService = new WeeklyReportService({
   saleRepository: saleRepo,
   expenseRepository: expenseRepo,
@@ -100,6 +101,7 @@ const weeklyReportService = new WeeklyReportService({
   paymentRepository: paymentRepo,
   reportRepository: reportRepo,
 });
+
 const monthlyReportService = new MonthlyReportService({
   saleRepository: saleRepo,
   expenseRepository: expenseRepo,
@@ -110,6 +112,7 @@ const monthlyReportService = new MonthlyReportService({
   paymentRepository: paymentRepo,
   reportRepository: reportRepo,
 });
+
 const yearlyReportService = new YearlyReportService({
   saleRepository: saleRepo,
   expenseRepository: expenseRepo,
@@ -120,6 +123,7 @@ const yearlyReportService = new YearlyReportService({
   paymentRepository: paymentRepo,
   reportRepository: reportRepo,
 });
+
 const executiveReportService = new ExecutiveReportService({
   saleRepository: saleRepo,
   expenseRepository: expenseRepo,
@@ -130,12 +134,14 @@ const executiveReportService = new ExecutiveReportService({
   paymentRepository: paymentRepo,
   reportRepository: reportRepo,
 });
+
 const agingService = new AgingService({
   debtorRepository: debtorRepo,
   creditorRepository: creditorRepo,
   saleRepository: saleRepo,
   purchaseRepository: purchaseRepo,
 });
+
 const inventoryReportService = new InventoryReportService({
   inventoryRepository: inventoryRepo,
   saleRepository: saleRepo,
@@ -157,74 +163,57 @@ const reportEngineAdapter = new ReportEngineAdapter({
 });
 
 const analyticsProvider = new AnalyticsProvider({ reportEngineAdapter });
+
 const forecastDataProvider = new ForecastDataProvider({ analyticsProvider });
+
 const forecastOrchestrator = new ForecastOrchestrator({
   forecastDataProvider,
   projectionEngine: new ProjectionEngine(),
 });
 
-const riskDataProvider = new RiskDataProvider({
-  forecastProvider: forecastOrchestrator,
-});
+const riskDataProvider = new RiskDataProvider({ forecastProvider: forecastOrchestrator });
+
 const riskOrchestrator = new RiskOrchestrator({ riskDataProvider });
 
-const decisionDataProvider = new DecisionDataProvider({
-  riskProvider: riskOrchestrator,
-});
+const decisionDataProvider = new DecisionDataProvider({ riskProvider: riskOrchestrator });
+
 const decisionEngine = new DecisionEngine({ decisionDataProvider });
 
 router.use(authMiddleware);
 
+const FINANCIAL_ROLES = ['OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
+
 // =============================================
 // POST /api/decision/generate
 // =============================================
-router.post('/generate', async (req, res) => {
+router.post('/generate', requireRole(...FINANCIAL_ROLES), async (req, res) => {
   try {
     const userId = req.user.id || req.user.userId;
     const businessId = req.user.businessId || req.body.businessId;
     const { horizon = '30D', whatIfChanges = null, limit = 30 } = req.body;
 
     if (!userId || !businessId) {
-      return res.status(400).json({
-        success: false,
-        message: 'userId and businessId are required',
-      });
+      return res.status(400).json({ success: false, message: 'userId and businessId are required' });
     }
 
     const validHorizons = ['7D', '14D', '30D', '60D', '90D', '6M', '12M'];
     if (!validHorizons.includes(horizon)) {
-      return res.status(400).json({
-        success: false,
-        message: `Invalid horizon. Allowed: ${validHorizons.join(', ')}`,
-      });
+      return res.status(400).json({ success: false, message: `Invalid horizon. Allowed: ${validHorizons.join(', ')}` });
     }
 
-    console.log(
-      `🧭 [POST /api/decision/generate] userId=${userId} businessId=${businessId} horizon=${horizon}`
-    );
+    console.log(`🧭 [POST /api/decision/generate] userId=${userId} businessId=${businessId} horizon=${horizon}`);
 
     const result = await decisionEngine.generate({
-      userId,
-      businessId,
-      horizon,
+      userId, businessId, horizon,
       whatIfChanges: Array.isArray(whatIfChanges) ? whatIfChanges : null,
       limit: Number(limit) || 30,
     });
 
     if (result.error) {
-      return res.status(400).json({
-        success: false,
-        message: result.message || result.reason || 'Decision generation failed',
-        data: result,
-      });
+      return res.status(400).json({ success: false, message: result.message || result.reason || 'Decision generation failed', data: result });
     }
 
-    res.json({
-      success: true,
-      data: result,
-      horizon,
-      timestamp: new Date().toISOString(),
-    });
+    res.json({ success: true, data: result, horizon, timestamp: new Date().toISOString() });
   } catch (error) {
     console.error('❌ Error generating decisions:', error);
     res.status(500).json({
@@ -238,13 +227,10 @@ router.post('/generate', async (req, res) => {
 // =============================================
 // GET /api/decision/horizons
 // =============================================
-router.get('/horizons', (req, res) => {
+router.get('/horizons', requireRole(...FINANCIAL_ROLES), (req, res) => {
   res.json({
     success: true,
-    data: {
-      '7D': 7, '14D': 14, '30D': 30, '60D': 60,
-      '90D': 90, '6M': 180, '12M': 365,
-    },
+    data: { '7D': 7, '14D': 14, '30D': 30, '60D': 60, '90D': 90, '6M': 180, '12M': 365 },
     labels: {
       '7D': '7 Days', '14D': '14 Days', '30D': '30 Days',
       '60D': '60 Days', '90D': '90 Days', '6M': '6 Months', '12M': '12 Months',
@@ -255,7 +241,7 @@ router.get('/horizons', (req, res) => {
 // =============================================
 // POST /api/decision/health-check
 // =============================================
-router.post('/health-check', (req, res) => {
+router.post('/health-check', requireRole(...FINANCIAL_ROLES), (req, res) => {
   res.json({
     success: true,
     message: 'Decision service is running',

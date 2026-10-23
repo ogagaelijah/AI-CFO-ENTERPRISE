@@ -1,15 +1,19 @@
 // frontend/src/pages/settings/TeamTab.jsx
-// v1.0.0-prod — Team management: members list, invite, pending invites.
+// v1.5.0-prod — Uses user.planData from AuthContext to fix trial gating.
 
 import { useState, useEffect, useCallback } from 'react';
-import { UserPlus, RefreshCw, Loader2, AlertCircle, Mail } from 'lucide-react';
+import { UserPlus, RefreshCw, Loader2, AlertCircle, Mail, Lock } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import useRole from '../../hooks/useRole';
 import api from '../../services/api';
 import InviteMemberModal from '../../components/team/InviteMemberModal';
 import MemberRow from '../../components/team/MemberRow';
 
 const TeamTab = () => {
   const { user } = useAuth();
+  const { isPlatformStaff } = useRole();
+  
   const [members, setMembers] = useState([]);
   const [pendingInvites, setPendingInvites] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -20,6 +24,19 @@ const TeamTab = () => {
 
   const isOwner = user?.role === 'OWNER';
   const isAdmin = user?.role === 'ADMIN';
+
+  // ★ THE REAL FIX: Read from user.planData (which your AuthContext sets)
+  const planData = user?.planData || {};
+  
+  // If status is 'trial', treat them as Pro.
+  const isTrial = planData?.status === 'trial' || planData?.isTrial === true;
+  
+  // They are basic ONLY if they are not trial, not platform staff, and their plan is basic/free
+  const isBasicPlan = !isPlatformStaff && !isTrial && (planData?.id === 'basic' || planData?.id === 'free');
+  
+  // If trial, allow 3 users. Otherwise use plan limit.
+  const maxUsers = isPlatformStaff ? -1 : (isTrial ? 3 : (planData?.limits?.users || 1));
+  const isLimitReached = maxUsers !== -1 && members.length >= maxUsers;
 
   const loadTeam = useCallback(async () => {
     setIsLoading(true);
@@ -92,7 +109,7 @@ const TeamTab = () => {
     );
   }
 
-  const canInvite = isOwner || isAdmin;
+  const canInvite = isOwner || isAdmin || isPlatformStaff;
 
   return (
     <div className="space-y-6">
@@ -109,7 +126,6 @@ const TeamTab = () => {
         </div>
       )}
 
-      {/* Header + Invite button */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
@@ -128,7 +144,8 @@ const TeamTab = () => {
           >
             <RefreshCw className="w-5 h-5" />
           </button>
-          {canInvite && (
+          
+          {canInvite && !isBasicPlan && !isLimitReached && (
             <button
               onClick={() => { setError(''); setIsInviteModalOpen(true); }}
               className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium transition"
@@ -137,10 +154,19 @@ const TeamTab = () => {
               Invite member
             </button>
           )}
+
+          {canInvite && (isBasicPlan || isLimitReached) && (
+            <Link
+              to="/subscription"
+              className="flex items-center gap-2 px-4 py-2 bg-gold-500 hover:bg-gold-600 text-slate-900 rounded-lg font-medium transition"
+            >
+              <Lock className="w-4 h-4" />
+              Upgrade to Pro
+            </Link>
+          )}
         </div>
       </div>
 
-      {/* Members table */}
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -167,7 +193,6 @@ const TeamTab = () => {
         </div>
       </div>
 
-      {/* Pending invites */}
       {pendingInvites.length > 0 && (
         <div>
           <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">

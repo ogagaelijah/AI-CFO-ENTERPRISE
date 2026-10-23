@@ -1,11 +1,15 @@
 // src/application/useCases/auth/LoginUseCase.js
+// v1.1.0-prod — Allows Platform Staff to login without a business.
 
 const Email = require('../../../domain/valueObjects/Email');
 const PhoneNumber = require('../../../domain/valueObjects/PhoneNumber');
+const jwt = require('jsonwebtoken');
 
 class LoginUseCase {
-    constructor(userRepository) {
+    constructor(userRepository, memberRepository, businessRepository) {
         this.userRepository = userRepository;
+        this.memberRepository = memberRepository;
+        this.businessRepository = businessRepository;
     }
 
     async execute({ identifier, password }) {
@@ -15,17 +19,14 @@ class LoginUseCase {
         try {
             const email = new Email(identifier);
             user = await this.userRepository.findByEmail(email.getValue());
-        } catch (error) {
-            // Not a valid email, try phone
-        }
+        } catch (error) { /* Not a valid email */ }
 
+        // Try phone
         if (!user) {
             try {
                 const phone = new PhoneNumber(identifier);
                 user = await this.userRepository.findByPhoneNumber(phone.getValue());
-            } catch (error) {
-                // Not a valid phone either
-            }
+            } catch (error) { /* Not a valid phone */ }
         }
 
         if (!user) {
@@ -37,8 +38,36 @@ class LoginUseCase {
             throw new Error('Invalid password.');
         }
 
+        // ★ 2FA INTERCEPT
+        if (user.twoFactorEnabled) {
+            const tempToken = jwt.sign(
+                { id: user.id, requires2FA: true },
+                process.env.JWT_SECRET || 'your-secret-key',
+                { expiresIn: '5m' }
+            );
+            return { requires2FA: true, tempToken };
+        }
+
+        // Standard Login Resolution
+        const membership = await this.memberRepository.findFirstActiveByUser(user.id);
+        let business = null;
+
+        if (membership) {
+            business = await this.businessRepository.findById(membership.businessId);
+        }
+        
+        // ★ NEW: If they are Platform Staff, they don't need a business to log in.
+        const isPlatformStaff = Boolean(user.platformRole);
+
+        if (!business && !isPlatformStaff) {
+            throw new Error('No business associated with this account. Please contact support.');
+        }
+
         return {
-            user: user.toJSON(),
+            requires2FA: false,
+            user: user,
+            business: business,
+            role: membership?.role || (isPlatformStaff ? 'PLATFORM_STAFF' : 'OWNER'),
             message: 'Login successful!',
         };
     }

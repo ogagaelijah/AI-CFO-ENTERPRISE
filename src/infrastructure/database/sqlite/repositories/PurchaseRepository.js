@@ -1,11 +1,20 @@
 // src/infrastructure/database/sqlite/repositories/PurchaseRepository.js
-// v3.1.0-prod — Postgres async. Same logic as SQLite v3.0.1.
+// v3.4.0-prod — Fixed Title Case regex to prevent casing duplicates.
 
 const BaseRepository = require('./BaseRepository');
 
 class PurchaseRepository extends BaseRepository {
     constructor() {
         super('purchases');
+    }
+
+    // ★ FIXED: Lowercase everything first, THEN capitalize the first letter of each word
+    _cleanName(str) {
+        if (!str) return null;
+        return String(str)
+            .trim()
+            .toLowerCase()
+            .replace(/\b\w/g, c => c.toUpperCase());
     }
 
     _hydrate(row) {
@@ -41,8 +50,8 @@ class PurchaseRepository extends BaseRepository {
                 purchaseData.userId ?? purchaseData.user_id ?? null,
                 purchaseData.businessId ?? purchaseData.business_id ?? null,
                 purchaseData.supplier_id ?? purchaseData.supplierId ?? null,
-                purchaseData.supplier_name ?? purchaseData.supplierName ?? null,
-                purchaseData.item_name ?? purchaseData.itemName ?? null,
+                this._cleanName(purchaseData.supplier_name ?? purchaseData.supplierName),
+                this._cleanName(purchaseData.item_name ?? purchaseData.itemName),
                 purchaseData.quantity || 0,
                 (purchaseData.unit_cost ?? purchaseData.unitCost) || 0,
                 (purchaseData.total_cost ?? purchaseData.totalCost) || 0,
@@ -92,9 +101,9 @@ class PurchaseRepository extends BaseRepository {
     async findBySupplier(businessId, supplierName) {
         const result = await this._query(
             `SELECT * FROM purchases
-             WHERE business_id = $1 AND supplier_name LIKE $2
+             WHERE business_id = $1 AND LOWER(supplier_name) LIKE LOWER($2)
              ORDER BY purchase_date DESC`,
-            [businessId, `%${supplierName}%`]
+            [businessId, `%${String(supplierName || '').trim()}%`]
         );
         return result.rows.map(row => this._hydrate(row));
     }
@@ -170,9 +179,13 @@ class PurchaseRepository extends BaseRepository {
         let i = 1;
 
         const map = {
-            supplier_name: data.supplier_name ?? data.supplierName,
+            supplier_name: data.supplier_name !== undefined || data.supplierName !== undefined
+                ? this._cleanName(data.supplier_name ?? data.supplierName)
+                : undefined,
             supplier_id: data.supplier_id ?? data.supplierId,
-            item_name: data.item_name ?? data.itemName,
+            item_name: data.item_name !== undefined || data.itemName !== undefined
+                ? this._cleanName(data.item_name ?? data.itemName)
+                : undefined,
             quantity: data.quantity,
             unit_cost: data.unit_cost ?? data.unitCost,
             total_cost: data.total_cost ?? data.totalCost,

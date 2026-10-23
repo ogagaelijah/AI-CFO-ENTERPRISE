@@ -1,5 +1,7 @@
 // src/interfaces/http/routes/pledgeRoutes.js
-// v1.0.0-prod — NGO pledges endpoints.
+// v1.1.0-prod — Reads require OWNER/ADMIN/MANAGER/ACCOUNTANT.
+//               Writes require OWNER/ADMIN/MANAGER.
+//               Error classification applied.
 
 'use strict';
 
@@ -17,6 +19,7 @@ const UpdatePledgeUseCase = require('../../../application/useCases/pledges/Updat
 const DeletePledgeUseCase = require('../../../application/useCases/pledges/DeletePledgeUseCase');
 
 const { authMiddleware } = require('../middleware/authMiddleware');
+const { requireRole } = require('../middleware/requireRole');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
 
 const pledgeRepo = new PledgeRepository();
@@ -40,8 +43,20 @@ const deletePledge = new DeletePledgeUseCase({
 
 router.use(authMiddleware);
 
+const READ_ROLES = ['OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
+const WRITE_ROLES = ['OWNER', 'ADMIN', 'MANAGER'];
+
+function classifyError(error) {
+  const msg = String(error?.message || '');
+  if (/not found|does not exist/i.test(msg)) return 404;
+  if (/access denied|forbidden|permission/i.test(msg)) return 403;
+  if (/already exists|duplicate/i.test(msg)) return 409;
+  if (/required|invalid|must be|cannot|exceed|only whitespace|too long|donation|reference|partial/i.test(msg)) return 400;
+  return 500;
+}
+
 // GET /api/pledges
-router.get('/', async (req, res) => {
+router.get('/', requireRole(...READ_ROLES), async (req, res) => {
     try {
         const businessId = req.user.businessId;
         if (!businessId) {
@@ -56,19 +71,18 @@ router.get('/', async (req, res) => {
             donorId: donorId || null,
             category: category || null,
             search: search || null,
-            limit,
-            offset,
+            limit, offset,
         });
 
         res.json(result);
     } catch (error) {
         console.error('❌ [GET /api/pledges]', error.message);
-        res.status(500).json({ success: false, message: error.message || 'Failed to fetch pledges' });
+        res.status(classifyError(error)).json({ success: false, message: error.message || 'Failed to fetch pledges' });
     }
 });
 
 // GET /api/pledges/:id
-router.get('/:id', async (req, res) => {
+router.get('/:id', requireRole(...READ_ROLES), async (req, res) => {
     try {
         const businessId = req.user.businessId;
         const { id } = req.params;
@@ -78,17 +92,13 @@ router.get('/:id', async (req, res) => {
         });
         res.json(result);
     } catch (error) {
-        const status =
-            /not found/i.test(error.message) ? 404 :
-            /access denied/i.test(error.message) ? 403 :
-            500;
         console.error('❌ [GET /api/pledges/:id]', error.message);
-        res.status(status).json({ success: false, message: error.message });
+        res.status(classifyError(error)).json({ success: false, message: error.message });
     }
 });
 
-// POST /api/pledges
-router.post('/', invalidateAfterWrite, async (req, res) => {
+// POST /api/pledges — OWNER / ADMIN / MANAGER
+router.post('/', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const businessId = req.user.businessId;
         if (!businessId) {
@@ -104,23 +114,18 @@ router.post('/', invalidateAfterWrite, async (req, res) => {
             category: category || 'GENERAL',
             pledgeDate: pledgeDate ? new Date(pledgeDate) : new Date(),
             dueDate: dueDate ? new Date(dueDate) : null,
-            notes,
-            metadata,
+            notes, metadata,
         });
 
         res.status(201).json(result);
     } catch (error) {
-        const status =
-            /not found/i.test(error.message) ? 404 :
-            /access denied/i.test(error.message) ? 403 :
-            400;
         console.error('❌ [POST /api/pledges]', error.message);
-        res.status(status).json({ success: false, message: error.message });
+        res.status(classifyError(error)).json({ success: false, message: error.message });
     }
 });
 
-// PUT /api/pledges/:id
-router.put('/:id', invalidateAfterWrite, async (req, res) => {
+// PUT /api/pledges/:id — OWNER / ADMIN / MANAGER
+router.put('/:id', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const businessId = req.user.businessId;
         const { id } = req.params;
@@ -129,29 +134,20 @@ router.put('/:id', invalidateAfterWrite, async (req, res) => {
 
         const result = await updatePledge.execute({
             pledgeId: parseInt(id, 10),
-            businessId,
-            donorId,
-            amount,
-            category,
+            businessId, donorId, amount, category,
             dueDate: dueDate !== undefined ? (dueDate ? new Date(dueDate) : null) : undefined,
-            status,
-            notes,
-            metadata,
+            status, notes, metadata,
         });
 
         res.json(result);
     } catch (error) {
-        const status =
-            /not found/i.test(error.message) ? 404 :
-            /access denied/i.test(error.message) ? 403 :
-            400;
         console.error('❌ [PUT /api/pledges/:id]', error.message);
-        res.status(status).json({ success: false, message: error.message });
+        res.status(classifyError(error)).json({ success: false, message: error.message });
     }
 });
 
-// DELETE /api/pledges/:id
-router.delete('/:id', invalidateAfterWrite, async (req, res) => {
+// DELETE /api/pledges/:id — OWNER / ADMIN / MANAGER
+router.delete('/:id', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const businessId = req.user.businessId;
         const { id } = req.params;
@@ -163,12 +159,8 @@ router.delete('/:id', invalidateAfterWrite, async (req, res) => {
 
         res.json(result);
     } catch (error) {
-        const status =
-            /not found/i.test(error.message) ? 404 :
-            /donation|reference|partial/i.test(error.message) ? 409 :
-            400;
         console.error('❌ [DELETE /api/pledges/:id]', error.message);
-        res.status(status).json({ success: false, message: error.message });
+        res.status(classifyError(error)).json({ success: false, message: error.message });
     }
 });
 

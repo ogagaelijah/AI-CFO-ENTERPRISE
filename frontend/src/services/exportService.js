@@ -1,16 +1,8 @@
 // frontend/src/services/exportService.js
-// v3.1.0-prod — Complete rewrite against the actual backend shapes.
-//               Handles all 8 reports: executive, pl, cashflow,
-//               balance-sheet, daily, weekly, monthly, yearly.
-//               PDF uses NGN prefix (jsPDF Helvetica lacks ₦).
-//               Watermark on every PDF page.
-//               v3.0.1: Control Check label uses ASCII hyphen (jsPDF's
-//                       Helvetica renders the Unicode minus as '"').
-//               v3.1.0: Balance sheet PDF/Excel now render every section
-//                       the UI shows (non-current assets/liabilities,
-//                       other current assets/liabilities, short/long-term
-//                       debt, other equity, drawings, TOTAL LIABILITIES +
-//                       EQUITY).
+// v3.2.0-prod — Complete rewrite against the actual backend shapes.
+//               Handles all 10 reports: executive, pl, cashflow,
+//               balance-sheet, daily, weekly, monthly, yearly,
+//               inventory-movement, inventory-valuation.
 
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -29,11 +21,8 @@ const toNumber = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-// PDF currency: use NGN prefix, no ₦ glyph issues.
 const pdfMoney = (v) => `NGN ${Math.round(toNumber(v)).toLocaleString()}`;
-// Excel currency: ₦ works fine in XLSX.
 const xlsMoney = (v) => `₦${Math.round(toNumber(v)).toLocaleString()}`;
-
 const pct = (v) => `${toNumber(v).toFixed(1)}%`;
 const num = (v) => toNumber(v).toLocaleString();
 
@@ -83,7 +72,6 @@ function addFooterAndWatermark(doc) {
 
     doc.saveGraphicsState();
     try {
-      // eslint-disable-next-line new-cap
       doc.setGState(new doc.GState({ opacity: 0.06 }));
       doc.setTextColor(0);
     } catch {
@@ -173,6 +161,11 @@ function ensureRoom(doc, yPos, needed = 30) {
   return yPos;
 }
 
+function savePdf(doc, reportType) {
+  const date = new Date().toISOString().split('T')[0];
+  doc.save(`report-${reportType}-${date}.pdf`);
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // PDF EXPORT
 // ═══════════════════════════════════════════════════════════════════
@@ -192,6 +185,8 @@ export const exportToPDF = (reportData, reportType) => {
       case 'cashflow':      return exportCashFlowPdf(reportData);
       case 'balance-sheet': return exportBalanceSheetPdf(reportData);
       case 'executive':     return exportExecutivePdf(reportData);
+      case 'inventory-movement': return exportInventoryMovementPdf(reportData);
+      case 'inventory-valuation': return exportInventoryValuationPdf(reportData);
       default:
         return exportGenericPdf(reportData, reportType);
     }
@@ -994,6 +989,103 @@ function exportExecutivePdf(d) {
   savePdf(doc, 'executive');
 }
 
+// ── INVENTORY VALUATION ────────────────────────────────────────────
+function exportInventoryValuationPdf(d) {
+  const doc = createPdf('inventory valuation', `As at ${fmtDate(d.asAtDate)}`);
+  let y = 46;
+
+  const s = d.summary || {};
+  y = addKvBlock(doc, 'SUMMARY', [
+    ['Total Items',            num(s.totalItems)],
+    ['Total Quantity',         num(s.totalQuantity)],
+    ['Total Cost Value',       pdfMoney(s.totalCostValue)],
+    ['Total Selling Value',    pdfMoney(s.totalSellingValue)],
+    ['Total Potential Profit', pdfMoney(s.totalPotentialProfit)],
+    ['Low Stock Count',        num(s.lowStockCount)],
+  ], y);
+
+  if (Array.isArray(d.items) && d.items.length > 0) {
+    y = ensureRoom(doc, y, 60);
+    y = addTable(doc, 'INVENTORY SNAPSHOT',
+      ['Product', 'Qty', 'Cost Price', 'Selling Price', 'Margin', 'Value', 'Status'],
+      d.items.map((i) => [
+        i.name || '—',
+        num(i.quantity),
+        pdfMoney(i.costPrice),
+        pdfMoney(i.sellingPrice),
+        pct(i.margin),
+        pdfMoney(i.value),
+        (i.status || '').replace('_', ' '),
+      ]),
+      y,
+    );
+  }
+
+  addFooterAndWatermark(doc);
+  savePdf(doc, 'inventory-valuation');
+}
+
+// ── INVENTORY MOVEMENT ─────────────────────────────────────────────
+function exportInventoryMovementPdf(d) {
+  const range = d.period
+    ? `${fmtDate(d.period.startDate)} — ${fmtDate(d.period.endDate)}`
+    : '';
+  const doc = createPdf('inventory movement', range);
+  let y = 46;
+
+  const s = d.summary || {};
+  y = addKvBlock(doc, 'SUMMARY', [
+    ['Total In',       num(s.totalIn)],
+    ['Total Out',      num(s.totalOut)],
+    ['Net Change',     num(s.netChange)],
+    ['Cost Value In',  pdfMoney(s.totalCostIn)],
+    ['Cost Value Out', pdfMoney(s.totalCostOut)],
+  ], y);
+
+  // High-level table
+  if (Array.isArray(d.items) && d.items.length > 0) {
+    y = ensureRoom(doc, y, 60);
+    y = addTable(doc, 'MOVEMENT BY PRODUCT',
+      ['Product', 'Opening', 'In', 'Out', 'Adj', 'Closing', 'Value'],
+      d.items.map((i) => [
+        i.itemName || '—',
+        num(i.openingQuantity),
+        `+${num(i.totalIn)}`,
+        `-${num(i.totalOut)}`,
+        i.adjustments !== 0 ? num(i.adjustments) : '-',
+        num(i.closingQuantity),
+        pdfMoney(i.closingValue),
+      ]),
+      y,
+    );
+  }
+
+  // Movement ledger detail per item
+  if (Array.isArray(d.items) && d.items.length > 0) {
+    d.items.forEach((item) => {
+      if (!Array.isArray(item.movements) || item.movements.length === 0) return;
+
+      y = ensureRoom(doc, y, 50);
+      y = addTable(doc, `${item.itemName} — MOVEMENT LEDGER`,
+        ['Date', 'Type', 'Qty', 'Before', 'After', 'Ref', 'Value'],
+        item.movements.map((m) => [
+          fmtDate(m.createdAt),
+          m.movementType || '—',
+          num(m.quantity),
+          num(m.quantityBefore),
+          num(m.quantityAfter),
+          (m.referenceType || '') + (m.referenceId ? ` #${m.referenceId}` : ''),
+          pdfMoney(m.totalCost),
+        ]),
+        y,
+      );
+    });
+  }
+
+  addFooterAndWatermark(doc);
+  savePdf(doc, 'inventory-movement');
+}
+
 // ── Generic fallback ───────────────────────────────────────────────
 function exportGenericPdf(d, reportType) {
   const doc = createPdf(reportType, '');
@@ -1012,11 +1104,6 @@ function exportGenericPdf(d, reportType) {
   y = addTable(doc, 'DATA', ['Field', 'Value'], rows, y);
   addFooterAndWatermark(doc);
   savePdf(doc, reportType);
-}
-
-function savePdf(doc, reportType) {
-  const date = new Date().toISOString().split('T')[0];
-  doc.save(`report-${reportType}-${date}.pdf`);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1038,6 +1125,8 @@ export const exportToExcel = (reportData, reportType) => {
       case 'cashflow':      return exportCashFlowXls(reportData);
       case 'balance-sheet': return exportBalanceSheetXls(reportData);
       case 'executive':     return exportExecutiveXls(reportData);
+      case 'inventory-movement':   return exportInventoryMovementXls(reportData);
+      case 'inventory-valuation':  return exportInventoryValuationXls(reportData);
       default:              return exportGenericXls(reportData, reportType);
     }
   } catch (err) {
@@ -1593,6 +1682,107 @@ function exportExecutiveXls(d) {
   }
 
   saveXls(wb, 'executive');
+}
+
+// ── INVENTORY VALUATION XLS ──
+function exportInventoryValuationXls(d) {
+  const wb = XLSX.utils.book_new();
+  const s = d.summary || {};
+
+  const summary = [
+    ['AI CFO ENTERPRISE', 'INVENTORY VALUATION'],
+    ['As at', d.asAtDate || ''],
+    [],
+    ['SUMMARY'],
+    ['Total Items', num(s.totalItems)],
+    ['Total Quantity', num(s.totalQuantity)],
+    ['Total Cost Value', xlsMoney(s.totalCostValue)],
+    ['Total Selling Value', xlsMoney(s.totalSellingValue)],
+    ['Total Potential Profit', xlsMoney(s.totalPotentialProfit)],
+    ['Low Stock Count', num(s.lowStockCount)],
+    ['Out of Stock Count', num(s.outOfStockCount)],
+    ['Overall Margin', pct(s.overallMargin)],
+  ];
+  XLSX.utils.book_append_sheet(wb, buildSheet(summary), 'Summary');
+
+  if (Array.isArray(d.items) && d.items.length > 0) {
+    const rows = [
+      ['Product', 'Qty', 'Cost Price', 'Selling Price', 'Margin', 'Cost Value', 'Potential Revenue', 'Potential Profit', 'Status'],
+      ...d.items.map((i) => [
+        i.name || '—',
+        num(i.quantity),
+        xlsMoney(i.costPrice),
+        xlsMoney(i.sellingPrice),
+        pct(i.margin),
+        xlsMoney(i.value),
+        xlsMoney(i.potentialRevenue),
+        xlsMoney(i.profit),
+        (i.status || '').replace('_', ' '),
+      ]),
+    ];
+    XLSX.utils.book_append_sheet(wb, buildSheet(rows), 'Inventory Snapshot');
+  }
+
+  saveXls(wb, 'inventory-valuation');
+}
+
+// ── INVENTORY MOVEMENT XLS ──
+function exportInventoryMovementXls(d) {
+  const wb = XLSX.utils.book_new();
+  const s = d.summary || {};
+  const range = `${fmtDate(d.period?.startDate)} — ${fmtDate(d.period?.endDate)}`;
+
+  const summary = [
+    ['AI CFO ENTERPRISE', 'INVENTORY MOVEMENT'],
+    ['Period', range],
+    [],
+    ['SUMMARY'],
+    ['Total In', num(s.totalIn)],
+    ['Total Out', num(s.totalOut)],
+    ['Net Change', num(s.netChange)],
+    ['Cost Value In', xlsMoney(s.totalCostIn)],
+    ['Cost Value Out', xlsMoney(s.totalCostOut)],
+  ];
+  XLSX.utils.book_append_sheet(wb, buildSheet(summary), 'Summary');
+
+  // Movement by Product
+  if (Array.isArray(d.items) && d.items.length > 0) {
+    const byProduct = [
+      ['Product', 'Opening', 'In', 'Out', 'Adj', 'Closing', 'Value'],
+      ...d.items.map((i) => [
+        i.itemName || '—',
+        num(i.openingQuantity),
+        num(i.totalIn),
+        num(i.totalOut),
+        num(i.adjustments),
+        num(i.closingQuantity),
+        xlsMoney(i.closingValue),
+      ]),
+    ];
+    XLSX.utils.book_append_sheet(wb, buildSheet(byProduct), 'By Product');
+
+    // Detailed Ledger
+    const ledgerRows = [['Product', 'Date', 'Type', 'Qty', 'Before', 'After', 'Ref', 'Value']];
+    d.items.forEach((item) => {
+      if (item.movements && item.movements.length > 0) {
+        item.movements.forEach((m) => {
+          ledgerRows.push([
+            item.itemName,
+            fmtDate(m.createdAt),
+            m.movementType,
+            num(m.quantity),
+            num(m.quantityBefore),
+            num(m.quantityAfter),
+            m.referenceType + (m.referenceId ? ` #${m.referenceId}` : ''),
+            xlsMoney(m.totalCost),
+          ]);
+        });
+      }
+    });
+    XLSX.utils.book_append_sheet(wb, buildSheet(ledgerRows), 'Movement Ledger');
+  }
+
+  saveXls(wb, 'inventory-movement');
 }
 
 // ── Generic fallback ──

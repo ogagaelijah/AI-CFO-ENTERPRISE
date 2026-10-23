@@ -1,5 +1,5 @@
 // src/infrastructure/database/sqlite/repositories/InventoryRepository.js
-// Postgres async. Same logic as SQLite.
+// v2.4.0-prod — Adds Multi-Pack (base_unit) support.
 
 const BaseRepository = require('./BaseRepository');
 
@@ -12,18 +12,20 @@ class InventoryRepository extends BaseRepository {
         const result = await this._query(
             `INSERT INTO inventory (
                 user_id, business_id, item_name, quantity,
-                cost_price, selling_price, last_purchase_cost, reorder_level
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                cost_price, selling_price, last_purchase_cost, reorder_level,
+                base_unit
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING id`,
             [
                 inventoryData.userId ?? inventoryData.user_id ?? null,
                 inventoryData.businessId ?? inventoryData.business_id ?? null,
-                inventoryData.item_name || inventoryData.itemName,
+                String(inventoryData.item_name || inventoryData.itemName || '').trim().replace(/\b\w/g, c => c.toUpperCase()),
                 inventoryData.quantity || 0,
                 inventoryData.cost_price || inventoryData.costPrice || 0,
                 inventoryData.selling_price || inventoryData.sellingPrice || 0,
                 inventoryData.last_purchase_cost || inventoryData.lastPurchaseCost || 0,
                 inventoryData.reorder_level || inventoryData.reorderLevel || 5,
+                inventoryData.base_unit || inventoryData.baseUnit || 'Piece',
             ]
         );
         return this.findById(result.rows[0].id);
@@ -40,8 +42,8 @@ class InventoryRepository extends BaseRepository {
         let i = 2;
 
         if (options.search) {
-            query += ` AND LOWER(item_name) LIKE LOWER($${i++})`;
-            params.push(`%${options.search}%`);
+            query += ` AND LOWER(TRIM(item_name)) LIKE LOWER($${i++})`;
+            params.push(`%${String(options.search).trim()}%`);
         }
 
         query += ' ORDER BY item_name ASC';
@@ -69,16 +71,16 @@ class InventoryRepository extends BaseRepository {
 
     async findByName(businessId, itemName) {
         const result = await this._query(
-            'SELECT * FROM inventory WHERE business_id = $1 AND item_name = $2',
-            [businessId, itemName]
+            'SELECT * FROM inventory WHERE business_id = $1 AND LOWER(TRIM(item_name)) = LOWER(TRIM($2))',
+            [businessId, String(itemName || '')]
         );
         return result.rows[0] || null;
     }
 
     async findByNameIgnoreCase(businessId, itemName) {
         const result = await this._query(
-            'SELECT * FROM inventory WHERE business_id = $1 AND LOWER(item_name) = LOWER($2)',
-            [businessId, itemName]
+            'SELECT * FROM inventory WHERE business_id = $1 AND LOWER(TRIM(item_name)) = LOWER(TRIM($2))',
+            [businessId, String(itemName || '')]
         );
         return result.rows[0] || null;
     }
@@ -86,18 +88,19 @@ class InventoryRepository extends BaseRepository {
     async searchByName(businessId, searchTerm) {
         const result = await this._query(
             `SELECT * FROM inventory
-             WHERE business_id = $1 AND LOWER(item_name) LIKE LOWER($2)
+             WHERE business_id = $1 AND LOWER(TRIM(item_name)) LIKE LOWER($2)
              ORDER BY item_name ASC`,
-            [businessId, `%${searchTerm}%`]
+            [businessId, `%${String(searchTerm || '').trim()}%`]
         );
         return result.rows;
     }
 
     async findByNameWithFallback(businessId, itemName) {
-        const item = await this.findByNameIgnoreCase(businessId, itemName);
+        const cleanName = String(itemName || '').trim();
+        const item = await this.findByNameIgnoreCase(businessId, cleanName);
         if (item) return item;
 
-        const results = await this.searchByName(businessId, itemName);
+        const results = await this.searchByName(businessId, cleanName);
         return results.length > 0 ? results[0] : null;
     }
 
@@ -118,7 +121,7 @@ class InventoryRepository extends BaseRepository {
 
         if (data.item_name !== undefined || data.itemName !== undefined) {
             fields.push(`item_name = $${i++}`);
-            values.push(data.item_name ?? data.itemName);
+            values.push(String(data.item_name ?? data.itemName ?? '').trim().replace(/\b\w/g, c => c.toUpperCase()));
         }
         if (data.quantity !== undefined) {
             fields.push(`quantity = $${i++}`);
@@ -147,6 +150,10 @@ class InventoryRepository extends BaseRepository {
         if (data.userId !== undefined || data.user_id !== undefined) {
             fields.push(`user_id = $${i++}`);
             values.push(data.userId ?? data.user_id);
+        }
+        if (data.base_unit !== undefined || data.baseUnit !== undefined) {
+            fields.push(`base_unit = $${i++}`);
+            values.push(data.base_unit ?? data.baseUnit);
         }
 
         fields.push('updated_at = NOW()');
@@ -295,8 +302,8 @@ class InventoryRepository extends BaseRepository {
         let i = 2;
 
         if (filters.search) {
-            query += ` AND LOWER(item_name) LIKE LOWER($${i++})`;
-            params.push(`%${filters.search}%`);
+            query += ` AND LOWER(TRIM(item_name)) LIKE LOWER($${i++})`;
+            params.push(`%${String(filters.search).trim()}%`);
         }
 
         const result = await this._query(query, params);

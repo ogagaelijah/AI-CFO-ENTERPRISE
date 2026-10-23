@@ -1,5 +1,5 @@
 // frontend/src/components/Income/EditIncomeModal.jsx
-// v1.1.0-prod — Adds read-only guard: banner + disabled submit.
+// v1.2.0-prod — Fixes empty input for amount.
 
 import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
@@ -9,9 +9,10 @@ import ReadOnlyBanner from '../common/ReadOnlyBanner';
 const EditIncomeModal = ({ isOpen, income, onSubmit, onClose, error, setError }) => {
   const { canWrite, guardMessage } = useWriteGuard();
 
+  // ★ FIXED: empty string for amount
   const [form, setForm] = useState({
     source: 'OTHER',
-    amount: 0,
+    amount: '',
     description: '',
     date: new Date().toISOString().split('T')[0],
   });
@@ -20,7 +21,7 @@ const EditIncomeModal = ({ isOpen, income, onSubmit, onClose, error, setError })
     if (income) {
       setForm({
         source: income.source || 'OTHER',
-        amount: income.amount || 0,
+        amount: income.amount !== undefined ? income.amount : '',
         description: income.description || '',
         date: income.date || new Date().toISOString().split('T')[0],
       });
@@ -32,7 +33,14 @@ const EditIncomeModal = ({ isOpen, income, onSubmit, onClose, error, setError })
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!canWrite) return;
-    onSubmit(form);
+    
+    // Convert to number before submitting
+    const payload = {
+      ...form,
+      amount: parseFloat(form.amount) || 0,
+    };
+    
+    onSubmit(payload);
   };
 
   return (
@@ -79,15 +87,16 @@ const EditIncomeModal = ({ isOpen, income, onSubmit, onClose, error, setError })
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Amount (₦) *
+              Amount Received (₦) *
             </label>
             <input
               type="number"
               value={form.amount}
-              onChange={(e) => setForm({ ...form, amount: parseFloat(e.target.value) || 0 })}
+              onChange={(e) => setForm({ ...form, amount: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               min="0"
               step="0.01"
+              placeholder="0.00"
               required
             />
           </div>

@@ -1,7 +1,5 @@
 // frontend/src/pages/Customers.jsx
-// v1.3.0-prod — Uses isInitialLoading so refetches don't unmount the table.
-// v1.2.0-prod — Uses usePaginatedApi hook + Pagination. Summary from pagination.
-// v1.1.0-prod — Accepts initialType prop. Filters by type when locked.
+// v1.4.0-prod — Opens CustomerDetailModal immediately to eliminate perceived latency.
 
 import { useState, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -61,22 +59,26 @@ const Customers = ({ initialType = null }) => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  // ★ FIXED: Open modal instantly, then fetch
   const fetchCustomerDetail = async (id) => {
+    setSelectedCustomer(null);
+    setIsLoadingDetail(true);
+    setShowDetailModal(true);
+
     try {
-      setIsLoadingDetail(true);
-      setError('');
       const response = await api.get(`/customers/${id}`, {
         params: { businessId: user?.businessId || user?.id },
       });
       if (response.data?.success) {
         setSelectedCustomer(response.data.customer);
-        setShowDetailModal(true);
       } else {
         setError('Failed to load customer details');
+        setShowDetailModal(false);
       }
     } catch (error) {
       console.error('❌ Error fetching customer detail:', error);
       setError(error.response?.data?.message || 'Failed to load customer details');
+      setShowDetailModal(false);
     } finally {
       setIsLoadingDetail(false);
     }

@@ -1,6 +1,5 @@
 // frontend/src/pages/Creditors.jsx
-// v1.2.0-prod — Uses isInitialLoading so refetches don't unmount the table.
-// v1.1.0-prod — Uses usePaginatedApi hook + Pagination. Summary via extra.
+// v1.3.0-prod — Opens CreditorDetailModal immediately to eliminate perceived latency.
 
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -52,10 +51,10 @@ const Creditors = () => {
   const [success, setSuccess] = useState('');
 
   const [addForm, setAddForm] = useState({
-    supplierName: '', totalOwed: 0, dueDate: '', notes: '',
+    supplierName: '', totalOwed: '', dueDate: '', notes: '',
   });
   const [paymentForm, setPaymentForm] = useState({
-    amount: 0, notes: '',
+    amount: '', notes: '',
   });
 
   const handleAddSubmit = (e) => {
@@ -63,7 +62,10 @@ const Creditors = () => {
     setError('');
     setSuccess('');
     if (!addForm.supplierName.trim()) { setError('Supplier name is required'); return; }
-    if (addForm.totalOwed <= 0) { setError('Amount owed must be greater than 0'); return; }
+    if (!addForm.totalOwed || parseFloat(addForm.totalOwed) <= 0) { 
+      setError('Amount owed must be greater than 0'); 
+      return; 
+    }
     setShowAddModal(false);
     setConfirmData({ ...addForm });
     setConfirmType('add');
@@ -84,7 +86,7 @@ const Creditors = () => {
       });
       if (response.data?.success) {
         setSuccess('✅ Creditor added successfully!');
-        setAddForm({ supplierName: '', totalOwed: 0, dueDate: '', notes: '' });
+        setAddForm({ supplierName: '', totalOwed: '', dueDate: '', notes: '' });
         setConfirmData(null);
         setShowConfirmModal(false);
         refresh();
@@ -102,8 +104,11 @@ const Creditors = () => {
     e.preventDefault();
     setError('');
     setSuccess('');
-    if (paymentForm.amount <= 0) { setError('Payment amount must be greater than 0'); return; }
-    if (paymentForm.amount > selectedCreditor.balance_remaining) {
+    if (!paymentForm.amount || parseFloat(paymentForm.amount) <= 0) { 
+      setError('Payment amount must be greater than 0'); 
+      return; 
+    }
+    if (parseFloat(paymentForm.amount) > selectedCreditor.balance_remaining) {
       setError(`Payment amount exceeds balance of ₦${selectedCreditor.balance_remaining.toLocaleString()}`);
       return;
     }
@@ -131,7 +136,7 @@ const Creditors = () => {
         setSuccess(`✅ Payment of ₦${parseFloat(confirmData.amount).toLocaleString()} recorded successfully!`);
         setShowPaymentModal(false);
         setSelectedCreditor(null);
-        setPaymentForm({ amount: 0, notes: '' });
+        setPaymentForm({ amount: '', notes: '' });
         setConfirmData(null);
         setShowConfirmModal(false);
         refresh();
@@ -145,18 +150,21 @@ const Creditors = () => {
     }
   };
 
+  // ★ FIXED: Open modal instantly, then fetch
   const fetchCreditorDetail = async (id) => {
+    setSelectedCreditor(null);
+    setIsLoadingDetail(true);
+    setShowDetailModal(true);
+
     try {
-      setIsLoadingDetail(true);
-      setError('');
       const response = await api.get(`/creditors/${id}`);
       if (response.data?.success) {
         setSelectedCreditor(response.data.data);
-        setShowDetailModal(true);
       }
     } catch (error) {
       console.error('Error fetching creditor detail:', error);
       setError('Failed to load creditor details');
+      setShowDetailModal(false);
     } finally {
       setIsLoadingDetail(false);
     }
@@ -239,7 +247,7 @@ const Creditors = () => {
           onView={fetchCreditorDetail}
           onPay={(creditor) => {
             setSelectedCreditor(creditor);
-            setPaymentForm({ amount: 0, notes: '' });
+            setPaymentForm({ amount: '', notes: '' });
             setShowPaymentModal(true);
           }}
           onEdit={() => {}}
@@ -279,8 +287,8 @@ const Creditors = () => {
       <CreditorDetailModal
         isOpen={showDetailModal}
         creditor={selectedCreditor}
-        isLoading={isLoadingDetail}
         onClose={() => { setShowDetailModal(false); setSelectedCreditor(null); }}
+        isLoading={isLoadingDetail}
       />
     </div>
   );

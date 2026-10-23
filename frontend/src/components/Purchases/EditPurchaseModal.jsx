@@ -1,5 +1,5 @@
 // frontend/src/components/Purchases/EditPurchaseModal.jsx
-// v1.1.0-prod — Adds read-only guard: banner + disabled submit.
+// v1.2.0-prod — Fixes empty inputs for quantity, unit cost, and selling price.
 
 import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
@@ -9,11 +9,12 @@ import ReadOnlyBanner from '../common/ReadOnlyBanner';
 const EditPurchaseModal = ({ isOpen, purchase, onSubmit, onClose, error, setError }) => {
   const { canWrite, guardMessage } = useWriteGuard();
 
+  // ★ FIXED: empty strings
   const [form, setForm] = useState({
     itemName: '',
-    quantity: 1,
-    unitCost: 0,
-    sellingPrice: 0,
+    quantity: '',
+    unitCost: '',
+    sellingPrice: '',
     supplierName: '',
     supplierPhone: '',
     supplierEmail: '',
@@ -26,9 +27,10 @@ const EditPurchaseModal = ({ isOpen, purchase, onSubmit, onClose, error, setErro
     if (purchase) {
       setForm({
         itemName: purchase.item_name || '',
-        quantity: purchase.quantity || 1,
-        unitCost: purchase.unit_cost || 0,
-        sellingPrice: purchase.selling_price || 0,
+        // ★ FIXED: allow empty string if null/undefined
+        quantity: purchase.quantity !== undefined ? purchase.quantity : '',
+        unitCost: purchase.unit_cost !== undefined ? purchase.unit_cost : '',
+        sellingPrice: purchase.selling_price !== undefined ? purchase.selling_price : '',
         supplierName: purchase.supplier_name || '',
         supplierPhone: purchase.supplier_phone || '',
         supplierEmail: purchase.supplier_email || '',
@@ -44,7 +46,16 @@ const EditPurchaseModal = ({ isOpen, purchase, onSubmit, onClose, error, setErro
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!canWrite) return;
-    onSubmit(form);
+    
+    // ★ FIXED: Convert to numbers before submitting
+    const payload = {
+      ...form,
+      quantity: parseFloat(form.quantity) || 0,
+      unitCost: parseFloat(form.unitCost) || 0,
+      sellingPrice: parseFloat(form.sellingPrice) || 0,
+    };
+    
+    onSubmit(payload);
   };
 
   return (
@@ -90,9 +101,10 @@ const EditPurchaseModal = ({ isOpen, purchase, onSubmit, onClose, error, setErro
               <input
                 type="number"
                 value={form.quantity}
-                onChange={(e) => setForm({ ...form, quantity: parseInt(e.target.value) || 1 })}
+                onChange={(e) => setForm({ ...form, quantity: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                 min="1"
+                placeholder="0"
                 required
               />
             </div>
@@ -103,10 +115,11 @@ const EditPurchaseModal = ({ isOpen, purchase, onSubmit, onClose, error, setErro
               <input
                 type="number"
                 value={form.unitCost}
-                onChange={(e) => setForm({ ...form, unitCost: parseFloat(e.target.value) || 0 })}
+                onChange={(e) => setForm({ ...form, unitCost: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                 min="0"
                 step="0.01"
+                placeholder="0.00"
                 required
               />
             </div>
@@ -120,10 +133,11 @@ const EditPurchaseModal = ({ isOpen, purchase, onSubmit, onClose, error, setErro
               <input
                 type="number"
                 value={form.sellingPrice}
-                onChange={(e) => setForm({ ...form, sellingPrice: parseFloat(e.target.value) || 0 })}
+                onChange={(e) => setForm({ ...form, sellingPrice: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                 min="0"
                 step="0.01"
+                placeholder="0.00"
                 required
               />
             </div>

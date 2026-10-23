@@ -1,19 +1,5 @@
 // src/interfaces/http/server.js
-// v2.16.0-prod — Mounts /api/team (staff login + invites).
-// v2.15.0-prod — Adds /api/chat (DeepSeek-backed FAQ assistant).
-// v2.14.0-prod — Sentry v8+, structured logging, plan gating, PORT compatible (Render)
-//               Adds Consultancy routes: /api/projects, /api/time-entries, /api/invoices
-//               Adds Education routes: /api/students, /api/classes, /api/enrollments, /api/terms, /api/fees
-//               Adds NGO routes: /api/pledges, /api/donations
-//               v2.6.0: cookie-config startup log, CORS allow-list, /api/debug/cookies
-//               v2.7.0: /api/fees mounted (Education)
-//               v2.8.0: /api/pledges, /api/donations mounted (NGO)
-//               v2.9.0: Paystack webhook mounted BEFORE express.json()
-//               v2.10.0: Paystack webhook retry sweep scheduled on startup
-//               v2.11.0: Auth rate limiters moved into authRoutes.js
-//               v2.12.0: loginIpLimiter mounted BEFORE express.json()
-//               v2.13.0: loginIpLimiter mounted BEFORE pino-http as well
-//               v2.14.0: warmPool() on startup; /api/health reports DB pool stats
+// v2.19.0-prod — Mounts /api/comments.
 
 const { initSentry, Sentry } = require('../../shared/utils/sentry');
 initSentry();
@@ -43,7 +29,6 @@ const {
 const { authMiddleware } = require('./middleware/authMiddleware');
 const { planGuard } = require('./middleware/planGuard');
 
-// ── CORS: allow-list from FRONTEND_URL
 const ALLOWED_ORIGINS = (process.env.FRONTEND_URL || 'http://localhost:5173')
   .split(',')
   .map((s) => s.trim())
@@ -61,10 +46,8 @@ app.use(cors({
   credentials: true,
 }));
 
-// ── loginIpLimiter mounted FIRST (after CORS, before pino-http).
 app.use('/api/auth/login', loginIpLimiter);
 
-// ── Paystack webhook MUST be mounted BEFORE express.json() for raw body
 const paystackWebhookRoutes = require('./routes/paystackWebhookRoutes');
 app.use('/api/payment/webhook', paystackWebhookRoutes);
 
@@ -134,21 +117,25 @@ const feeRoutes = require('./routes/feeRoutes');
 const pledgeRoutes = require('./routes/pledgeRoutes');
 const donationRoutes = require('./routes/donationRoutes');
 const chatRoutes = require('./routes/chatRoutes');
-const teamRoutes = require('./routes/teamRoutes');   // ★ NEW
+const teamRoutes = require('./routes/teamRoutes');
+const platformRoutes = require('./routes/platformRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
+const commentRoutes = require('./routes/commentRoutes'); // ★ NEW
 
-// ── Auth routes carry loginEmailLimiter + registerLimiter + forgot + reset.
 app.use('/api/auth', authRoutes);
-
-// ── Public chat (no auth — marketing-site widget)
 app.use('/api/chat', chatRoutes);
-
-// ── Team management (invite, accept, list, role, remove).
-//    Some routes are public (accept, GET invite), some require auth (see teamRoutes.js).
-//    No planGuard — team access is available on every plan.
-app.use('/api/team', standardLimiter, teamRoutes);   // ★ NEW
-
+app.use('/api/team', standardLimiter, teamRoutes);
 app.use('/api/subscription', standardLimiter, subscriptionRoutes);
 app.use('/api/payment', standardLimiter, paymentRoutes);
+
+// ★ NEW: Comment routes
+app.use('/api/comments', standardLimiter, authMiddleware, commentRoutes);
+
+// Notification routes
+app.use('/api/notifications', standardLimiter, authMiddleware, notificationRoutes);
+
+// Platform Admin Routes (God-mode for internal staff)
+app.use('/api/platform', standardLimiter, authMiddleware, platformRoutes);
 
 app.use('/api/users', standardLimiter, authMiddleware, userRoutes);
 app.use('/api/business', standardLimiter, authMiddleware, businessRoutes);
@@ -234,12 +221,8 @@ const server = app.listen(PORT, () => {
   logger.info({ port: PORT }, 'http: server started');
   logger.info('rate limiting: auth-ip=pre-log, auth-email=in-route, standard=writes, generous=reads');
   logger.info('plan gating: active (authMiddleware → planGuard)');
-  logger.info(
-    process.env.SENTRY_DSN ? 'sentry: enabled' : 'sentry: disabled (no SENTRY_DSN)'
-  );
-  logger.info(
-    process.env.DEEPSEEK_API_KEY ? 'chat: enabled' : 'chat: disabled (no DEEPSEEK_API_KEY)'
-  );
+  logger.info(process.env.SENTRY_DSN ? 'sentry: enabled' : 'sentry: disabled (no SENTRY_DSN)');
+  logger.info(process.env.DEEPSEEK_API_KEY ? 'chat: enabled' : 'chat: disabled (no DEEPSEEK_API_KEY)');
 
   warmPool().catch((err) => {
     logger.error({ err: err.message }, 'db: warmPool failed');

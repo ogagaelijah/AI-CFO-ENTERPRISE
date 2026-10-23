@@ -1,6 +1,5 @@
 // frontend/src/components/Sales/RecordSaleModal.jsx
-// v1.1.0-prod — Adds read-only guard. Submit button disables and shows
-//               an "upgrade to continue" banner when the plan is read-only.
+// v2.1.1-prod — Shows inventory stock immediately upon item selection.
 
 import { useState, useEffect } from 'react';
 import { X, Plus, Trash2, AlertTriangle } from 'lucide-react';
@@ -16,7 +15,8 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
     customerPhone: '',
     paymentStatus: 'PAID',
     date: new Date().toISOString().split('T')[0],
-    items: [{ name: '', quantity: 1, sellingPrice: 0, costPrice: 0, inventoryId: null }],
+    dueDays: 3, 
+    items: [{ name: '', quantity: '', sellingPrice: '', costPrice: '', inventoryId: null, soldUnit: 'Piece', unitMultiplier: 1 }],
     notes: '',
     skipInventory: false,
   });
@@ -59,25 +59,53 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
 
     const inventoryItem = findInventoryItem(value);
     if (inventoryItem && !formData.skipInventory) {
-      newItems[index].costPrice = inventoryItem.cost_price || 0;
-      newItems[index].sellingPrice = inventoryItem.selling_price || 0;
+      newItems[index].costPrice = String(inventoryItem.cost_price || '');
+      newItems[index].sellingPrice = String(inventoryItem.selling_price || '');
       newItems[index].inventoryId = inventoryItem.id;
       newItems[index].stock = inventoryItem.quantity || 0;
+      newItems[index].soldUnit = 'Piece';
+      newItems[index].unitMultiplier = 1;
     } else if (!formData.skipInventory) {
-      newItems[index].costPrice = 0;
-      newItems[index].sellingPrice = 0;
+      newItems[index].costPrice = '';
+      newItems[index].sellingPrice = '';
       newItems[index].inventoryId = null;
       newItems[index].stock = 0;
+      newItems[index].soldUnit = 'Piece';
+      newItems[index].unitMultiplier = 1;
     }
 
     setFormData({ ...formData, items: newItems });
     setShowInventoryWarning(false);
   };
 
+  const handleUnitChange = (index, packString) => {
+    const newItems = [...formData.items];
+    const inventoryItem = findInventoryItem(newItems[index].name);
+    
+    if (!inventoryItem) return;
+
+    const [multiplier, unitName] = packString.split('|');
+    newItems[index].unitMultiplier = parseInt(multiplier);
+    newItems[index].soldUnit = unitName;
+
+    if (unitName !== 'Piece' && inventoryItem.packs) {
+      const packData = inventoryItem.packs.find(p => p.pack_name === unitName);
+      if (packData) {
+        newItems[index].sellingPrice = String(packData.selling_price || '');
+        newItems[index].costPrice = String((inventoryItem.cost_price || 0) * parseInt(multiplier));
+      }
+    } else {
+      newItems[index].sellingPrice = String(inventoryItem.selling_price || '');
+      newItems[index].costPrice = String(inventoryItem.cost_price || '');
+    }
+
+    setFormData({ ...formData, items: newItems });
+  };
+
   const addItem = () => {
     setFormData({
       ...formData,
-      items: [...formData.items, { name: '', quantity: 1, sellingPrice: 0, costPrice: 0, inventoryId: null, stock: 0 }],
+      items: [...formData.items, { name: '', quantity: '', sellingPrice: '', costPrice: '', inventoryId: null, stock: 0, soldUnit: 'Piece', unitMultiplier: 1 }],
     });
   };
 
@@ -90,15 +118,7 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
 
   const updateItem = (index, field, value) => {
     const newItems = [...formData.items];
-    newItems[index][field] = field === 'name' ? value : parseFloat(value) || 0;
-
-    if (field === 'quantity' || field === 'sellingPrice') {
-      const item = newItems[index];
-      const costPrice = item.costPrice || 0;
-      const sellPrice = item.sellingPrice || 0;
-      const qty = item.quantity || 0;
-    }
-
+    newItems[index][field] = value;
     setFormData({ ...formData, items: newItems });
   };
 
@@ -108,9 +128,9 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
     let totalProfit = 0;
 
     for (const item of formData.items) {
-      const qty = item.quantity || 0;
-      const cost = item.costPrice || 0;
-      const sell = item.sellingPrice || 0;
+      const qty = parseFloat(item.quantity) || 0;
+      const cost = parseFloat(item.costPrice) || 0;
+      const sell = parseFloat(item.sellingPrice) || 0;
       totalCost += qty * cost;
       totalRevenue += qty * sell;
       totalProfit += qty * (sell - cost);
@@ -136,11 +156,11 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
     }
 
     for (const item of validItems) {
-      if (item.quantity <= 0) {
+      if (!item.quantity || parseFloat(item.quantity) <= 0) {
         setError(`Quantity for "${item.name}" must be greater than 0`);
         return;
       }
-      if (item.sellingPrice < 0) {
+      if (!item.sellingPrice || parseFloat(item.sellingPrice) < 0) {
         setError(`Selling price for "${item.name}" cannot be negative`);
         return;
       }
@@ -151,9 +171,12 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
     if (!formData.skipInventory) {
       for (const item of validItems) {
         const inventoryItem = findInventoryItem(item.name);
-        if (inventoryItem && inventoryItem.quantity < item.quantity) {
-          setError(`Insufficient stock for "${item.name}". Available: ${inventoryItem.quantity}, Requested: ${item.quantity}`);
-          return;
+        if (inventoryItem) {
+          const requestedBaseStock = parseFloat(item.quantity) * item.unitMultiplier;
+          if (inventoryItem.quantity < requestedBaseStock) {
+            setError(`Insufficient stock for "${item.name}". Available: ${inventoryItem.quantity} pieces, Requested: ${requestedBaseStock} pieces`);
+            return;
+          }
         }
       }
     }
@@ -162,8 +185,11 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
       ...formData,
       items: validItems.map(item => ({
         ...item,
-        costPrice: item.costPrice || 0,
-        sellingPrice: item.sellingPrice || 0,
+        costPrice: parseFloat(item.costPrice) || 0,
+        sellingPrice: parseFloat(item.sellingPrice) || 0,
+        quantity: parseFloat(item.quantity) || 0,
+        unitMultiplier: item.unitMultiplier || 1,
+        soldUnit: item.soldUnit || 'Piece',
       })),
       totalCost,
       totalRevenue,
@@ -189,7 +215,6 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
           <ReadOnlyBanner />
 
-          {/* Customer Section */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -245,6 +270,24 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
             </div>
           </div>
 
+          {(formData.paymentStatus === 'PARTIAL' || formData.paymentStatus === 'UNPAID') && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Payment Terms
+              </label>
+              <select
+                value={formData.dueDays}
+                onChange={(e) => setFormData({ ...formData, dueDays: parseInt(e.target.value) })}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              >
+                <option value={3}>Due in 3 Days (Default)</option>
+                <option value={7}>Due in 7 Days</option>
+                <option value={14}>Due in 14 Days</option>
+                <option value={30}>Due in 30 Days</option>
+              </select>
+            </div>
+          )}
+
           {showInventoryWarning && (
             <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 text-yellow-700 dark:text-yellow-400 px-4 py-3 rounded-lg flex items-center space-x-2">
               <AlertTriangle className="w-5 h-5 flex-shrink-0" />
@@ -262,7 +305,7 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
                 if (e.target.checked) {
                   const newItems = formData.items.map(item => ({
                     ...item,
-                    costPrice: 0,
+                    costPrice: '',
                     inventoryId: null,
                     stock: 0,
                   }));
@@ -272,7 +315,7 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
                     const inv = findInventoryItem(item.name);
                     return {
                       ...item,
-                      costPrice: inv?.cost_price || 0,
+                      costPrice: inv?.cost_price ? String(inv.cost_price) : '',
                       inventoryId: inv?.id || null,
                       stock: inv?.quantity || 0,
                     };
@@ -300,7 +343,7 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
             </div>
 
             <div className="grid grid-cols-12 gap-2 mb-1 text-xs text-gray-500 dark:text-gray-400">
-              <div className="col-span-4">Item Name</div>
+              <div className="col-span-4">Item & Unit</div>
               <div className="col-span-2 text-center">Qty</div>
               <div className="col-span-2 text-center">Cost Price</div>
               <div className="col-span-2 text-center">Sell Price</div>
@@ -309,14 +352,24 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
             </div>
 
             {formData.items.map((item, index) => {
-              const itemTotal = (item.quantity || 0) * (item.sellingPrice || 0);
+              const itemTotal = (parseFloat(item.quantity) || 0) * (parseFloat(item.sellingPrice) || 0);
               const inventoryItem = findInventoryItem(item.name);
               const stockAvailable = inventoryItem?.quantity || 0;
-              const isLowStock = stockAvailable > 0 && stockAvailable < (item.quantity || 0);
+              const requestedBaseStock = (parseFloat(item.quantity) || 0) * (item.unitMultiplier || 1);
+              const isLowStock = stockAvailable > 0 && stockAvailable < requestedBaseStock;
+
+              const packOptions = [
+                { label: `Piece (${inventoryItem?.base_unit || 'Unit'})`, value: `1|Piece` }
+              ];
+              if (inventoryItem?.packs && inventoryItem.packs.length > 0) {
+                inventoryItem.packs.forEach(p => {
+                  packOptions.push({ label: `${p.pack_name} (${p.multiplier} pcs)`, value: `${p.multiplier}|${p.pack_name}` });
+                });
+              }
 
               return (
-                <div key={index} className="grid grid-cols-12 gap-2 mb-2 items-center">
-                  <div className="col-span-4 relative">
+                <div key={index} className="grid grid-cols-12 gap-2 mb-4 items-start">
+                  <div className="col-span-4 relative space-y-1">
                     <input
                       type="text"
                       value={item.name}
@@ -330,12 +383,23 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
                         <option key={inv.id} value={inv.item_name} />
                       ))}
                     </datalist>
-                    {!formData.skipInventory && item.name && !inventoryItem && (
-                      <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">⚠️ Not in inventory</p>
+                    
+                    {inventoryItem && inventoryItem.packs && inventoryItem.packs.length > 0 && (
+                      <select
+                        value={`${item.unitMultiplier}|${item.soldUnit}`}
+                        onChange={(e) => handleUnitChange(index, e.target.value)}
+                        className="w-full px-2 py-1 text-xs border border-blue-200 bg-blue-50 dark:bg-slate-700 dark:border-slate-600 dark:text-white rounded"
+                      >
+                        {packOptions.map(opt => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
                     )}
-                    {!formData.skipInventory && inventoryItem && item.quantity > 0 && (
+
+                    {/* ★ FIXED: Shows stock immediately upon item selection, regardless of quantity */}
+                    {!formData.skipInventory && inventoryItem && (
                       <p className={`text-xs mt-1 ${isLowStock ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                        {isLowStock ? `⚠️ Only ${stockAvailable} available` : `✅ ${stockAvailable} in stock`}
+                        {isLowStock ? `⚠️ Only ${stockAvailable} base units available` : `✅ ${stockAvailable} base units in stock`}
                       </p>
                     )}
                   </div>
@@ -343,30 +407,33 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
                     type="number"
                     value={item.quantity}
                     onChange={(e) => updateItem(index, 'quantity', e.target.value)}
-                    className="col-span-2 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-center"
+                    className="col-span-2 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-center mt-0.5"
                     min="1"
+                    placeholder="0"
                   />
                   <input
                     type="number"
                     value={item.costPrice}
                     onChange={(e) => updateItem(index, 'costPrice', e.target.value)}
-                    className="col-span-2 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-center"
+                    className="col-span-2 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-center mt-0.5"
                     min="0"
                     step="0.01"
+                    placeholder="0.00"
                     readOnly={!formData.skipInventory && !!inventoryItem}
                   />
                   <input
                     type="number"
                     value={item.sellingPrice}
                     onChange={(e) => updateItem(index, 'sellingPrice', e.target.value)}
-                    className="col-span-2 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-center"
+                    className="col-span-2 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-center mt-0.5"
                     min="0"
                     step="0.01"
+                    placeholder="0.00"
                   />
-                  <div className="col-span-1 text-center text-sm font-medium text-blue-600 dark:text-blue-400">
+                  <div className="col-span-1 text-center text-sm font-medium text-blue-600 dark:text-blue-400 mt-2">
                     ₦{itemTotal.toFixed(0)}
                   </div>
-                  <div className="col-span-1 text-center">
+                  <div className="col-span-1 text-center mt-1">
                     {formData.items.length > 1 && (
                       <button
                         type="button"

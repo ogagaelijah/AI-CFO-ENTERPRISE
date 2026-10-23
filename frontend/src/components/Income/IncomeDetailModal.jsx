@@ -1,6 +1,8 @@
 // frontend/src/components/Income/IncomeDetailModal.jsx
+// v1.2.0-prod — Adds Internal Comments section.
 
 import { X } from 'lucide-react';
+import CommentSection from '../Comments/CommentSection'; // ★ NEW
 
 const IncomeDetailModal = ({ isOpen, income, isLoading, onClose }) => {
   if (!isOpen) return null;
@@ -16,7 +18,7 @@ const IncomeDetailModal = ({ isOpen, income, isLoading, onClose }) => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full">
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-slate-700 sticky top-0 bg-white dark:bg-slate-800 z-10">
           <h2 className="text-xl font-bold text-gray-900 dark:text-white">Income Details</h2>
           <button
@@ -27,7 +29,7 @@ const IncomeDetailModal = ({ isOpen, income, isLoading, onClose }) => {
           </button>
         </div>
 
-        {isLoading ? (
+        {isLoading || !income ? (
           <div className="p-8 text-center">
             <div className="w-12 h-12 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto" />
             <p className="mt-4 text-gray-600 dark:text-gray-400">Loading details...</p>
@@ -37,32 +39,35 @@ const IncomeDetailModal = ({ isOpen, income, isLoading, onClose }) => {
             <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 dark:bg-slate-700 rounded-lg">
               <div>
                 <p className="text-xs text-gray-500 dark:text-gray-400">Source</p>
-                <p className="font-medium text-gray-900 dark:text-white">{income?.source || 'N/A'}</p>
+                <p className="font-medium text-gray-900 dark:text-white">{income.source || 'N/A'}</p>
               </div>
               <div>
                 <p className="text-xs text-gray-500 dark:text-gray-400">Amount</p>
-                <p className="font-bold text-green-600 dark:text-green-400">₦{(income?.amount || 0).toLocaleString()}</p>
+                <p className="font-bold text-green-600 dark:text-green-400">₦{(income.amount || 0).toLocaleString()}</p>
               </div>
               <div>
                 <p className="text-xs text-gray-500 dark:text-gray-400">Date</p>
-                <p className="font-medium text-gray-900 dark:text-white">{formatDate(income?.date)}</p>
+                <p className="font-medium text-gray-900 dark:text-white">{formatDate(income.date)}</p>
               </div>
               <div>
                 <p className="text-xs text-gray-500 dark:text-gray-400">Created</p>
-                <p className="font-medium text-gray-900 dark:text-white">{formatDate(income?.created_at)}</p>
+                <p className="font-medium text-gray-900 dark:text-white">{formatDate(income.created_at)}</p>
               </div>
               <div>
                 <p className="text-xs text-gray-500 dark:text-gray-400">ID</p>
-                <p className="font-medium text-gray-900 dark:text-white">#{income?.id}</p>
+                <p className="font-medium text-gray-900 dark:text-white">#{income.id}</p>
               </div>
             </div>
 
-            {income?.description && (
+            {income.description && (
               <div className="p-3 bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-200 dark:border-yellow-800 rounded-lg">
                 <p className="text-xs text-gray-500 dark:text-gray-400">Description</p>
                 <p className="text-sm text-gray-700 dark:text-gray-300">{income.description}</p>
               </div>
             )}
+
+            {/* ★ NEW: Internal Comments */}
+            <CommentSection entityType="INCOME" entityId={income.id} />
 
             <div className="flex justify-end pt-4 border-t border-gray-200 dark:border-slate-700">
               <button

@@ -1,5 +1,5 @@
 // frontend/src/components/Creditors/AddCreditorModal.jsx
-// v1.1.0-prod — Adds read-only guard: banner + disabled submit.
+// v1.1.1-prod — Fixes empty input for Amount Owed.
 
 import { X } from 'lucide-react';
 import { useWriteGuard } from '../../hooks/useWriteGuard';
@@ -59,11 +59,16 @@ const AddCreditorModal = ({ isOpen, form, setForm, onSubmit, onClose, error }) =
             </label>
             <input
               type="number"
-              value={form.totalOwed || 0}
-              onChange={(e) => setForm({ ...form, totalOwed: parseFloat(e.target.value) || 0 })}
+              // ★ FIXED: Removed '|| 0' so it shows empty string
+              value={form.totalOwed}
+              onChange={(e) => {
+                // ★ FIXED: Store raw string to allow empty state
+                setForm({ ...form, totalOwed: e.target.value });
+              }}
               className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               min="0"
               step="0.01"
+              placeholder="0.00"
               required
             />
           </div>

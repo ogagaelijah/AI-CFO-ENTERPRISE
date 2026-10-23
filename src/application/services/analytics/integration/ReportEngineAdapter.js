@@ -1,14 +1,11 @@
-/**
- * Report Engine Adapter - Investor Grade Production Configuration
- * Version: 1.8.0 (Production)
- *
- * Pure consumer of the Report Services (SSOT).
- * - Never recalculates financial numbers
- * - Correctly extracts nested shapes from ProfitLossService, DailyReportService, MonthlyReportService, etc.
- * - Period-aware (daily / weekly / monthly / yearly)
- */
+// src/application/services/analytics/integration/ReportEngineAdapter.js
+// v1.9.0-prod — Adds getInventoryMovementReport() pass-through to
+//               InventoryReportService. SSOT-compliant.
+// v1.8.0-prod — Investor grade production configuration.
 
 class ReportEngineAdapter {
+  static VERSION = '1.9.0';
+
   constructor({
     profitLossService,
     cashFlowService,
@@ -140,7 +137,6 @@ class ReportEngineAdapter {
         : Promise.resolve(null),
     ]);
 
-    // Period-specific report (SSOT for the requested period)
     const periodReport =
       periodType === 'daily'   ? daily :
       periodType === 'weekly'  ? weekly :
@@ -157,7 +153,7 @@ class ReportEngineAdapter {
 
     return {
       source: 'ReportEngineAdapter',
-      version: '1.8.0',
+      version: ReportEngineAdapter.VERSION,
       generatedAt: new Date().toISOString(),
       period,
       periodType,
@@ -203,6 +199,36 @@ class ReportEngineAdapter {
     };
   }
 
+  // ★ NEW: Inventory Movement Report (SSOT pass-through)
+  async getInventoryMovementReport({
+    userId,
+    businessId,
+    startDate,
+    endDate,
+    inventoryItemId = null,
+    movementType = null,
+    page = 1,
+    limit = 50,
+  }) {
+    if (!this.inventoryReportService) {
+      throw new Error('ReportEngineAdapter: inventoryReportService not configured');
+    }
+    if (typeof this.inventoryReportService.generateMovementReport !== 'function') {
+      throw new Error('ReportEngineAdapter: inventoryReportService.generateMovementReport is unavailable');
+    }
+
+    return this.inventoryReportService.generateMovementReport({
+      userId,
+      businessId,
+      startDate,
+      endDate,
+      inventoryItemId,
+      movementType,
+      page,
+      limit,
+    });
+  }
+
   async getPreviousPeriod({ userId, businessId, startDate, endDate, periodType = 'monthly' }) {
     const start = new Date(startDate);
     const end = new Date(endDate);
@@ -233,7 +259,6 @@ class ReportEngineAdapter {
     let profitChange = this._safeNumber(plComp.profitChange);
     let marginChange = this._safeNumber(plComp.marginChange);
 
-    // Prefer period-specific comparison data when available
     if (periodReport) {
       if (periodType === 'daily') {
         const prevDay = periodReport.comparison?.previousDay || {};
@@ -249,7 +274,6 @@ class ReportEngineAdapter {
           profitChange = this._safeNumber(periodReport.comparison?.netProfitChange);
         }
       } else {
-        // monthly / weekly / yearly
         const mom = periodReport.monthOverMonth || {};
         const exec = periodReport.executiveSummary || {};
         const prevMonth = mom.previousMonth || {};
@@ -281,19 +305,11 @@ class ReportEngineAdapter {
     };
   }
 
-  /**
-   * Pure extraction of already-calculated numbers.
-   * Handles:
-   * - ProfitLossService nested shape (revenue.totalRevenue)
-   * - DailyReportService (today.revenue)
-   * - MonthlyReportService (top-level + executiveSummary + kpiDashboard)
-   */
   _normalizeProfitLoss(pl, periodReport = null, periodType = 'monthly') {
     const summary = pl?.summary || pl?.profitLoss || pl || {};
 
-    // 1. Prefer official ProfitLossService nested shape
     let rev = this._safeNumber(
-      summary.revenue?.totalRevenue ??          // ← critical fix
+      summary.revenue?.totalRevenue ??
       summary.totalRevenue ??
       (typeof summary.revenue === 'number' ? summary.revenue : 0) ??
       summary.sales ??
@@ -303,14 +319,9 @@ class ReportEngineAdapter {
       0
     );
 
-    // 2. Fall back to the period-specific report
     if (rev === 0 && periodReport) {
       if (periodType === 'daily') {
-        rev = this._safeNumber(
-          periodReport.today?.revenue ??
-          periodReport.revenue ??
-          0
-        );
+        rev = this._safeNumber(periodReport.today?.revenue ?? periodReport.revenue ?? 0);
       } else {
         rev = this._safeNumber(
           periodReport.revenue ??
@@ -324,7 +335,6 @@ class ReportEngineAdapter {
       }
     }
 
-    // Prefer numbers already calculated by the report services — never recompute
     const gp = this._safeNumber(
       summary.grossProfit?.amount ??
       summary.grossProfit ??
@@ -372,9 +382,6 @@ class ReportEngineAdapter {
     };
   }
 
-  /**
-   * FIXED: Matches the exact shape returned by CashFlowService
-   */
   _normalizeCashFlow(cf, periodReport = null, balanceSheet = null) {
     if (!cf) {
       return { closingCash: 0, netChange: 0, openingCash: 0 };
@@ -400,7 +407,6 @@ class ReportEngineAdapter {
       0
     );
 
-    // DailyReportService cash shape fallback
     if (closingCash === 0 && periodReport?.today?.cash) {
       closingCash = this._safeNumber(periodReport.today.cash.closing);
       openingCash = this._safeNumber(periodReport.today.cash.opening);
@@ -449,7 +455,6 @@ class ReportEngineAdapter {
     let inventory = this._safeNumber(currentAssets.inventory ?? 0);
     const cash = this._safeNumber(currentAssets.cash ?? 0);
 
-    // Fallbacks from period report
     if (receivables === 0 && periodReport?.debtors) {
       receivables = this._safeNumber(periodReport.debtors.totalAmount ?? 0);
     }
@@ -459,7 +464,6 @@ class ReportEngineAdapter {
     if (inventory === 0 && periodReport?.inventory) {
       inventory = this._safeNumber(periodReport.inventory.totalValue ?? 0);
     }
-    // Daily shape
     if (receivables === 0 && periodReport?.today?.receivables) {
       receivables = this._safeNumber(periodReport.today.receivables.outstanding ?? 0);
     }
@@ -487,7 +491,6 @@ class ReportEngineAdapter {
       totalValue = this._safeNumber(periodReport.inventory.totalValue ?? 0);
       lowStockCount = this._safeNumber(periodReport.inventory.lowStockCount ?? 0);
     }
-    // Daily shape
     if (totalValue === 0 && periodReport?.today?.inventory) {
       totalValue = this._safeNumber(periodReport.today.inventory.totalValue ?? 0);
       lowStockCount = this._safeNumber(periodReport.today.inventory.lowStockCount ?? 0);
@@ -508,7 +511,6 @@ class ReportEngineAdapter {
     if (apTotal === 0 && periodReport?.creditors) {
       apTotal = this._safeNumber(periodReport.creditors.totalAmount ?? 0);
     }
-    // Daily shape
     if (arTotal === 0 && periodReport?.today?.receivables) {
       arTotal = this._safeNumber(periodReport.today.receivables.outstanding ?? 0);
     }
