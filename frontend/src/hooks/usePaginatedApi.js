@@ -1,7 +1,5 @@
 // frontend/src/hooks/usePaginatedApi.js
-// v1.2.1-prod — Adds isInitialLoading. Distinguishes first-load spinner from
-//               subsequent in-place refetches (search, filter, page change).
-// v1.2.0-prod — Adds `extra` return value.
+// v1.3.0-prod — Adds dynamic limit support (10, 25, 50, etc.) via URL params.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -57,7 +55,7 @@ export default function usePaginatedApi(url, options = {}) {
   const {
     itemKey = 'items',
     params = {},
-    initialLimit = 50,
+    initialLimit = 10, // ★ Default 10 to match mobile
     enabled = true,
     resetPageOnParamsChange = true,
   } = options;
@@ -74,13 +72,17 @@ export default function usePaginatedApi(url, options = {}) {
   const paramsKey = JSON.stringify(params || {});
   const prevParamsKeyRef = useRef(paramsKey);
 
+  // Read current page and limit from URL
+  const urlPage = readIntParam(searchParams, 'page', 1);
+  const urlLimit = readIntParam(searchParams, 'limit', initialLimit);
+
   const fetchPage = useCallback(
-    async (page, { signal } = {}) => {
+    async (page, limit, { signal } = {}) => {
       setIsLoading(true);
       setError('');
       try {
         const response = await api.get(url, {
-          params: { page, limit: initialLimit, ...params },
+          params: { page, limit, ...params },
           signal,
         });
         const { items: rows, pagination: p, extra: x } =
@@ -101,10 +103,8 @@ export default function usePaginatedApi(url, options = {}) {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [url, itemKey, initialLimit, paramsKey]
+    [url, itemKey, paramsKey]
   );
-
-  const urlPage = readIntParam(searchParams, 'page', 1);
 
   useEffect(() => {
     if (!enabled) return;
@@ -113,12 +113,12 @@ export default function usePaginatedApi(url, options = {}) {
     const controller = new AbortController();
     abortRef.current = controller;
 
-    fetchPage(urlPage, { signal: controller.signal });
+    fetchPage(urlPage, urlLimit, { signal: controller.signal });
 
     return () => {
       controller.abort();
     };
-  }, [urlPage, fetchPage, enabled]);
+  }, [urlPage, urlLimit, fetchPage, enabled]);
 
   useEffect(() => {
     if (!resetPageOnParamsChange) return;
@@ -186,12 +186,29 @@ export default function usePaginatedApi(url, options = {}) {
     [setSearchParams]
   );
 
+  // ★ NEW: Change limit and reset to page 1
+  const setLimit = useCallback(
+    (newLimit) => {
+      setSearchParams(
+        (prev) => {
+          const sp = new URLSearchParams(prev);
+          if (newLimit === initialLimit) sp.delete('limit');
+          else sp.set('limit', String(newLimit));
+          sp.delete('page'); // Reset to page 1
+          return sp;
+        },
+        { replace: false }
+      );
+    },
+    [setSearchParams, initialLimit]
+  );
+
   const refresh = useCallback(() => {
     if (abortRef.current) abortRef.current.abort();
     const controller = new AbortController();
     abortRef.current = controller;
-    fetchPage(urlPage, { signal: controller.signal });
-  }, [fetchPage, urlPage]);
+    fetchPage(urlPage, urlLimit, { signal: controller.signal });
+  }, [fetchPage, urlPage, urlLimit]);
 
   return {
     items,
@@ -201,6 +218,8 @@ export default function usePaginatedApi(url, options = {}) {
     isInitialLoading: isLoading && !hasLoadedOnce,
     error,
     goToPage,
+    setLimit, // ★ NEW
+    currentLimit: urlLimit, // ★ NEW
     refresh,
   };
 }

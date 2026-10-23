@@ -1,8 +1,5 @@
 // src/interfaces/http/routes/salesRoutes.js
-// v2.4.0-prod — Wires InventoryMovementRepository into RecordSaleUseCase.
-// v2.3.0-prod — Sales are append-only: PUT and DELETE return 405.
-// v2.2.0-prod — Adds pagination to GET /.
-// v2.1.0-prod — multi-tenant aware + 30s read cache for GET /
+// v2.5.0-prod — Accepts customerPhone from mobile payload.
 
 const express = require('express');
 const router = express.Router();
@@ -12,7 +9,7 @@ const InventoryRepository = require('../../../infrastructure/database/sqlite/rep
 const DebtorRepository = require('../../../infrastructure/database/sqlite/repositories/DebtorRepository');
 const CustomerRepository = require('../../../infrastructure/database/sqlite/repositories/CustomerRepository');
 const PaymentRepository = require('../../../infrastructure/database/sqlite/repositories/PaymentRepository');
-const InventoryMovementRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryMovementRepository'); // ★ NEW
+const InventoryMovementRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryMovementRepository');
 const { authMiddleware } = require('../middleware/authMiddleware');
 const { requireRole } = require('../middleware/requireRole');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
@@ -28,7 +25,7 @@ const inventoryRepo = new InventoryRepository();
 const debtorRepo = new DebtorRepository();
 const customerRepo = new CustomerRepository();
 const paymentRepo = new PaymentRepository();
-const inventoryMovementRepo = new InventoryMovementRepository(); // ★ NEW
+const inventoryMovementRepo = new InventoryMovementRepository();
 
 const recordSaleUseCase = new RecordSaleUseCase(
     saleRepo,
@@ -36,7 +33,7 @@ const recordSaleUseCase = new RecordSaleUseCase(
     debtorRepo,
     customerRepo,
     paymentRepo,
-    inventoryMovementRepo // ★ NEW
+    inventoryMovementRepo
 );
 
 router.use(authMiddleware);
@@ -107,6 +104,7 @@ router.post(
                 quantity,
                 unitPrice,
                 customerName,
+                customerPhone = null, // ★ NEW
                 customerId = null,
                 customerType = 'CUSTOMER',
                 paymentStatus = 'UNPAID',
@@ -119,6 +117,7 @@ router.post(
                 totalRevenue = 0,
                 totalProfit = 0,
                 notes = '',
+                dueDays = null,
             } = req.body;
 
             const result = await recordSaleUseCase.execute({
@@ -128,6 +127,7 @@ router.post(
                 quantity: quantity || (items.length > 0 ? items[0]?.quantity : 0),
                 unitPrice: unitPrice || (items.length > 0 ? items[0]?.sellingPrice : 0),
                 customerName,
+                customerPhone, // ★ NEW
                 customerId,
                 customerType,
                 paymentStatus,
@@ -140,6 +140,7 @@ router.post(
                 totalRevenue,
                 totalProfit,
                 notes: notes || '',
+                dueDays,
             });
 
             const allSales = await saleRepo.findByBusinessId(businessId);

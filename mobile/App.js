@@ -1,18 +1,27 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import * as Notifications from 'expo-notifications';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { OfflineProvider } from './src/context/OfflineContext';
-import { ThemeProvider, useTheme } from './src/context/ThemeContext'; // ★ NEW
+import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import LoginScreen from './src/screens/LoginScreen';
 import HomeScreen from './src/screens/HomeScreen';
-import { RecordSaleScreen, InventoryScreen, DebtorsScreen, SalesHistoryScreen } from './src/screens/PlaceholderScreens';
+import { RecordSaleScreen } from './src/screens/RecordSaleScreen';
+import { SalesHistoryScreen } from './src/screens/SalesHistoryScreen';
+import { InventoryScreen } from './src/screens/InventoryScreen';
+import { DebtorsScreen } from './src/screens/DebtorsScreen';
 import { ActivityIndicator, View } from 'react-native';
+import api from './src/services/api';
+import { registerForPushNotificationsAsync } from './src/services/notifications';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
+
+// ★ SAFE: Standard ref that works in production
+const navigationRef = React.createRef();
 
 function MainTabs() {
   const { theme } = useTheme();
@@ -46,13 +55,63 @@ function MainTabs() {
 function AppNavigator() {
   const { user, isLoading } = useAuth();
   const { isDark, theme } = useTheme();
+  const notificationListener = useRef();
+  const responseListener = useRef();
 
-  if (isLoading) return <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.background }}><ActivityIndicator size="large" color={theme.primary} /></View>;
+  useEffect(() => {
+    if (user) {
+      registerForPushNotificationsAsync().then(token => {
+        if (token) {
+          api.post('/notifications/push-token', { pushToken: token }).catch(err => {
+             console.log('Failed to sync push token:', err.message);
+          });
+        }
+      });
+
+      notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
+        console.log('Notification received:', notification);
+      });
+
+      responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
+        const data = response.notification.request.content.data;
+        
+        // Safe navigation check
+        if (data?.screen && navigationRef.current) {
+          try {
+            navigationRef.current.navigate(data.screen);
+          } catch (e) {
+            console.log('Navigation error:', e);
+          }
+        }
+      });
+    }
+
+    return () => {
+      if (notificationListener.current) {
+        Notifications.removeNotificationSubscription(notificationListener.current);
+      }
+      if (responseListener.current) {
+        Notifications.removeNotificationSubscription(responseListener.current);
+      }
+    };
+  }, [user]);
+
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.background }}>
+        <ActivityIndicator size="large" color={theme.primary} />
+      </View>
+    );
+  }
 
   return (
-    <NavigationContainer theme={isDark ? DarkTheme : DefaultTheme}>
+    <NavigationContainer ref={navigationRef} theme={isDark ? DarkTheme : DefaultTheme}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {user ? <Stack.Screen name="Main" component={MainTabs} /> : <Stack.Screen name="Login" component={LoginScreen} />}
+        {user ? (
+          <Stack.Screen name="Main" component={MainTabs} />
+        ) : (
+          <Stack.Screen name="Login" component={LoginScreen} />
+        )}
       </Stack.Navigator>
     </NavigationContainer>
   );
