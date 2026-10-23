@@ -1,11 +1,11 @@
 // src/interfaces/http/routes/userRoutes.js
-// v1.1.0-prod — Error classification applied. No role gate (own-profile only).
-// v1.0.0-prod — Initial.
+// v1.2.0-prod — Adds push-token endpoint.
 
 const express = require('express');
 const router = express.Router();
 const UserRepository = require('../../../infrastructure/database/sqlite/repositories/UserRepository');
 const { authMiddleware } = require('../middleware/authMiddleware');
+const { query } = require('../../../infrastructure/database/sqlite/connection'); // ★ NEW
 
 const userRepo = new UserRepository();
 
@@ -62,6 +62,24 @@ router.put('/profile', async (req, res) => {
   } catch (error) {
     console.error('Update profile error:', error);
     res.status(classifyError(error)).json({ success: false, message: error.message });
+  }
+});
+
+// ★ NEW: Save Push Token
+router.post('/push-token', async (req, res) => {
+  try {
+    const { pushToken } = req.body;
+    if (!pushToken) {
+      return res.status(400).json({ success: false, message: 'Push token is required' });
+    }
+
+    // Save token to DB
+    await query('UPDATE users SET push_token = $1 WHERE id = $2', [pushToken, req.user.id]);
+
+    res.json({ success: true, message: 'Push token saved successfully' });
+  } catch (error) {
+    console.error('Push token error:', error);
+    res.status(500).json({ success: false, message: 'Failed to save push token' });
   }
 });
 
