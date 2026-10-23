@@ -1,7 +1,7 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import api from '../services/api';
-import { registerForPushNotificationsAsync } from '../services/notificationService';
+import { registerForPushNotificationsAsync } from '../services/notifications';
 
 const AuthContext = createContext({});
 
@@ -50,11 +50,11 @@ export const AuthProvider = ({ children }) => {
           console.log("🔔 Push Token Received:", pushToken);
           
           if (pushToken) {
-            const response = await api.post('/users/push-token', { pushToken });
+            // ★ FIXED: Pointing to the correct backend endpoint
+            const response = await api.post('/notifications/push-token', { pushToken });
             console.log("🔔 Token saved to backend:", response.data);
           }
         } catch (pushError) {
-          // ★ This catches the error and prevents the app from crashing
           console.log("🔔 PUSH ERROR:", pushError.message);
         }
 
