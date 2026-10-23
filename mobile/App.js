@@ -20,7 +20,7 @@ import { registerForPushNotificationsAsync } from './src/services/notifications'
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
-// Reference to the navigation container so we can navigate from outside components
+// ★ SAFE: Standard ref that works in production
 const navigationRef = React.createRef();
 
 function MainTabs() {
@@ -60,7 +60,6 @@ function AppNavigator() {
 
   useEffect(() => {
     if (user) {
-      // 1. Register for push notifications and save to backend
       registerForPushNotificationsAsync().then(token => {
         if (token) {
           api.post('/notifications/push-token', { pushToken: token }).catch(err => {
@@ -69,18 +68,20 @@ function AppNavigator() {
         }
       });
 
-      // 2. Listener for notifications received while app is OPEN
       notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
-        console.log('Notification received while open:', notification);
+        console.log('Notification received:', notification);
       });
 
-      // 3. Listener for when user TAPS a notification
       responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
         const data = response.notification.request.content.data;
         
-        // Navigate based on the data payload we sent from the backend
+        // Safe navigation check
         if (data?.screen && navigationRef.current) {
-          navigationRef.current.navigate(data.screen);
+          try {
+            navigationRef.current.navigate(data.screen);
+          } catch (e) {
+            console.log('Navigation error:', e);
+          }
         }
       });
     }
@@ -95,12 +96,22 @@ function AppNavigator() {
     };
   }, [user]);
 
-  if (isLoading) return <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.background }}><ActivityIndicator size="large" color={theme.primary} /></View>;
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.background }}>
+        <ActivityIndicator size="large" color={theme.primary} />
+      </View>
+    );
+  }
 
   return (
     <NavigationContainer ref={navigationRef} theme={isDark ? DarkTheme : DefaultTheme}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {user ? <Stack.Screen name="Main" component={MainTabs} /> : <Stack.Screen name="Login" component={LoginScreen} />}
+        {user ? (
+          <Stack.Screen name="Main" component={MainTabs} />
+        ) : (
+          <Stack.Screen name="Login" component={LoginScreen} />
+        )}
       </Stack.Navigator>
     </NavigationContainer>
   );
