@@ -1,5 +1,5 @@
 // src/infrastructure/database/sqlite/repositories/NotificationRepository.js
-// Postgres async. Same logic as SQLite.
+// v1.2.0-prod — Safely handles null debtor_id for non-debtor notifications.
 
 const BaseRepository = require('./BaseRepository');
 
@@ -16,7 +16,7 @@ class NotificationRepository extends BaseRepository {
             RETURNING id`,
             [
                 notificationData.user_id,
-                notificationData.debtor_id,
+                notificationData.debtor_id ?? null, // ★ Explicit null to avoid undefined errors
                 notificationData.title,
                 notificationData.message,
                 notificationData.type || 'OVERDUE_DEBTOR',

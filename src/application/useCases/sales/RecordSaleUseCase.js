@@ -1,10 +1,10 @@
 // src/application/useCases/sales/RecordSaleUseCase.js
-// v3.6.0-prod — Adds web notification trigger on sale creation.
+// v3.7.0-prod — Splits web and push notification logic for Postgres.
 
 const Sale = require('../../../domain/entities/Sale');
 const { withTransaction } = require('../../../infrastructure/database/sqlite/connection');
 const UserRepository = require('../../../infrastructure/database/sqlite/repositories/UserRepository');
-const NotificationRepository = require('../../../infrastructure/database/sqlite/repositories/NotificationRepository'); // ★ NEW
+const NotificationRepository = require('../../../infrastructure/database/sqlite/repositories/NotificationRepository');
 const { sendBulkPushNotifications } = require('../../../infrastructure/services/notifications/ExpoPushService');
 
 class RecordSaleUseCase {
@@ -23,7 +23,7 @@ class RecordSaleUseCase {
         this.paymentRepository = paymentRepository;
         this.inventoryMovementRepository = inventoryMovementRepository;
         this.userRepository = new UserRepository(); 
-        this.notificationRepository = new NotificationRepository(); // ★ NEW
+        this.notificationRepository = new NotificationRepository();
     }
 
     async execute({
@@ -74,44 +74,57 @@ class RecordSaleUseCase {
         });
     }
 
-    // ★ UPDATED: Helper function to send push AND web notifications safely
+    // ★ UPDATED: Safely send web and push notifications
     async _sendSaleNotification({ businessId, cashierId, customerName, itemNames, totalRevenue, invoiceNo }) {
+        const bodyText = `${customerName} bought ${itemNames} for ₦${Number(totalRevenue).toLocaleString()}`;
+        const titleText = `🛒 New Sale: ${invoiceNo}`;
+
+        let members = [];
         try {
-            // 1. Fetch all users with push tokens for this business, excluding the cashier
-            const members = await this.userRepository.findByBusinessIdWithPushTokens(businessId, cashierId);
-            
-            if (members.length > 0) {
-                const bodyText = `${customerName} bought ${itemNames} for ₦${Number(totalRevenue).toLocaleString()}`;
-                const titleText = `🛒 New Sale: ${invoiceNo}`;
+            // Fetch ALL members, regardless of push token
+            members = await this.userRepository.findAllByBusinessId(businessId, null);
+            console.log(`[RecordSaleUseCase] Notification recipients found: ${members.length}`);
+        } catch (error) {
+            console.error('[RecordSaleUseCase] Failed to load notification recipients:', error.message);
+            return;
+        }
 
-                // 2. Save to database for the web dashboard bell
-                // We create a notification for each member (or just the owner/admin, but here we do all)
-                for (const member of members) {
-                    await this.notificationRepository.create({
-                        user_id: member.user_id,
-                        title: titleText,
-                        message: bodyText,
-                        type: 'NEW_SALE',
-                        is_read: false,
-                        created_at: new Date().toISOString(),
-                    });
-                }
+        // 1. WEB notifications: every member, regardless of push token
+        for (const member of members) {
+            if (member.user_id === cashierId) continue; // Don't notify the cashier
 
-                // 3. Send mobile push notifications
-                const tokens = members.map(m => m.push_token).filter(Boolean);
-                if (tokens.length > 0) {
-                    await sendBulkPushNotifications(
-                        tokens,
-                        titleText,
-                        bodyText,
-                        { screen: 'History', saleId: invoiceNo }
-                    );
-                }
-                console.log(`[RecordSaleUseCase] Notifications sent to ${members.length} members.`);
+            try {
+                await this.notificationRepository.create({
+                    user_id: member.user_id,
+                    title: titleText,
+                    message: bodyText,
+                    type: 'NEW_SALE',
+                    is_read: false,
+                    created_at: new Date().toISOString(),
+                });
+            } catch (error) {
+                console.error(`[RecordSaleUseCase] Web notification failed for user ${member.user_id}:`, error.message);
+            }
+        }
+
+        // 2. PUSH notifications: only members who have a token
+        try {
+            const tokens = members
+                .filter(m => m.user_id !== cashierId)
+                .map(m => m.push_token)
+                .filter(Boolean);
+
+            if (tokens.length > 0) {
+                await sendBulkPushNotifications(
+                    tokens,
+                    titleText,
+                    bodyText,
+                    { screen: 'History', saleId: invoiceNo }
+                );
+                console.log(`[RecordSaleUseCase] Push notification sent to ${tokens.length} devices.`);
             }
         } catch (error) {
-            // We catch the error so a failed notification never rolls back a successful sale
-            console.error('[RecordSaleUseCase] Failed to send sale notification:', error.message);
+            console.error('[RecordSaleUseCase] Push notification failed:', error.message);
         }
     }
 
