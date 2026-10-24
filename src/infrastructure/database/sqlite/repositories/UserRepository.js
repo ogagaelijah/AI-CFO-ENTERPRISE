@@ -1,5 +1,5 @@
 // src/infrastructure/database/sqlite/repositories/UserRepository.js
-// v3.4.0-prod — Adds push token management via business_members.
+// v3.5.0-prod — Adds findAllByBusinessId for web notifications.
 
 const BaseRepository = require('./BaseRepository');
 const bcrypt = require('bcrypt');
@@ -307,7 +307,7 @@ class UserRepository extends BaseRepository {
         return result.rows[0].count;
     }
 
-    // ★ NEW: Save the push token to the business_members table
+    // ★ Save the push token to the business_members table
     async updatePushToken(userId, businessId, pushToken) {
         const result = await this._query(
             `UPDATE business_members 
@@ -318,7 +318,7 @@ class UserRepository extends BaseRepository {
         return result.rowCount > 0;
     }
 
-    // ★ NEW: Fetch all push tokens for a specific business, optionally excluding a user
+    // ★ Fetch all push tokens for a specific business, optionally excluding a user
     async findByBusinessIdWithPushTokens(businessId, excludeUserId = null) {
         let sql = `
             SELECT bm.user_id, bm.push_token, u.full_name 
@@ -326,6 +326,26 @@ class UserRepository extends BaseRepository {
             JOIN users u ON u.id = bm.user_id
             WHERE bm.business_id = $1 
               AND bm.push_token IS NOT NULL 
+              AND bm.status = 'ACTIVE'
+        `;
+        const params = [businessId];
+
+        if (excludeUserId) {
+            sql += ` AND bm.user_id != $2`;
+            params.push(excludeUserId);
+        }
+
+        const result = await this._query(sql, params);
+        return result.rows;
+    }
+
+    // ★ NEW: Fetch ALL members for a business, regardless of push tokens (for web notifications)
+    async findAllByBusinessId(businessId, excludeUserId = null) {
+        let sql = `
+            SELECT bm.user_id, bm.push_token, u.full_name 
+            FROM business_members bm
+            JOIN users u ON u.id = bm.user_id
+            WHERE bm.business_id = $1 
               AND bm.status = 'ACTIVE'
         `;
         const params = [businessId];
