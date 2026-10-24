@@ -1,5 +1,5 @@
 // src/infrastructure/database/sqlite/repositories/UserRepository.js
-// v3.3.0-prod — Adds platform_role for internal staff.
+// v3.4.0-prod — Adds push token management via business_members.
 
 const BaseRepository = require('./BaseRepository');
 const bcrypt = require('bcrypt');
@@ -21,7 +21,7 @@ class User {
         this.passwordChangedAt = data.passwordChangedAt || null;
         this.twoFactorSecret = data.twoFactorSecret || null;
         this.twoFactorEnabled = data.twoFactorEnabled || false;
-        this.platformRole = data.platformRole || null; // ★ NEW
+        this.platformRole = data.platformRole || null;
         this.createdAt = data.createdAt || new Date();
         this.updatedAt = data.updatedAt || new Date();
     }
@@ -100,7 +100,7 @@ class User {
             emailVerified: this.emailVerified,
             phoneVerified: this.phoneVerified,
             twoFactorEnabled: this.twoFactorEnabled,
-            platformRole: this.platformRole, // ★ NEW
+            platformRole: this.platformRole,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt,
         };
@@ -130,7 +130,7 @@ class UserRepository extends BaseRepository {
             passwordChangedAt: row.password_changed_at,
             twoFactorSecret: row.two_factor_secret,
             twoFactorEnabled: row.two_factor_enabled === true || row.two_factor_enabled === 1,
-            platformRole: row.platform_role, // ★ NEW
+            platformRole: row.platform_role,
             createdAt: row.created_at,
             updatedAt: row.updated_at,
         });
@@ -164,7 +164,7 @@ class UserRepository extends BaseRepository {
                 userData.passwordChangedAt || now,
                 userData.twoFactorSecret || null,
                 userData.twoFactorEnabled ? true : false,
-                userData.platformRole || null, // ★ NEW
+                userData.platformRole || null,
             ]
         );
 
@@ -225,7 +225,7 @@ class UserRepository extends BaseRepository {
                 passwordChangedAt: entity.passwordChangedAt,
                 twoFactorSecret: entity.twoFactorSecret,
                 twoFactorEnabled: entity.twoFactorEnabled,
-                platformRole: entity.platformRole, // ★ NEW
+                platformRole: entity.platformRole,
             });
         }
 
@@ -248,7 +248,7 @@ class UserRepository extends BaseRepository {
             passwordChangedAt: 'password_changed_at',
             twoFactorSecret: 'two_factor_secret',
             twoFactorEnabled: 'two_factor_enabled',
-            platformRole: 'platform_role', // ★ NEW
+            platformRole: 'platform_role',
         };
 
         for (const [key, column] of Object.entries(map)) {
@@ -305,6 +305,38 @@ class UserRepository extends BaseRepository {
     async count() {
         const result = await this._query('SELECT COUNT(*)::int as count FROM users');
         return result.rows[0].count;
+    }
+
+    // ★ NEW: Save the push token to the business_members table
+    async updatePushToken(userId, businessId, pushToken) {
+        const result = await this._query(
+            `UPDATE business_members 
+             SET push_token = $1 
+             WHERE user_id = $2 AND business_id = $3`,
+            [pushToken, userId, businessId]
+        );
+        return result.rowCount > 0;
+    }
+
+    // ★ NEW: Fetch all push tokens for a specific business, optionally excluding a user
+    async findByBusinessIdWithPushTokens(businessId, excludeUserId = null) {
+        let sql = `
+            SELECT bm.user_id, bm.push_token, u.full_name 
+            FROM business_members bm
+            JOIN users u ON u.id = bm.user_id
+            WHERE bm.business_id = $1 
+              AND bm.push_token IS NOT NULL 
+              AND bm.status = 'ACTIVE'
+        `;
+        const params = [businessId];
+
+        if (excludeUserId) {
+            sql += ` AND bm.user_id != $2`;
+            params.push(excludeUserId);
+        }
+
+        const result = await this._query(sql, params);
+        return result.rows;
     }
 }
 
