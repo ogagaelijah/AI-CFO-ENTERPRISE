@@ -1,5 +1,5 @@
 // src/application/useCases/sales/RecordSaleUseCase.js
-// v3.7.0-prod — Splits web and push notification logic for Postgres.
+// v3.9.0-prod — Notifies ONLY Owners when non-owners make sales.
 
 const Sale = require('../../../domain/entities/Sale');
 const { withTransaction } = require('../../../infrastructure/database/sqlite/connection');
@@ -74,14 +74,14 @@ class RecordSaleUseCase {
         });
     }
 
-    // ★ UPDATED: Safely send web and push notifications
+    // ★ UPDATED: Notifies ONLY Owners if a non-owner makes a sale
     async _sendSaleNotification({ businessId, cashierId, customerName, itemNames, totalRevenue, invoiceNo }) {
         const bodyText = `${customerName} bought ${itemNames} for ₦${Number(totalRevenue).toLocaleString()}`;
         const titleText = `🛒 New Sale: ${invoiceNo}`;
 
         let members = [];
         try {
-            // Fetch ALL members, regardless of push token
+            // Fetch all members with their roles
             members = await this.userRepository.findAllByBusinessId(businessId, null);
             console.log(`[RecordSaleUseCase] Notification recipients found: ${members.length}`);
         } catch (error) {
@@ -89,13 +89,29 @@ class RecordSaleUseCase {
             return;
         }
 
-        // 1. WEB notifications: every member, regardless of push token
-        for (const member of members) {
-            if (member.user_id === cashierId) continue; // Don't notify the cashier
+        // 1. Identify the cashier's role
+        const cashier = members.find(m => m.user_id === cashierId);
+        const isCashierOwner = cashier && cashier.role === 'OWNER';
 
+        // 2. If the owner made the sale, do not notify anyone.
+        if (isCashierOwner) {
+            console.log('[RecordSaleUseCase] Sale made by OWNER. No notifications sent.');
+            return;
+        }
+
+        // 3. If a non-owner made the sale, find ONLY the owners to notify
+        const owners = members.filter(m => m.role === 'OWNER');
+        
+        if (owners.length === 0) {
+            console.log('[RecordSaleUseCase] No OWNER found for this business. No notifications sent.');
+            return;
+        }
+
+        // 4. Send Web notifications to OWNERS
+        for (const owner of owners) {
             try {
                 await this.notificationRepository.create({
-                    user_id: member.user_id,
+                    user_id: owner.user_id,
                     title: titleText,
                     message: bodyText,
                     type: 'NEW_SALE',
@@ -103,14 +119,13 @@ class RecordSaleUseCase {
                     created_at: new Date().toISOString(),
                 });
             } catch (error) {
-                console.error(`[RecordSaleUseCase] Web notification failed for user ${member.user_id}:`, error.message);
+                console.error(`[RecordSaleUseCase] Web notification failed for owner ${owner.user_id}:`, error.message);
             }
         }
 
-        // 2. PUSH notifications: only members who have a token
+        // 5. Send Push notifications to OWNERS with tokens
         try {
-            const tokens = members
-                .filter(m => m.user_id !== cashierId)
+            const tokens = owners
                 .map(m => m.push_token)
                 .filter(Boolean);
 
@@ -121,7 +136,7 @@ class RecordSaleUseCase {
                     bodyText,
                     { screen: 'History', saleId: invoiceNo }
                 );
-                console.log(`[RecordSaleUseCase] Push notification sent to ${tokens.length} devices.`);
+                console.log(`[RecordSaleUseCase] Push notification sent to ${tokens.length} owners.`);
             }
         } catch (error) {
             console.error('[RecordSaleUseCase] Push notification failed:', error.message);

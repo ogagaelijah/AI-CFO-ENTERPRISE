@@ -1,5 +1,5 @@
 // src/infrastructure/database/sqlite/repositories/UserRepository.js
-// v3.5.0-prod — Adds findAllByBusinessId for web notifications.
+// v3.6.0-prod — Adds role to member queries for notification routing.
 
 const BaseRepository = require('./BaseRepository');
 const bcrypt = require('bcrypt');
@@ -321,7 +321,7 @@ class UserRepository extends BaseRepository {
     // ★ Fetch all push tokens for a specific business, optionally excluding a user
     async findByBusinessIdWithPushTokens(businessId, excludeUserId = null) {
         let sql = `
-            SELECT bm.user_id, bm.push_token, u.full_name 
+            SELECT bm.user_id, bm.role, bm.push_token, u.full_name 
             FROM business_members bm
             JOIN users u ON u.id = bm.user_id
             WHERE bm.business_id = $1 
@@ -339,10 +339,10 @@ class UserRepository extends BaseRepository {
         return result.rows;
     }
 
-    // ★ NEW: Fetch ALL members for a business, regardless of push tokens (for web notifications)
+    // ★ Fetch ALL members for a business, regardless of push tokens (for web notifications)
     async findAllByBusinessId(businessId, excludeUserId = null) {
         let sql = `
-            SELECT bm.user_id, bm.push_token, u.full_name 
+            SELECT bm.user_id, bm.role, bm.push_token, u.full_name 
             FROM business_members bm
             JOIN users u ON u.id = bm.user_id
             WHERE bm.business_id = $1 

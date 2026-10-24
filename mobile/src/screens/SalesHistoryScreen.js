@@ -271,6 +271,13 @@ export const SalesHistoryScreen = () => {
                         <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.text }}>Total Amount</Text>
                         <Text style={{ fontSize: 20, fontWeight: 'bold', color: theme.primary }}>₦{Number(selectedSale.total_price).toLocaleString()}</Text>
                       </View>
+                      
+                      {/* ★ NEW: Profit Row */}
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                        <Text style={{ fontSize: 14, color: theme.textMuted }}>Profit</Text>
+                        <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.success }}>₦{Number(selectedSale.gross_profit || 0).toLocaleString()}</Text>
+                      </View>
+
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                         <Text style={{ fontSize: 14, color: theme.textMuted }}>Status</Text>
                         <Text style={{ fontSize: 14, fontWeight: 'bold', color: selectedSale.payment_status === 'PAID' ? theme.success : theme.danger }}>{selectedSale.payment_status}</Text>
