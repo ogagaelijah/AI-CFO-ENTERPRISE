@@ -1,9 +1,10 @@
 // src/application/useCases/sales/RecordSaleUseCase.js
-// v3.5.0-prod — Adds mobile push notifications on sale creation.
+// v3.6.0-prod — Adds web notification trigger on sale creation.
 
 const Sale = require('../../../domain/entities/Sale');
 const { withTransaction } = require('../../../infrastructure/database/sqlite/connection');
 const UserRepository = require('../../../infrastructure/database/sqlite/repositories/UserRepository');
+const NotificationRepository = require('../../../infrastructure/database/sqlite/repositories/NotificationRepository'); // ★ NEW
 const { sendBulkPushNotifications } = require('../../../infrastructure/services/notifications/ExpoPushService');
 
 class RecordSaleUseCase {
@@ -21,7 +22,8 @@ class RecordSaleUseCase {
         this.customerRepository = customerRepository;
         this.paymentRepository = paymentRepository;
         this.inventoryMovementRepository = inventoryMovementRepository;
-        this.userRepository = new UserRepository(); // ★ NEW: For fetching push tokens
+        this.userRepository = new UserRepository(); 
+        this.notificationRepository = new NotificationRepository(); // ★ NEW
     }
 
     async execute({
@@ -72,26 +74,44 @@ class RecordSaleUseCase {
         });
     }
 
-    // ★ NEW: Helper function to send the push notification safely
-    async _sendSalePushNotification({ businessId, cashierId, customerName, itemNames, totalRevenue, invoiceNo }) {
+    // ★ UPDATED: Helper function to send push AND web notifications safely
+    async _sendSaleNotification({ businessId, cashierId, customerName, itemNames, totalRevenue, invoiceNo }) {
         try {
-            // Fetch all users with push tokens for this business, excluding the cashier
+            // 1. Fetch all users with push tokens for this business, excluding the cashier
             const members = await this.userRepository.findByBusinessIdWithPushTokens(businessId, cashierId);
-            const tokens = members.map(m => m.push_token).filter(Boolean);
-
-            if (tokens.length > 0) {
+            
+            if (members.length > 0) {
                 const bodyText = `${customerName} bought ${itemNames} for ₦${Number(totalRevenue).toLocaleString()}`;
-                await sendBulkPushNotifications(
-                    tokens,
-                    `🛒 New Sale: ${invoiceNo}`,
-                    bodyText,
-                    { screen: 'History', saleId: invoiceNo }
-                );
-                console.log(`[RecordSaleUseCase] Push notification sent to ${tokens.length} devices.`);
+                const titleText = `🛒 New Sale: ${invoiceNo}`;
+
+                // 2. Save to database for the web dashboard bell
+                // We create a notification for each member (or just the owner/admin, but here we do all)
+                for (const member of members) {
+                    await this.notificationRepository.create({
+                        user_id: member.user_id,
+                        title: titleText,
+                        message: bodyText,
+                        type: 'NEW_SALE',
+                        is_read: false,
+                        created_at: new Date().toISOString(),
+                    });
+                }
+
+                // 3. Send mobile push notifications
+                const tokens = members.map(m => m.push_token).filter(Boolean);
+                if (tokens.length > 0) {
+                    await sendBulkPushNotifications(
+                        tokens,
+                        titleText,
+                        bodyText,
+                        { screen: 'History', saleId: invoiceNo }
+                    );
+                }
+                console.log(`[RecordSaleUseCase] Notifications sent to ${members.length} members.`);
             }
         } catch (error) {
-            // We catch the error so a failed push notification never rolls back a successful sale
-            console.error('[RecordSaleUseCase] Failed to send sale push notification:', error.message);
+            // We catch the error so a failed notification never rolls back a successful sale
+            console.error('[RecordSaleUseCase] Failed to send sale notification:', error.message);
         }
     }
 
@@ -263,7 +283,6 @@ class RecordSaleUseCase {
         if (items.length === 0) throw new Error('At least one item is required');
         if (!customerName) throw new Error('Customer name is required');
 
-        // ★ NEW: Capture the result outside the transaction so we can send the push safely
         let resultToReturn = null;
 
         await withTransaction(async () => {
@@ -299,7 +318,6 @@ class RecordSaleUseCase {
                         finalItemName = item.item_name || raw.name;
                         unitCost = Number(item.cost_price) || 0;
 
-                        // ★ UNTOUCHED: Stock validation logic
                         if (item.quantity < baseQty) {
                             throw new Error(
                                 `Insufficient stock for "${finalItemName}". ` +
@@ -433,14 +451,13 @@ class RecordSaleUseCase {
                 totalRevenue: totalRevenueValue,
                 totalProfit: grossProfit,
                 items: processedItems,
-                invoiceNo: invoiceNo, // Passed out for notification
-                itemNames: itemNames  // Passed out for notification
+                invoiceNo: invoiceNo,
+                itemNames: itemNames
             };
         });
 
-        // ★ NEW: Send notification AFTER transaction completes successfully
         if (resultToReturn) {
-            await this._sendSalePushNotification({
+            await this._sendSaleNotification({
                 businessId,
                 cashierId: userId,
                 customerName,
@@ -496,7 +513,6 @@ class RecordSaleUseCase {
                     finalItemName = inventoryItem.item_name || itemName;
                     unitCost = Number(inventoryItem.cost_price) || 0;
 
-                    // ★ UNTOUCHED: Stock validation logic
                     if (inventoryItem.quantity < baseQty) {
                         throw new Error(
                             `Insufficient stock for "${finalItemName}". ` +
@@ -621,7 +637,7 @@ class RecordSaleUseCase {
         });
 
         if (resultToReturn) {
-            await this._sendSalePushNotification({
+            await this._sendSaleNotification({
                 businessId,
                 cashierId: userId,
                 customerName,
