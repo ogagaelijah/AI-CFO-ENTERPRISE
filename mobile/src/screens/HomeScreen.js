@@ -10,68 +10,74 @@ export default function HomeScreen({ navigation }) {
   const { user, logout } = useAuth();
   const { queue, syncQueue } = useOffline();
   const { isDark, theme, toggleTheme } = useTheme();
-  const [stats, setStats] = useState({ sales: 0, profit: 0 });
+  
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchStats = async () => {
+  const fetchDashboard = async () => {
     try {
-      console.log("📊 Fetching dashboard stats...");
-      const response = await api.get('/sales');
-      // Print the first 200 characters of the response to see the structure
-      console.log("📊 Sales response:", JSON.stringify(response.data).substring(0, 200)); 
+      console.log("📊 Fetching dashboard data...");
+      const response = await api.get('/dashboard/summary');
       
-      const sales = response.data?.data?.sales || response.data?.data || response.data || [];
-      const today = new Date().toISOString().split('T')[0];
-      let todaySales = 0;
-      let todayProfit = 0;
-
-      if (Array.isArray(sales)) {
-        sales.forEach(sale => {
-          const saleDate = new Date(sale.sale_date).toISOString().split('T')[0];
-          if (saleDate === today) {
-            todaySales += Number(sale.total_price) || 0;
-            todayProfit += Number(sale.gross_profit) || 0;
-          }
-        });
+      if (response.data?.success) {
+        setData(response.data.data);
       }
-
-      console.log(`📊 Calculated: Today is ${today}, Sales: ${todaySales}, Profit: ${todayProfit}`);
-      setStats({ sales: todaySales, profit: todayProfit });
     } catch (error) {
       console.log("❌ Dashboard fetch error:", error.message);
-      console.log("❌ Response data:", error.response?.data);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  useEffect(() => { fetchStats(); }, []);
-  const onRefresh = () => { setRefreshing(true); fetchStats(); };
+  useEffect(() => { fetchDashboard(); }, []);
+  
+  const onRefresh = () => { setRefreshing(true); fetchDashboard(); };
 
-  if (loading) return <View style={[styles.center, { backgroundColor: theme.background }]}><ActivityIndicator size="large" color={theme.primary} /></View>;
+  if (loading) {
+    return (
+      <View style={[styles.center, { backgroundColor: theme.background }]}>
+        <ActivityIndicator size="large" color={theme.primary} />
+      </View>
+    );
+  }
+
+  // Fallback to 0 if data fails to load
+  const kpis = data?.kpis || {};
+  const revenueToday = kpis.revenue?.today || 0;
+  const salesToday = kpis.sales?.today || 0;
+  const profitToday = kpis.profit?.today || 0;
+  const cashInToday = kpis.cash_in?.today || 0;
+  const cashOutToday = kpis.cash_out?.today || 0;
+  const inventoryValue = kpis.inventory?.total || 0;
+  const lowStock = kpis.inventory?.lowStock || 0;
 
   return (
     <ScrollView 
       style={[styles.container, { backgroundColor: theme.background }]} 
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
+      showsVerticalScrollIndicator={false}
     >
+      {/* ─── HEADER ─── */}
       <View style={styles.header}>
         <View>
           <Text style={[styles.greeting, { color: theme.textMuted }]}>Welcome back,</Text>
-          <Text style={[styles.name, { color: theme.text }]}>{user?.fullName || 'User'}</Text> 
+          <Text style={[styles.name, { color: theme.text }]} numberOfLines={1}>
+            {user?.fullName?.split(' ')[0] || 'User'}
+          </Text> 
         </View>
         <View style={{ flexDirection: 'row', gap: 10 }}>
           <TouchableOpacity onPress={toggleTheme} style={[styles.iconBtn, { backgroundColor: theme.cardBg }]}>
-            <Ionicons name={isDark ? 'sunny' : 'moon'} size={24} color={isDark ? '#FFD700' : '#1C1C1E'} />
+            <Ionicons name={isDark ? 'sunny' : 'moon'} size={22} color={isDark ? '#FFD700' : '#1C1C1E'} />
           </TouchableOpacity>
           <TouchableOpacity onPress={logout} style={[styles.iconBtn, { backgroundColor: isDark ? '#7F1D1D' : '#FFE5E5' }]}>
-            <Ionicons name="log-out-outline" size={24} color={theme.danger} />
+            <Ionicons name="log-out-outline" size={22} color={theme.danger} />
           </TouchableOpacity>
         </View>
       </View>
 
+      {/* ─── OFFLINE BANNER ─── */}
       {queue.length > 0 && (
         <TouchableOpacity onPress={syncQueue} style={[styles.syncBanner, { backgroundColor: theme.warning }]}>
           <Ionicons name="cloud-offline" size={20} color="#fff" />
@@ -79,45 +85,78 @@ export default function HomeScreen({ navigation }) {
         </TouchableOpacity>
       )}
 
-      <View style={styles.statsGrid}>
-        <View style={[styles.statCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
-          <Text style={[styles.statLabel, { color: theme.textMuted }]}>Today's Sales</Text>
-          <Text style={[styles.statValue, { color: theme.text }]}>₦{stats.sales.toLocaleString()}</Text>
+      {/* ─── HERO CARD (Revenue) ─── */}
+      <View style={[styles.heroCard, { backgroundColor: theme.primary }]}>
+        <View style={styles.heroHeader}>
+          <Text style={styles.heroLabel}>Total Revenue Today</Text>
+          <Ionicons name="trending-up" size={24} color="rgba(255,255,255,0.8)" />
         </View>
-        <View style={[styles.statCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
-          <Text style={[styles.statLabel, { color: theme.textMuted }]}>Today's Profit</Text>
-          <Text style={[styles.statValue, { color: theme.success }]}>₦{stats.profit.toLocaleString()}</Text>
+        <Text style={styles.heroValue}>₦{Number(revenueToday).toLocaleString()}</Text>
+        
+        <View style={styles.heroDivider} />
+        
+        <View style={styles.heroSubRow}>
+          <View style={styles.heroSubItem}>
+            <Text style={styles.heroSubLabel}>Sales Count</Text>
+            <Text style={styles.heroSubValue}>{salesToday}</Text>
+          </View>
+          <View style={styles.heroSubItem}>
+            <Text style={styles.heroSubLabel}>Profit Today</Text>
+            <Text style={styles.heroSubValue}>₦{Number(profitToday).toLocaleString()}</Text>
+          </View>
         </View>
       </View>
 
-      <Text style={[styles.sectionTitle, { color: theme.text }]}>Quick Actions</Text>
-      
-      <TouchableOpacity style={[styles.actionButton, { backgroundColor: theme.cardBg, borderColor: theme.border }]} onPress={() => navigation.navigate('Sales')}>
-        <View style={[styles.actionIcon, { backgroundColor: theme.primary }]}><Ionicons name="cart" size={24} color="#fff" /></View>
-        <View style={styles.actionText}>
-          <Text style={[styles.actionTitle, { color: theme.text }]}>Record a Sale</Text>
-          <Text style={[styles.actionSubtitle, { color: theme.textMuted }]}>Sell pieces or cartons</Text>
+      {/* ─── CASH FLOW CARD ─── */}
+      <Text style={[styles.sectionTitle, { color: theme.text }]}>Today's Cash Flow</Text>
+      <View style={styles.cashFlowGrid}>
+        <View style={[styles.cashCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+          <View style={[styles.cashIconWrap, { backgroundColor: theme.isDark ? '#064E3B' : '#D1FAE5' }]}>
+            <Ionicons name="arrow-down" size={20} color={theme.success} />
+          </View>
+          <Text style={[styles.cashLabel, { color: theme.textMuted }]}>Cash In</Text>
+          <Text style={[styles.cashValue, { color: theme.text }]}>₦{Number(cashInToday).toLocaleString()}</Text>
         </View>
-        <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
+
+        <View style={[styles.cashCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+          <View style={[styles.cashIconWrap, { backgroundColor: theme.isDark ? '#7F1D1D' : '#FEE2E2' }]}>
+            <Ionicons name="arrow-up" size={20} color={theme.danger} />
+          </View>
+          <Text style={[styles.cashLabel, { color: theme.textMuted }]}>Cash Out</Text>
+          <Text style={[styles.cashValue, { color: theme.text }]}>₦{Number(cashOutToday).toLocaleString()}</Text>
+        </View>
+      </View>
+
+      {/* ─── INVENTORY SNAPSHOT ─── */}
+      <Text style={[styles.sectionTitle, { color: theme.text }]}>Inventory Snapshot</Text>
+      <TouchableOpacity 
+        style={[styles.inventoryCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
+        onPress={() => navigation.navigate('Inventory')}
+        activeOpacity={0.7}
+      >
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Ionicons name="cube" size={20} color={theme.primary} />
+            <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.text }}>Total Value</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
+        </View>
+        
+        <Text style={{ fontSize: 24, fontWeight: 'bold', color: theme.text, marginBottom: 8 }}>
+          ₦{Number(inventoryValue).toLocaleString()}
+        </Text>
+
+        {lowStock > 0 && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Ionicons name="warning" size={14} color={theme.warning} />
+            <Text style={{ fontSize: 13, color: theme.warning, fontWeight: '600' }}>
+              {lowStock} item(s) low on stock
+            </Text>
+          </View>
+        )}
       </TouchableOpacity>
 
-      <TouchableOpacity style={[styles.actionButton, { backgroundColor: theme.cardBg, borderColor: theme.border }]} onPress={() => navigation.navigate('History')}>
-        <View style={[styles.actionIcon, { backgroundColor: '#5856D6' }]}><Ionicons name="receipt" size={24} color="#fff" /></View>
-        <View style={styles.actionText}>
-          <Text style={[styles.actionTitle, { color: theme.text }]}>Sales History</Text>
-          <Text style={[styles.actionSubtitle, { color: theme.textMuted }]}>View recent transactions</Text>
-        </View>
-        <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
-      </TouchableOpacity>
-
-      <TouchableOpacity style={[styles.actionButton, { backgroundColor: theme.cardBg, borderColor: theme.border }]} onPress={() => navigation.navigate('Inventory')}>
-        <View style={[styles.actionIcon, { backgroundColor: theme.warning }]}><Ionicons name="cube" size={24} color="#fff" /></View>
-        <View style={styles.actionText}>
-          <Text style={[styles.actionTitle, { color: theme.text }]}>Check Inventory</Text>
-          <Text style={[styles.actionSubtitle, { color: theme.textMuted }]}>View stock and low items</Text>
-        </View>
-        <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
-      </TouchableOpacity>
+      <View style={{ height: 40 }} />
     </ScrollView>
   );
 }
@@ -125,20 +164,38 @@ export default function HomeScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 20 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  
+  // Header
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, marginTop: 40 },
-  greeting: { fontSize: 16 },
-  name: { fontSize: 24, fontWeight: 'bold' },
-  iconBtn: { padding: 8, borderRadius: 8 },
-  statsGrid: { flexDirection: 'row', gap: 12, marginBottom: 24 },
-  statCard: { flex: 1, padding: 16, borderRadius: 12, borderWidth: 1, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
-  statLabel: { fontSize: 12, marginBottom: 4 },
-  statValue: { fontSize: 20, fontWeight: 'bold' },
-  sectionTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
-  actionButton: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 12, marginBottom: 12, borderWidth: 1, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
-  actionIcon: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center', marginRight: 16 },
-  actionText: { flex: 1 },
-  actionTitle: { fontSize: 16, fontWeight: '600' },
-  actionSubtitle: { fontSize: 13, marginTop: 2 },
+  greeting: { fontSize: 14, marginBottom: 2 },
+  name: { fontSize: 22, fontWeight: 'bold' },
+  iconBtn: { padding: 10, borderRadius: 12 },
+
+  // Offline
   syncBanner: { padding: 12, borderRadius: 8, marginBottom: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   syncText: { color: '#fff', fontWeight: 'bold', marginLeft: 8 },
+
+  // Hero Card
+  heroCard: { padding: 24, borderRadius: 20, marginBottom: 24, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 10, elevation: 8 },
+  heroHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  heroLabel: { color: 'rgba(255,255,255,0.8)', fontSize: 15, fontWeight: '600' },
+  heroValue: { color: '#fff', fontSize: 36, fontWeight: 'bold', marginBottom: 16 },
+  heroDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.2)', marginBottom: 16 },
+  heroSubRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  heroSubItem: { flex: 1 },
+  heroSubLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 12, marginBottom: 4 },
+  heroSubValue: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+
+  // Section Title
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
+
+  // Cash Flow
+  cashFlowGrid: { flexDirection: 'row', gap: 12, marginBottom: 24 },
+  cashCard: { flex: 1, padding: 16, borderRadius: 16, borderWidth: 1 },
+  cashIconWrap: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
+  cashLabel: { fontSize: 13, marginBottom: 4, fontWeight: '500' },
+  cashValue: { fontSize: 18, fontWeight: 'bold' },
+
+  // Inventory
+  inventoryCard: { padding: 16, borderRadius: 16, borderWidth: 1, marginBottom: 8 },
 });
