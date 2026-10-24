@@ -13,7 +13,6 @@ export const RecordSaleScreen = ({ navigation }) => {
   const [inventory, setInventory] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // ★ NEW: customerPhone state
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   
@@ -119,7 +118,7 @@ export const RecordSaleScreen = ({ navigation }) => {
       setLoading(true);
       const payload = {
         customerName: customerName.trim(),
-        customerPhone: customerPhone.trim() || null, // ★ NEW
+        customerPhone: customerPhone.trim() || null,
         paymentStatus,
         amountPaid: paid,
         dueDays: (paymentStatus === 'UNPAID' || paymentStatus === 'PARTIAL') ? dueDays : null,
@@ -149,7 +148,7 @@ export const RecordSaleScreen = ({ navigation }) => {
         }
       }
       setCustomerName('');
-      setCustomerPhone(''); // ★ NEW
+      setCustomerPhone('');
       setItems([{ name: '', quantity: '', price: '', unitMultiplier: 1, soldUnit: 'Piece', inventoryId: null }]);
       setAmountPaid('');
       setPaymentStatus('PAID');
@@ -170,7 +169,6 @@ export const RecordSaleScreen = ({ navigation }) => {
       <Text style={[styles.sectionTitle, { color: theme.text }]}>Customer Details</Text>
       <TextInput style={[styles.input, { backgroundColor: theme.inputBg, color: theme.text, borderColor: theme.border }]} placeholder="Customer Name *" placeholderTextColor={theme.textMuted} value={customerName} onChangeText={setCustomerName} />
       
-      {/* ★ NEW: Optional Phone Number */}
       <TextInput 
         style={[styles.input, { backgroundColor: theme.inputBg, color: theme.text, borderColor: theme.border }]} 
         placeholder="Phone Number (Optional)" 

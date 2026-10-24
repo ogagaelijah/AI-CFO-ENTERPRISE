@@ -1,4 +1,5 @@
 // src/interfaces/http/routes/purchaseRoutes.js
+// v2.4.0-prod — Adds pagination to GET /.
 // v2.3.0-prod — Purchases are append-only: PUT and DELETE always return 405.
 //               POST requires OWNER/ADMIN/MANAGER.
 // v2.2.0-prod — Backend-enforced confirmation
@@ -15,6 +16,7 @@ const RecordPurchaseUseCase = require('../../../application/useCases/purchases/R
 const { authMiddleware } = require('../middleware/authMiddleware');
 const { requireRole } = require('../middleware/requireRole');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
+const { parsePagination, buildPaginationMeta } = require('../utils/pagination'); // ★ NEW
 
 const purchaseRepo = new PurchaseRepository();
 const inventoryRepo = new InventoryRepository();
@@ -36,7 +38,7 @@ const recordPurchaseUseCase = new RecordPurchaseUseCase({
 router.use(authMiddleware);
 
 // =============================================
-// GET /api/purchases
+// GET /api/purchases?page=1&limit=50
 // =============================================
 router.get('/', async (req, res) => {
     try {
@@ -47,6 +49,28 @@ router.get('/', async (req, res) => {
 
         const { startDate, endDate, itemName, supplier } = req.query;
 
+        // ★ NEW: If filters are applied, we fall back to non-paginated (for now)
+        // Otherwise, use pagination
+        if (!startDate && !endDate && !supplier && !itemName) {
+            const { page, limit, offset } = parsePagination(req.query);
+            
+            const [purchases, total, summary] = await Promise.all([
+                purchaseRepo.findByBusinessIdPaginated(businessId, { limit, offset }),
+                purchaseRepo.countByBusinessId(businessId),
+                purchaseRepo.getPurchaseSummary(businessId)
+            ]);
+
+            return res.json({
+                success: true,
+                data: {
+                    purchases: purchases || [],
+                    summary,
+                    pagination: buildPaginationMeta({ page, limit, total }),
+                },
+            });
+        }
+
+        // Fallback for filtered queries (unchanged logic)
         let purchases;
         if (startDate && endDate) {
             purchases = await purchaseRepo.findByDateRange(businessId, startDate, endDate);
@@ -62,15 +86,7 @@ router.get('/', async (req, res) => {
             success: true,
             data: {
                 purchases: purchases || [],
-                summary: summary || {
-                    total_purchases: 0,
-                    total_amount: 0,
-                    total_items: 0,
-                    average_purchase: 0,
-                    suppliers_used: 0,
-                    total_paid: 0,
-                    total_outstanding: 0,
-                },
+                summary,
             },
         });
     } catch (error) {

@@ -1,5 +1,5 @@
 // src/infrastructure/database/sqlite/repositories/PurchaseRepository.js
-// v3.4.0-prod — Fixed Title Case regex to prevent casing duplicates.
+// v3.5.0-prod — Adds pagination support.
 
 const BaseRepository = require('./BaseRepository');
 
@@ -8,7 +8,6 @@ class PurchaseRepository extends BaseRepository {
         super('purchases');
     }
 
-    // ★ FIXED: Lowercase everything first, THEN capitalize the first letter of each word
     _cleanName(str) {
         if (!str) return null;
         return String(str)
@@ -78,6 +77,27 @@ class PurchaseRepository extends BaseRepository {
             [businessId]
         );
         return result.rows.map(row => this._hydrate(row));
+    }
+
+    // ★ NEW: Paginated fetch
+    async findByBusinessIdPaginated(businessId, { limit, offset }) {
+        const result = await this._query(
+            `SELECT * FROM purchases
+             WHERE business_id = $1
+             ORDER BY purchase_date DESC, id DESC
+             LIMIT $2 OFFSET $3`,
+            [businessId, limit, offset]
+        );
+        return result.rows.map(row => this._hydrate(row));
+    }
+
+    // ★ NEW: Total count for pagination
+    async countByBusinessId(businessId) {
+        const result = await this._query(
+            'SELECT COUNT(*)::int AS count FROM purchases WHERE business_id = $1',
+            [businessId]
+        );
+        return result.rows[0]?.count || 0;
     }
 
     async findByUserId(userId) {

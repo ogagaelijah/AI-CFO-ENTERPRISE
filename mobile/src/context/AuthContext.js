@@ -26,6 +26,21 @@ export const AuthProvider = ({ children }) => {
     loadToken();
   }, []);
 
+  const handlePushToken = async () => {
+    try {
+      console.log("🔔 Requesting push token...");
+      const pushToken = await registerForPushNotificationsAsync();
+      console.log("🔔 Push Token Received:", pushToken);
+      
+      if (pushToken) {
+        await api.post('/notifications/push-token', { pushToken });
+        console.log("🔔 Token saved to backend");
+      }
+    } catch (pushError) {
+      console.log("🔔 PUSH ERROR:", pushError.message);
+    }
+  };
+
   const login = async (credentials) => {
     try {
       const response = await api.post('/auth/login', credentials);
@@ -42,22 +57,7 @@ export const AuthProvider = ({ children }) => {
         await SecureStore.setItemAsync('userToken', token);
         await SecureStore.setItemAsync('userData', JSON.stringify(userData));
         setUser(userData);
-
-        // ★ Register for push notifications
-        try {
-          console.log("🔔 Requesting push token...");
-          const pushToken = await registerForPushNotificationsAsync();
-          console.log("🔔 Push Token Received:", pushToken);
-          
-          if (pushToken) {
-            // ★ FIXED: Pointing to the correct backend endpoint
-            const response = await api.post('/notifications/push-token', { pushToken });
-            console.log("🔔 Token saved to backend:", response.data);
-          }
-        } catch (pushError) {
-          console.log("🔔 PUSH ERROR:", pushError.message);
-        }
-
+        await handlePushToken();
         return { success: true };
       }
 
@@ -65,10 +65,36 @@ export const AuthProvider = ({ children }) => {
 
     } catch (error) {
       console.log("🔴 RAW LOGIN ERROR:", error.message);
-      console.log("🔴 SERVER RESPONSE:", JSON.stringify(error.response?.data));
       return { 
         success: false, 
         message: error.response?.data?.message || error.message || 'Login failed' 
+      };
+    }
+  };
+
+  const register = async (payload) => {
+    try {
+      const response = await api.post('/auth/register', payload);
+      
+      const data = response.data;
+      const token = data.token || data.data?.token;
+      const userData = data.user || data.data?.user;
+
+      if (token && userData) {
+        await SecureStore.setItemAsync('userToken', token);
+        await SecureStore.setItemAsync('userData', JSON.stringify(userData));
+        setUser(userData);
+        await handlePushToken();
+        return { success: true };
+      }
+
+      return { success: false, message: "UNKNOWN RESPONSE: " + JSON.stringify(data) };
+
+    } catch (error) {
+      console.log("🔴 RAW REGISTER ERROR:", error.message);
+      return { 
+        success: false, 
+        message: error.response?.data?.message || error.message || 'Registration failed' 
       };
     }
   };
@@ -80,7 +106,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

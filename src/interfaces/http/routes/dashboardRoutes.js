@@ -1,20 +1,6 @@
 // src/interfaces/http/routes/dashboardRoutes.js
 // Aggregated dashboard endpoint — SSOT consumer
-// v2.7.0-prod — Adds per-business 60s caches for daily report, cash flow,
-//               and risk assessment. Combined with the existing analytics
-//               cache, dashboard drops from ~11 concurrent DB calls per
-//               request to ~1 on warm cache.
-//
-//               v2.6.0 → v2.7.0 changes:
-//                 - dailyReportService.generate cached 60s
-//                   Key: aicfo:daily:{businessId}:{todayStr}
-//                 - cashFlowService.generate cached 60s
-//                   Key: aicfo:cashflow:{businessId}:{todayStr}
-//                 - riskOrchestrator.assess cached 60s
-//                   Key: aicfo:risk:{businessId}
-//                 - All three keys match aicfo:*:{businessId}* so
-//                   invalidateAfterWrite clears them on any write.
-//                 - All other behaviour unchanged.
+// v2.8.0-prod — Adds role-based KPI filtering for CASHIERS.
 
 'use strict';
 
@@ -234,6 +220,7 @@ router.get('/summary', async (req, res) => {
   try {
     const userId = req.user.id;
     const businessId = req.user.businessId;
+    const role = req.user.role; // ★ NEW
 
     if (!userId || !businessId) {
       return res.status(401).json({
@@ -247,7 +234,7 @@ router.get('/summary', async (req, res) => {
 
     const data = await cacheService.getOrSet(
       cacheKey,
-      () => fetchDashboardData({ userId, businessId }),
+      () => fetchDashboardData({ userId, businessId, role }), // ★ Pass role
       DASHBOARD_CACHE_TTL_MS
     );
 
@@ -283,7 +270,7 @@ router.post('/health-check', (req, res) => {
 // =============================================
 // Fetch dashboard data (internal)
 // =============================================
-async function fetchDashboardData({ userId, businessId }) {
+async function fetchDashboardData({ userId, businessId, role }) { // ★ Accept role
   const now = new Date();
   const todayStr = now.toISOString().split('T')[0];
 
@@ -350,27 +337,13 @@ async function fetchDashboardData({ userId, businessId }) {
   const risk = riskResult.status === 'fulfilled' ? riskResult.value : null;
   const cashFlow = cashFlowResult.status === 'fulfilled' ? cashFlowResult.value : null;
 
-  const debtorsTotal = debtorsTotalRaw.status === 'fulfilled'
-    ? Number(debtorsTotalRaw.value) || 0
-    : 0;
-  const creditorsTotal = creditorsTotalRaw.status === 'fulfilled'
-    ? Number(creditorsTotalRaw.value) || 0
-    : 0;
-  const inventorySummaryData = inventorySummary.status === 'fulfilled'
-    ? inventorySummary.value || {}
-    : {};
-  const activeProjects = activeProjectsRaw.status === 'fulfilled'
-    ? Number(activeProjectsRaw.value) || 0
-    : 0;
-  const todayInvoices = todayInvoicesRaw.status === 'fulfilled'
-    ? Number(todayInvoicesRaw.value) || 0
-    : 0;
-  const cashFlowToday = cashFlowTodayRaw.status === 'fulfilled'
-    ? cashFlowTodayRaw.value || { cashIn: 0, cashOut: 0 }
-    : { cashIn: 0, cashOut: 0 };
-  const studentsActive = studentsActiveRaw.status === 'fulfilled'
-    ? Number(studentsActiveRaw.value) || 0
-    : 0;
+  const debtorsTotal = debtorsTotalRaw.status === 'fulfilled' ? Number(debtorsTotalRaw.value) || 0 : 0;
+  const creditorsTotal = creditorsTotalRaw.status === 'fulfilled' ? Number(creditorsTotalRaw.value) || 0 : 0;
+  const inventorySummaryData = inventorySummary.status === 'fulfilled' ? inventorySummary.value || {} : {};
+  const activeProjects = activeProjectsRaw.status === 'fulfilled' ? Number(activeProjectsRaw.value) || 0 : 0;
+  const todayInvoices = todayInvoicesRaw.status === 'fulfilled' ? Number(todayInvoicesRaw.value) || 0 : 0;
+  const cashFlowToday = cashFlowTodayRaw.status === 'fulfilled' ? cashFlowTodayRaw.value || { cashIn: 0, cashOut: 0 } : { cashIn: 0, cashOut: 0 };
+  const studentsActive = studentsActiveRaw.status === 'fulfilled' ? Number(studentsActiveRaw.value) || 0 : 0;
 
   // ─────────────────────────────────────────────
   // Navigate analytics (SSOT)
@@ -538,6 +511,17 @@ async function fetchDashboardData({ userId, businessId }) {
     },
   };
 
+  // ★ NEW: Apply Role-Based Filtering for CASHIERS
+  if (role === 'CASHIER') {
+    kpiResponse.revenue = { today: 0, month: 0, growth: 0, formatted: '₦0', label: 'Revenue Today' };
+    kpiResponse.profit = { today: 0, month: 0, margin: 0, formatted: '₦0', label: 'Profit Today' };
+    kpiResponse.cash_out = { today: 0, formatted: '₦0', label: 'Cash Paid Today' };
+    kpiResponse.expenses = { today: 0, month: 0, formatted: '₦0', label: 'Expenses Today' };
+    kpiResponse.cash = { current: 0, flow: 0, formatted: '₦0', label: 'Cash Position' };
+    kpiResponse.payables = { total: 0, overdue: 0, formatted: '₦0', label: 'You Owe' };
+    kpiResponse.creditors = { total: 0, overdue: 0, formatted: '₦0', label: 'You Owe' };
+  }
+
   return {
     kpis: kpiResponse,
     healthScore: {
@@ -558,7 +542,7 @@ async function fetchDashboardData({ userId, businessId }) {
       businessId,
       generatedAt: new Date().toISOString(),
       source: 'cashflow+daily+analytics+risk+repos+projects+invoices+cashinout+students',
-      version: '2.7.0',
+      version: '2.8.0',
     },
   };
 }
