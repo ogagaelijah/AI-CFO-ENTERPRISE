@@ -6,7 +6,7 @@ import { useTheme } from '../context/ThemeContext';
 
 const PAGE_SIZES = [10, 25, 50, 75, 100];
 
-export const InventoryScreen = () => {
+export const InventoryScreen = ({ navigation }) => {
   const { theme } = useTheme();
   const [inventory, setInventory] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -46,8 +46,12 @@ export const InventoryScreen = () => {
   };
 
   useEffect(() => { 
-    fetchInventory(page, limit); 
-  }, [page, limit]);
+    // Refresh when the screen comes back into focus (after adding/editing)
+    const unsubscribe = navigation.addListener('focus', () => {
+      fetchInventory(page, limit);
+    });
+    return unsubscribe;
+  }, [navigation, page, limit]);
 
   const onRefresh = () => { 
     setRefreshing(true); 
@@ -117,7 +121,7 @@ export const InventoryScreen = () => {
           <Ionicons name="search" size={20} color={theme.textMuted} />
           <TextInput
             style={{ flex: 1, paddingVertical: 12, paddingHorizontal: 8, color: theme.text }}
-            placeholder="Search current page..."
+            placeholder="Search inventory..."
             placeholderTextColor={theme.textMuted}
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -152,6 +156,7 @@ export const InventoryScreen = () => {
         keyExtractor={(item) => String(item.id)}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
         ListFooterComponent={renderPaginationControls}
+        contentContainerStyle={{ paddingBottom: 100 }} // Space for the FAB
         ListHeaderComponent={
           <>
             <View style={[styles.summaryCard, { backgroundColor: theme.primary }]}>
@@ -169,21 +174,36 @@ export const InventoryScreen = () => {
         renderItem={({ item }) => {
           const itemValue = Number(item.quantity) * Number(item.selling_price);
           return (
-            <View style={[styles.invCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+            <TouchableOpacity 
+              style={[styles.invCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
+              onPress={() => navigation.navigate('AddEditInventory', { item })}
+              activeOpacity={0.7}
+            >
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 16, fontWeight: '600', color: theme.text }}>{item.item_name}</Text>
                 <Text style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>
                   {item.quantity} {item.base_unit || 'Pieces'} @ ₦{Number(item.selling_price).toLocaleString()}
                 </Text>
               </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.success }}>₦{itemValue.toLocaleString()}</Text>
-                <Text style={{ fontSize: 10, color: theme.textMuted }}>Total Value</Text>
+              <View style={{ alignItems: 'flex-end', flexDirection: 'row', gap: 12 }}>
+                <View>
+                  <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.success }}>₦{itemValue.toLocaleString()}</Text>
+                  <Text style={{ fontSize: 10, color: theme.textMuted }}>Total Value</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={theme.textMuted} style={{ alignSelf: 'center' }} />
               </View>
-            </View>
+            </TouchableOpacity>
           );
         }}
       />
+
+      {/* Floating Action Button */}
+      <TouchableOpacity 
+        style={[styles.fab, { backgroundColor: theme.primary }]}
+        onPress={() => navigation.navigate('AddEditInventory')}
+      >
+        <Ionicons name="add" size={30} color="#fff" />
+      </TouchableOpacity>
     </View>
   );
 };
@@ -193,4 +213,5 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 18, fontWeight: 'bold', marginTop: 16, marginBottom: 8 },
   invCard: { flexDirection: 'row', padding: 16, borderRadius: 12, marginBottom: 8, alignItems: 'center', borderWidth: 1 },
   summaryCard: { padding: 20, borderRadius: 16, marginBottom: 16, marginTop: 16 },
+  fab: { position: 'absolute', bottom: 24, right: 24, width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 5, elevation: 8 },
 });
