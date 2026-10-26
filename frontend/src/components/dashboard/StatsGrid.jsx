@@ -1,6 +1,5 @@
 // frontend/src/components/dashboard/StatsGrid.jsx
-// v1.6.0-prod — Filters stat cards by role (hides profit/revenue from Cashier).
-// v1.5.0-prod — adds cash_in / cash_out (today's cash movements).
+// v1.7.0-prod — Renders low stock item names for inventory.
 
 import { Link } from 'react-router-dom';
 import { STAT_COLORS } from '../../config/industryConfig';
@@ -47,7 +46,6 @@ const StatsGrid = ({ industryConfig, kpis }) => {
     return null;
   }
 
-  // Filter stats by role. Stats without a `roles` field are shown to everyone.
   const visibleStats = industryConfig.stats.filter((stat) => {
     if (!stat.roles) return true;
     return stat.roles.includes(role);
@@ -107,6 +105,11 @@ const StatsGrid = ({ industryConfig, kpis }) => {
 
         const href = KPI_LINKS[stat.key];
 
+        // Safely extract low stock items for the inventory card
+        const lowStockItems = stat.key === 'inventory' && Array.isArray(kpi.lowStockItems) 
+          ? kpi.lowStockItems 
+          : [];
+
         const cardContent = (
           <>
             <div className="flex items-center justify-between gap-2">
@@ -140,10 +143,22 @@ const StatsGrid = ({ industryConfig, kpis }) => {
               {displayLabel}
             </p>
 
+            {/* Render low stock count and names inline */}
             {stat.key === 'inventory' && kpi.lowStock > 0 && (
-              <p className="text-[10px] sm:text-xs text-orange-500 dark:text-orange-400 mt-0.5 truncate">
-                ⚠ {kpi.lowStock} items low stock
-              </p>
+              <div className="mt-2 pt-2 border-t border-gray-100 dark:border-slate-700">
+                <p className="text-[10px] sm:text-xs text-orange-500 dark:text-orange-400 font-semibold mb-1">
+                  ⚠ {kpi.lowStock} item(s) low
+                </p>
+                {lowStockItems.slice(0, 3).map((item, idx) => (
+                  <div key={item.id || idx} className="flex justify-between text-[10px] text-gray-600 dark:text-gray-300">
+                    <span className="truncate pr-1">{item.item_name || item.name}</span>
+                    <span className="font-medium text-orange-500">{item.quantity}</span>
+                  </div>
+                ))}
+                {lowStockItems.length > 3 && (
+                  <p className="text-[10px] text-gray-400 mt-1 italic">+{lowStockItems.length - 3} more</p>
+                )}
+              </div>
             )}
           </>
         );

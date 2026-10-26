@@ -1,5 +1,5 @@
 // src/infrastructure/database/sqlite/repositories/InventoryRepository.js
-// v2.4.0-prod — Adds Multi-Pack (base_unit) support.
+// v2.5.0-prod — getSummary now returns lowStockItems array (Hotfix 2).
 
 const BaseRepository = require('./BaseRepository');
 
@@ -223,9 +223,19 @@ class InventoryRepository extends BaseRepository {
                 COALESCE(SUM(quantity * cost_price), 0) as total_cost_value,
                 COALESCE(SUM(quantity * selling_price), 0) as total_selling_value,
                 COALESCE(SUM(quantity * (selling_price - cost_price)), 0) as total_profit,
-                COUNT(CASE WHEN quantity <= 5 THEN 1 END)::int as low_stock_count
+                COUNT(CASE WHEN quantity <= COALESCE(reorder_level, 5) THEN 1 END)::int as low_stock_count
              FROM inventory
              WHERE business_id = $1`,
+            [businessId]
+        );
+
+        // ★ NEW: fetch the actual low-stock items so the mobile dashboard can list names
+        const lowStockResult = await this._query(
+            `SELECT id, item_name, quantity, COALESCE(reorder_level, 5) as reorder_level, base_unit
+             FROM inventory
+             WHERE business_id = $1 AND quantity <= COALESCE(reorder_level, 5)
+             ORDER BY quantity ASC
+             LIMIT 20`,
             [businessId]
         );
 
@@ -237,6 +247,13 @@ class InventoryRepository extends BaseRepository {
             total_selling_value: Number(r.total_selling_value) || 0,
             total_profit: Number(r.total_profit) || 0,
             low_stock_count: r.low_stock_count || 0,
+            lowStockItems: lowStockResult.rows.map(row => ({
+                id: row.id,
+                item_name: row.item_name,
+                quantity: Number(row.quantity) || 0,
+                reorder_level: Number(row.reorder_level) || 5,
+                base_unit: row.base_unit || 'Piece',
+            })),
         };
     }
 
