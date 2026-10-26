@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator
 import { useAuth } from '../context/AuthContext';
 import { useOffline } from '../context/OfflineContext';
 import { useTheme } from '../context/ThemeContext';
+import { useNotifications } from '../context/NotificationContext';
 import { useFocusEffect } from '@react-navigation/native';
 import api from '../services/api';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,49 +12,42 @@ export default function HomeScreen({ navigation }) {
   const { user } = useAuth();
   const { queue, syncQueue } = useOffline();
   const { theme } = useTheme();
+  const { unreadCount, fetchNotifications } = useNotifications();
   
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [error, setError] = useState(null);
 
   const fetchDashboard = async () => {
     try {
-      const response = await api.get('/dashboard/summary');
+      setError(null);
+      const response = await api.get(`/dashboard/summary?_t=${Date.now()}`);
       if (response.data?.success) {
         setData(response.data.data);
+      } else {
+        setError('Could not load dashboard data.');
       }
-    } catch (error) {
-      console.log("❌ Dashboard fetch error:", error.message);
+    } catch (err) {
+      console.log("❌ Dashboard fetch error:", err.message);
+      setError(err?.response?.data?.message || 'Failed to load dashboard. Pull to retry.');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  const fetchUnreadCount = async () => {
-    try {
-      const res = await api.get('/notifications');
-      if (res.data?.success) {
-        const unread = res.data.data.filter(n => !n.is_read).length;
-        setUnreadCount(unread);
-      }
-    } catch (error) {
-      console.log("Error fetching unread count");
-    }
-  };
-
   useFocusEffect(
     useCallback(() => {
       fetchDashboard();
-      fetchUnreadCount();
-    }, [])
+      fetchNotifications();
+    }, [fetchNotifications])
   );
   
   const onRefresh = () => { 
     setRefreshing(true); 
     fetchDashboard(); 
-    fetchUnreadCount();
+    fetchNotifications();
   };
 
   if (loading) {
@@ -72,6 +66,14 @@ export default function HomeScreen({ navigation }) {
   const cashOutToday = kpis.cash_out?.today || 0;
   const inventoryValue = kpis.inventory?.total || 0;
   const lowStock = kpis.inventory?.lowStock || 0;
+  
+  const rawLowStockItems = Array.isArray(kpis.inventory?.lowStockItems) ? kpis.inventory.lowStockItems : [];
+  const lowStockItems = rawLowStockItems.map(item => ({
+    id: item.id,
+    item_name: item.item_name || item.name || 'Unknown',
+    quantity: Number(item.quantity) || 0,
+    base_unit: item.base_unit || item.baseUnit || 'units',
+  }));
 
   const displayName = user?.businessName || user?.business_name || user?.fullName || 'User';
   const isCashier = user?.role === 'CASHIER';
@@ -83,7 +85,6 @@ export default function HomeScreen({ navigation }) {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
       showsVerticalScrollIndicator={false}
     >
-      {/* ─── SLEEK HEADER ─── */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.navigate('Profile')} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
           <View style={[styles.avatarSmall, { backgroundColor: theme.primary }]}>
@@ -105,6 +106,14 @@ export default function HomeScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
+      {error && !loading && (
+        <TouchableOpacity onPress={() => { setLoading(true); fetchDashboard(); }} style={[styles.errorBanner, { backgroundColor: theme.danger + '15', borderColor: theme.danger }]}>
+          <Ionicons name="alert-circle" size={18} color={theme.danger} />
+          <Text style={{ color: theme.danger, flex: 1, marginLeft: 8, fontSize: 13, fontWeight: '600' }}>{error}</Text>
+          <Text style={{ color: theme.danger, fontWeight: 'bold', fontSize: 13 }}>Retry</Text>
+        </TouchableOpacity>
+      )}
+
       {queue.length > 0 && (
         <TouchableOpacity onPress={syncQueue} style={[styles.syncBanner, { backgroundColor: theme.warning }]}>
           <Ionicons name="cloud-offline" size={20} color="#fff" />
@@ -112,7 +121,6 @@ export default function HomeScreen({ navigation }) {
         </TouchableOpacity>
       )}
 
-      {/* ─── HERO CARD ─── */}
       {!isCashier ? (
         <View style={[styles.heroCard, { backgroundColor: theme.primary }]}>
           <View style={styles.heroHeader}>
@@ -153,111 +161,58 @@ export default function HomeScreen({ navigation }) {
         </View>
       )}
 
-      {/* ─── QUICK ACTIONS ─── */}
-      <View style={styles.quickActionsRow}>
-        <TouchableOpacity style={[styles.actionPill, { backgroundColor: theme.cardBg }]} onPress={() => navigation.navigate('Sales')}>
-          <View style={[styles.actionIcon, { backgroundColor: theme.primary + '20' }]}>
-            <Ionicons name="cart-outline" size={20} color={theme.primary} />
-          </View>
-          <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600', marginTop: 8 }}>Record Sale</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={[styles.actionPill, { backgroundColor: theme.cardBg }]} onPress={() => navigation.navigate('History')}>
-          <View style={[styles.actionIcon, { backgroundColor: theme.success + '20' }]}>
-            <Ionicons name="receipt-outline" size={20} color={theme.success} />
-          </View>
-          <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600', marginTop: 8 }}>History</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={[styles.actionPill, { backgroundColor: theme.cardBg }]} onPress={() => navigation.navigate('Inventory')}>
-          <View style={[styles.actionIcon, { backgroundColor: theme.warning + '20' }]}>
-            <Ionicons name="cube-outline" size={20} color={theme.warning} />
-          </View>
-          <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600', marginTop: 8 }}>Inventory</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={[styles.actionPill, { backgroundColor: theme.cardBg }]} onPress={() => navigation.navigate('Debtors')}>
-          <View style={[styles.actionIcon, { backgroundColor: theme.danger + '20' }]}>
-            <Ionicons name="people-outline" size={20} color={theme.danger} />
-          </View>
-          <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600', marginTop: 8 }}>Debtors</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* ─── FINANCE SECTION (Redesigned) ─── */}
       {canRecordFinance && (
         <>
           <Text style={[styles.sectionTitle, { color: theme.text, marginTop: 8 }]}>Business Management</Text>
           
-          <View style={{ gap: 12, marginBottom: 24 }}>
-            {/* Record Expense Card */}
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 24 }}>
             <TouchableOpacity 
-              style={[styles.financeCardVertical, { backgroundColor: theme.cardBg, borderColor: theme.border }]} 
+              style={[styles.actionPill, { backgroundColor: theme.cardBg }]} 
               onPress={() => navigation.navigate('Expenses')}
               activeOpacity={0.7}
             >
-              <View style={[styles.financeIconWrap, { backgroundColor: theme.danger + '15' }]}>
-                <Ionicons name="trending-down" size={24} color={theme.danger} />
+              <View style={[styles.actionIcon, { backgroundColor: theme.danger + '20' }]}>
+                <Ionicons name="trending-down" size={20} color={theme.danger} />
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.text }}>Record Expense</Text>
-                <Text style={{ fontSize: 13, color: theme.textMuted, marginTop: 2 }}>Log daily business costs</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
+              <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600', marginTop: 8, textAlign: 'center' }} numberOfLines={1}>Record Expense</Text>
             </TouchableOpacity>
 
-            {/* Record Purchase Card */}
             <TouchableOpacity 
-              style={[styles.financeCardVertical, { backgroundColor: theme.cardBg, borderColor: theme.border }]} 
+              style={[styles.actionPill, { backgroundColor: theme.cardBg }]} 
               onPress={() => navigation.navigate('Purchases')}
               activeOpacity={0.7}
             >
-              <View style={[styles.financeIconWrap, { backgroundColor: theme.warning + '15' }]}>
-                <Ionicons name="cart" size={24} color={theme.warning} />
+              <View style={[styles.actionIcon, { backgroundColor: theme.warning + '20' }]}>
+                <Ionicons name="cart" size={20} color={theme.warning} />
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.text }}>Record Purchase</Text>
-                <Text style={{ fontSize: 13, color: theme.textMuted, marginTop: 2 }}>Add new stock from suppliers</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
+              <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600', marginTop: 8, textAlign: 'center' }} numberOfLines={1}>Record Purchase</Text>
             </TouchableOpacity>
 
-            {/* View Purchase History Card */}
             <TouchableOpacity 
-              style={[styles.financeCardVertical, { backgroundColor: theme.cardBg, borderColor: theme.border }]} 
+              style={[styles.actionPill, { backgroundColor: theme.cardBg }]} 
               onPress={() => navigation.navigate('PurchasesHistory')}
               activeOpacity={0.7}
             >
-              <View style={[styles.financeIconWrap, { backgroundColor: theme.primary + '15' }]}>
-                <Ionicons name="time" size={24} color={theme.primary} />
+              <View style={[styles.actionIcon, { backgroundColor: theme.primary + '20' }]}>
+                <Ionicons name="time" size={20} color={theme.primary} />
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.text }}>Purchase History</Text>
-                <Text style={{ fontSize: 13, color: theme.textMuted, marginTop: 2 }}>View past supplier orders</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
+              <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600', marginTop: 8, textAlign: 'center' }} numberOfLines={1}>Purchase History</Text>
             </TouchableOpacity>
 
-            {/* ★ NEW: Creditors Card */}
             <TouchableOpacity 
-              style={[styles.financeCardVertical, { backgroundColor: theme.cardBg, borderColor: theme.border }]} 
+              style={[styles.actionPill, { backgroundColor: theme.cardBg }]} 
               onPress={() => navigation.navigate('Creditors')}
               activeOpacity={0.7}
             >
-              <View style={[styles.financeIconWrap, { backgroundColor: theme.danger + '15' }]}>
-                <Ionicons name="person" size={24} color={theme.danger} />
+              <View style={[styles.actionIcon, { backgroundColor: theme.danger + '20' }]}>
+                <Ionicons name="person" size={20} color={theme.danger} />
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.text }}>Creditors</Text>
-                <Text style={{ fontSize: 13, color: theme.textMuted, marginTop: 2 }}>Manage suppliers you owe</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
+              <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600', marginTop: 8, textAlign: 'center' }} numberOfLines={1}>Creditors</Text>
             </TouchableOpacity>
           </View>
         </>
       )}
 
-      {/* ─── CASH FLOW ─── */}
       {!isCashier && (
         <>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>Today's Cash Flow</Text>
@@ -281,31 +236,58 @@ export default function HomeScreen({ navigation }) {
         </>
       )}
 
-      {/* ─── INVENTORY SNAPSHOT ─── */}
       <Text style={[styles.sectionTitle, { color: theme.text }]}>Inventory Snapshot</Text>
       <TouchableOpacity 
         style={[styles.inventoryCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
         onPress={() => navigation.navigate('Inventory')}
         activeOpacity={0.7}
       >
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <View style={styles.invHeader}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Ionicons name="cube" size={20} color={theme.primary} />
-            <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.text }}>Total Value</Text>
+            <View style={[styles.invIconWrap, { backgroundColor: theme.primary + '20' }]}>
+              <Ionicons name="cube" size={20} color={theme.primary} />
+            </View>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: theme.text }}>Total Value</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
         </View>
         
-        <Text style={{ fontSize: 24, fontWeight: 'bold', color: theme.text, marginBottom: 8 }}>
+        <Text style={{ fontSize: 28, fontWeight: 'bold', color: theme.text, marginBottom: 12 }}>
           ₦{Number(inventoryValue).toLocaleString()}
         </Text>
 
         {lowStock > 0 && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            <Ionicons name="warning" size={14} color={theme.warning} />
-            <Text style={{ fontSize: 13, color: theme.warning, fontWeight: '600' }}>
-              {lowStock} item(s) low on stock
-            </Text>
+          <View style={[styles.lowStockBox, { backgroundColor: theme.isDark ? '#422006' : '#FEF3C7' }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+              <Ionicons name="warning" size={16} color={theme.warning} />
+              <Text style={{ fontSize: 13, color: theme.warning, fontWeight: 'bold' }}>
+                {lowStock} item(s) low on stock
+              </Text>
+            </View>
+            
+            {lowStockItems.length > 0 ? (
+              lowStockItems.slice(0, 5).map((item, index) => (
+                <View key={item.id || index} style={[styles.lowStockRow, index > 0 && { borderTopWidth: 1, borderTopColor: theme.isDark ? '#452a00' : '#FDE68A' }]}>
+                  <Text style={{ fontSize: 13, color: theme.text, flex: 1, fontWeight: '500' }} numberOfLines={1}>
+                    {item.item_name}
+                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <Text style={{ fontSize: 13, color: theme.warning, fontWeight: 'bold' }}>
+                      {item.quantity}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: theme.textMuted }}>
+                      {item.base_unit}
+                    </Text>
+                  </View>
+                </View>
+              ))
+            ) : null}
+            
+            {lowStockItems.length > 5 && (
+              <Text style={{ fontSize: 12, color: theme.textMuted, marginTop: 8, textAlign: 'center' }}>
+                +{lowStockItems.length - 5} more items low on stock
+              </Text>
+            )}
           </View>
         )}
       </TouchableOpacity>
@@ -326,22 +308,26 @@ const styles = StyleSheet.create({
   badge: { position: 'absolute', top: 6, right: 6, backgroundColor: 'red', borderRadius: 10, width: 16, height: 16, justifyContent: 'center', alignItems: 'center' },
   badgeText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
 
-  quickActionsRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 24 },
-  actionPill: { width: '23%', paddingVertical: 16, borderRadius: 16, alignItems: 'center' },
-  actionIcon: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
-
-  financeCardVertical: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    padding: 16, 
+  actionPill: { 
+    width: '23%', 
+    paddingVertical: 12, 
     borderRadius: 16, 
-    borderWidth: 1,
-    gap: 16
+    alignItems: 'center', 
+    justifyContent: 'center',
+    marginBottom: 12
   },
-  financeIconWrap: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center' },
+  actionIcon: { 
+    width: 36, 
+    height: 36, 
+    borderRadius: 18, 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
 
+  errorBanner: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 12, borderWidth: 1, marginBottom: 16 },
   syncBanner: { padding: 12, borderRadius: 8, marginBottom: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   syncText: { color: '#fff', fontWeight: 'bold', marginLeft: 8 },
+  
   heroCard: { padding: 24, borderRadius: 24, marginBottom: 24, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 10, elevation: 8 },
   heroHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   heroLabel: { color: 'rgba(255,255,255,0.8)', fontSize: 15, fontWeight: '600' },
@@ -351,11 +337,18 @@ const styles = StyleSheet.create({
   heroSubItem: { flex: 1 },
   heroSubLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 12, marginBottom: 4 },
   heroSubValue: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+  
   sectionTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 12 },
+  
   cashFlowGrid: { flexDirection: 'row', gap: 12, marginBottom: 24 },
   cashCard: { flex: 1, padding: 16, borderRadius: 16, borderWidth: 1 },
   cashIconWrap: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
   cashLabel: { fontSize: 13, marginBottom: 4, fontWeight: '500' },
   cashValue: { fontSize: 18, fontWeight: 'bold' },
+  
   inventoryCard: { padding: 16, borderRadius: 16, borderWidth: 1, marginBottom: 8 },
+  invHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  invIconWrap: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
+  lowStockBox: { padding: 12, borderRadius: 12, marginTop: 4 },
+  lowStockRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8 },
 });

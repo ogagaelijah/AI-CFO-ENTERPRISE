@@ -2,63 +2,47 @@ import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import api from '../services/api';
 import { useTheme } from '../context/ThemeContext';
+import { useNotifications } from '../context/NotificationContext';
 
 export const NotificationsScreen = ({ navigation }) => {
   const { theme } = useTheme();
-  const [notifications, setNotifications] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  
-  // State for the detail modal
-  const [selectedNotification, setSelectedNotification] = useState(null);
+  const {
+    notifications,
+    loading,
+    fetchNotifications,
+    markAsRead,
+    markAllAsRead,
+  } = useNotifications();
 
-  const fetchNotifications = async () => {
-    try {
-      const res = await api.get('/notifications');
-      if (res.data?.success) {
-        setNotifications(res.data.data || []);
-      }
-    } catch (error) {
-      console.error('Failed to load notifications:', error);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
+  const [refreshing, setRefreshing] = useState(false);
+  const [selectedNotification, setSelectedNotification] = useState(null);
 
   useFocusEffect(
     useCallback(() => {
       fetchNotifications();
-    }, [])
+    }, [fetchNotifications])
   );
 
-  const onRefresh = () => {
+  const onRefresh = async () => {
     setRefreshing(true);
-    fetchNotifications();
+    await fetchNotifications();
+    setRefreshing(false);
   };
 
-  // 1. Open the modal and mark as read
   const handleOpenNotification = async (notification) => {
     setSelectedNotification(notification);
-
     if (!notification.is_read) {
-      try {
-        await api.put(`/notifications/${notification.id}/read`);
-        // Update local state so it turns grey immediately
-        setNotifications(prev =>
-          prev.map(n => n.id === notification.id ? { ...n, is_read: true } : n)
-        );
-      } catch (error) {
-        console.error('Failed to mark as read:', error);
-      }
+      await markAsRead(notification.id);
     }
   };
 
-  // 2. Navigate from inside the modal
+  const handleMarkAll = async () => {
+    await markAllAsRead();
+  };
+
   const handleNavigate = (type) => {
-    setSelectedNotification(null); // Close modal
+    setSelectedNotification(null);
     if (type === 'NEW_SALE') {
       navigation.navigate('Main', { screen: 'History' });
     } else if (type === 'OVERDUE_DEBTOR') {
@@ -66,7 +50,7 @@ export const NotificationsScreen = ({ navigation }) => {
     }
   };
 
-  if (loading) {
+  if (loading && notifications.length === 0) {
     return (
       <View style={[styles.center, { backgroundColor: theme.background }]}>
         <ActivityIndicator size="large" color={theme.primary} />
@@ -74,9 +58,28 @@ export const NotificationsScreen = ({ navigation }) => {
     );
   }
 
+  const unreadCount = notifications.filter(n => !n.is_read).length;
+
   return (
     <>
       <View style={[styles.container, { backgroundColor: theme.background }]}>
+        {unreadCount > 0 && (
+          <View style={[styles.headerBar, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+            <Text style={{ color: theme.textMuted, fontSize: 13 }}>
+              {unreadCount} unread notification{unreadCount > 1 ? 's' : ''}
+            </Text>
+            <TouchableOpacity 
+              onPress={handleMarkAll}
+              style={[styles.markAllBtn, { backgroundColor: theme.primary + '15' }]}
+            >
+              <Ionicons name="checkmark-done" size={16} color={theme.primary} />
+              <Text style={{ color: theme.primary, fontSize: 13, fontWeight: '600', marginLeft: 4 }}>
+                Mark all read
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         <FlatList
           data={notifications}
           keyExtractor={(item) => String(item.id)}
@@ -110,12 +113,14 @@ export const NotificationsScreen = ({ navigation }) => {
                   {new Date(item.created_at).toLocaleString()}
                 </Text>
               </View>
+              {!item.is_read && (
+                <View style={[styles.unreadDot, { backgroundColor: theme.primary }]} />
+              )}
             </TouchableOpacity>
           )}
         />
       </View>
 
-      {/* Read-Only Notification Detail Modal */}
       <Modal visible={!!selectedNotification} animationType="fade" transparent={true}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
           <View style={{ backgroundColor: theme.cardBg, borderRadius: 20, width: '100%', padding: 24, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 10, elevation: 10 }}>
@@ -150,7 +155,6 @@ export const NotificationsScreen = ({ navigation }) => {
               {selectedNotification && new Date(selectedNotification.created_at).toLocaleString()}
             </Text>
 
-            {/* Action Buttons */}
             <TouchableOpacity
               style={{ backgroundColor: theme.primary, padding: 16, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}
               onPress={() => handleNavigate(selectedNotification?.type)}
@@ -171,20 +175,34 @@ export const NotificationsScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  headerBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  markAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
   notificationCard: {
     flexDirection: 'row',
     padding: 16,
     borderRadius: 12,
     marginBottom: 12,
     borderWidth: 1,
-  },
-  iconContainer: {
-    marginRight: 12,
-    justifyContent: 'center',
     alignItems: 'center',
   },
+  iconContainer: { marginRight: 12, justifyContent: 'center', alignItems: 'center' },
   textContainer: { flex: 1 },
   title: { fontSize: 16, marginBottom: 4 },
   message: { fontSize: 14, marginBottom: 6 },
   date: { fontSize: 12 },
+  unreadDot: { width: 8, height: 8, borderRadius: 4, marginLeft: 8 },
 });

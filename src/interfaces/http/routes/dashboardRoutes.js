@@ -1,6 +1,6 @@
 // src/interfaces/http/routes/dashboardRoutes.js
 // Aggregated dashboard endpoint — SSOT consumer
-// v2.8.0-prod — Adds role-based KPI filtering for CASHIERS.
+// v2.9.2-prod — Normalizes lowStockItems (item_name vs name) so web+mobile render identically.
 
 'use strict';
 
@@ -14,12 +14,12 @@ const { cacheService } = require('../../../infrastructure/services/cache/CacheSe
 const RiskOrchestrator = require('../../../application/services/risk/RiskOrchestrator');
 const RiskDataProvider = require('../../../application/services/risk/integration/RiskDataProvider');
 
-// ===== Forecast (pure consumer of Analytics) =====
+// ===== Forecast =====
 const ForecastOrchestrator = require('../../../application/services/forecast/ForecastOrchestrator');
 const ForecastDataProvider = require('../../../application/services/forecast/integration/ForecastDataProvider');
 const ProjectionEngine = require('../../../application/services/forecast/core/ProjectionEngine');
 
-// ===== Analytics (pure consumer of Reports) =====
+// ===== Analytics =====
 const AnalyticsProvider = require('../../../application/services/analytics/integration/AnalyticsProvider');
 const ReportEngineAdapter = require('../../../application/services/analytics/integration/ReportEngineAdapter');
 
@@ -166,7 +166,6 @@ const inventoryReportService = new InventoryReportService({
   reportRepository: reportRepo,
 });
 
-// ===== Report Engine Adapter =====
 const reportEngineAdapter = new ReportEngineAdapter({
   profitLossService,
   cashFlowService,
@@ -180,12 +179,10 @@ const reportEngineAdapter = new ReportEngineAdapter({
   inventoryReportService,
 });
 
-// ===== Analytics Provider =====
 const analyticsProvider = new AnalyticsProvider({
   reportEngineAdapter,
 });
 
-// ===== Forecast stack (pure consumer of Analytics) =====
 const forecastDataProvider = new ForecastDataProvider({
   analyticsProvider,
 });
@@ -195,7 +192,6 @@ const forecastOrchestrator = new ForecastOrchestrator({
   projectionEngine: new ProjectionEngine(),
 });
 
-// ===== Risk stack (pure consumer of Forecast) =====
 const riskDataProvider = new RiskDataProvider({
   forecastProvider: forecastOrchestrator,
 });
@@ -210,17 +206,33 @@ const DAILY_CACHE_TTL_MS = 60 * 1000;
 const CASHFLOW_CACHE_TTL_MS = 60 * 1000;
 const RISK_CACHE_TTL_MS = 60 * 1000;
 
-// ===== Auth on all routes =====
+// ★ Canonical normalizer — makes both sources emit the same shape.
+function normalizeLowStockItems(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map(item => {
+      if (!item) return null;
+      const itemName = item.item_name ?? item.name ?? null;
+      if (!itemName) return null;
+      return {
+        id: item.id ?? null,
+        item_name: itemName,
+        name: itemName,
+        quantity: Number(item.quantity) || 0,
+        reorder_level: Number(item.reorder_level ?? item.reorderLevel) || 5,
+        base_unit: item.base_unit ?? item.baseUnit ?? 'units',
+      };
+    })
+    .filter(Boolean);
+}
+
 router.use(authMiddleware);
 
-// =============================================
-// GET /api/dashboard/summary
-// =============================================
 router.get('/summary', async (req, res) => {
   try {
     const userId = req.user.id;
     const businessId = req.user.businessId;
-    const role = req.user.role; // ★ NEW
+    const role = req.user.role;
 
     if (!userId || !businessId) {
       return res.status(401).json({
@@ -229,14 +241,18 @@ router.get('/summary', async (req, res) => {
       });
     }
 
-    // v11: added students.total — discard v10 cache
-    const cacheKey = `aicfo:dashboard:${businessId}:daily:v11`;
+    // v13: normalize lowStockItems shape — discard v12 cache
+    const cacheKey = `aicfo:dashboard:${businessId}:daily:v13`;
 
     const data = await cacheService.getOrSet(
       cacheKey,
-      () => fetchDashboardData({ userId, businessId, role }), // ★ Pass role
+      () => fetchDashboardData({ userId, businessId, role }),
       DASHBOARD_CACHE_TTL_MS
     );
+
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
 
     res.json({
       success: true,
@@ -254,9 +270,6 @@ router.get('/summary', async (req, res) => {
   }
 });
 
-// =============================================
-// POST /api/dashboard/health-check
-// =============================================
 router.post('/health-check', (req, res) => {
   const stats = cacheService.getStats();
   res.json({
@@ -267,10 +280,7 @@ router.post('/health-check', (req, res) => {
   });
 });
 
-// =============================================
-// Fetch dashboard data (internal)
-// =============================================
-async function fetchDashboardData({ userId, businessId, role }) { // ★ Accept role
+async function fetchDashboardData({ userId, businessId, role }) {
   const now = new Date();
   const todayStr = now.toISOString().split('T')[0];
 
@@ -278,86 +288,83 @@ async function fetchDashboardData({ userId, businessId, role }) { // ★ Accept 
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
   const startDateStr = thirtyDaysAgo.toISOString().split('T')[0];
 
-  // ── Cached sub-computations (60s TTL per business) ─────────────
   const dailyKey = `aicfo:daily:${businessId}:${todayStr}`;
   const cashFlowKey = `aicfo:cashflow:${businessId}:${todayStr}`;
   const riskKey = `aicfo:risk:${businessId}`;
 
   const [
-    dailyResult,
-    analyticsResult,
-    riskResult,
+    daily,
+    inventorySummaryData,
     debtorsTotalRaw,
     creditorsTotalRaw,
-    inventorySummary,
-    cashFlowResult,
-    activeProjectsRaw,
-    todayInvoicesRaw,
     cashFlowTodayRaw,
-    studentsActiveRaw,
-  ] = await Promise.allSettled([
+  ] = await Promise.all([
     cacheService.getOrSet(
       dailyKey,
       () => dailyReportService.generate({ userId, businessId, date: todayStr }),
       DAILY_CACHE_TTL_MS
     ),
-    analyticsProvider.generateAnalytics({
-      userId,
-      businessId,
-      startDate: startDateStr,
-      endDate: todayStr,
-      periodType: 'monthly',
-    }),
-    cacheService.getOrSet(
-      riskKey,
-      () => riskOrchestrator.assess({ userId, businessId, data: {} }),
-      RISK_CACHE_TTL_MS
-    ),
+    inventoryRepo.getSummary(businessId),
     debtorRepo.getTotalOutstanding(businessId),
     creditorRepo.getTotalOutstanding(businessId),
-    inventoryRepo.getSummary(businessId),
-    cacheService.getOrSet(
-      cashFlowKey,
-      () => cashFlowService.generate({
-        userId,
-        businessId,
-        startDate: '2000-01-01',
-        endDate: todayStr,
-      }),
-      CASHFLOW_CACHE_TTL_MS
-    ),
-    projectRepo.countByBusinessId(businessId, { status: 'ACTIVE' }),
-    invoiceRepo.countByBusinessId(businessId, { fromDate: todayStr, toDate: todayStr }),
     paymentRepo.getCashFlowForDate(businessId, todayStr),
-    studentRepo.countActive(businessId),
   ]);
 
-  const daily = dailyResult.status === 'fulfilled' ? dailyResult.value : null;
-  const analytics = analyticsResult.status === 'fulfilled' ? analyticsResult.value : null;
-  const risk = riskResult.status === 'fulfilled' ? riskResult.value : null;
-  const cashFlow = cashFlowResult.status === 'fulfilled' ? cashFlowResult.value : null;
+  const [analytics, risk, cashFlow, activeProjectsRaw, todayInvoicesRaw, studentsActiveRaw] =
+    await Promise.all([
+      analyticsProvider.generateAnalytics({
+        userId,
+        businessId,
+        startDate: startDateStr,
+        endDate: todayStr,
+        periodType: 'monthly',
+      }).catch((e) => {
+        console.warn('⚠️ [Dashboard] analytics degraded:', e.message);
+        return null;
+      }),
 
-  const debtorsTotal = debtorsTotalRaw.status === 'fulfilled' ? Number(debtorsTotalRaw.value) || 0 : 0;
-  const creditorsTotal = creditorsTotalRaw.status === 'fulfilled' ? Number(creditorsTotalRaw.value) || 0 : 0;
-  const inventorySummaryData = inventorySummary.status === 'fulfilled' ? inventorySummary.value || {} : {};
-  const activeProjects = activeProjectsRaw.status === 'fulfilled' ? Number(activeProjectsRaw.value) || 0 : 0;
-  const todayInvoices = todayInvoicesRaw.status === 'fulfilled' ? Number(todayInvoicesRaw.value) || 0 : 0;
-  const cashFlowToday = cashFlowTodayRaw.status === 'fulfilled' ? cashFlowTodayRaw.value || { cashIn: 0, cashOut: 0 } : { cashIn: 0, cashOut: 0 };
-  const studentsActive = studentsActiveRaw.status === 'fulfilled' ? Number(studentsActiveRaw.value) || 0 : 0;
+      cacheService.getOrSet(
+        riskKey,
+        () => riskOrchestrator.assess({ userId, businessId, data: {} }),
+        RISK_CACHE_TTL_MS
+      ).catch((e) => {
+        console.warn('⚠️ [Dashboard] risk degraded:', e.message);
+        return null;
+      }),
 
-  // ─────────────────────────────────────────────
-  // Navigate analytics (SSOT)
-  // ─────────────────────────────────────────────
+      cacheService.getOrSet(
+        cashFlowKey,
+        () => cashFlowService.generate({
+          userId,
+          businessId,
+          startDate: '2000-01-01',
+          endDate: todayStr,
+        }),
+        CASHFLOW_CACHE_TTL_MS
+      ).catch((e) => {
+        console.warn('⚠️ [Dashboard] cashFlow degraded:', e.message);
+        return null;
+      }),
+
+      projectRepo.countByBusinessId(businessId, { status: 'ACTIVE' }).catch(() => 0),
+      invoiceRepo.countByBusinessId(businessId, { fromDate: todayStr, toDate: todayStr }).catch(() => 0),
+      studentRepo.countActive(businessId).catch(() => 0),
+    ]);
+
+  const debtorsTotal = Number(debtorsTotalRaw) || 0;
+  const creditorsTotal = Number(creditorsTotalRaw) || 0;
+  const inventorySummary = inventorySummaryData || {};
+  const activeProjects = Number(activeProjectsRaw) || 0;
+  const todayInvoices = Number(todayInvoicesRaw) || 0;
+  const cashFlowToday = cashFlowTodayRaw || { cashIn: 0, cashOut: 0 };
+  const studentsActive = Number(studentsActiveRaw) || 0;
+
   const snapshot = analytics?.snapshot || {};
-  const analyticsData = analytics?.analytics || {};
   const reportData = analytics?.reportData || {};
   const report = reportData?.report || {};
   const monthly = report?.monthly || {};
   const metrics = reportData?.metrics || {};
 
-  // ─────────────────────────────────────────────
-  // Daily report — from daily.today.*
-  // ─────────────────────────────────────────────
   const today = daily?.today || {};
 
   const todayRevenue = Number(today.revenue ?? 0);
@@ -366,38 +373,37 @@ async function fetchDashboardData({ userId, businessId, role }) { // ★ Accept 
   const todayProfit = Number(today.netProfit ?? 0);
   const todayNetMargin = Number(today.netMargin ?? 0);
 
-  // ─────────────────────────────────────────────
-  // Inventory
-  // ─────────────────────────────────────────────
   const inventoryTotal = Number(
-    inventorySummaryData.totalValue ?? inventorySummaryData.total_value ??
+    inventorySummary.totalValue ?? inventorySummary.total_value ??
+    inventorySummary.total_selling_value ??
     metrics.inventory ?? 0
   );
+
   const lowStockCount = Number(
-    inventorySummaryData.lowStockCount ?? inventorySummaryData.low_stock_count ??
+    inventorySummary.lowStockCount ??
+    inventorySummary.low_stock_count ??
     today.inventory?.lowStockCount ?? 0
   );
 
-  // ─────────────────────────────────────────────
-  // CASH POSITION — taken from CashFlowService (SSOT)
-  // ─────────────────────────────────────────────
+  // ★ Merge both sources, normalize shape. Prefer repo (has id + base_unit),
+  // fall back to daily calculator. Deduplicate by name.
+  const fromRepo = normalizeLowStockItems(inventorySummary.lowStockItems);
+  const fromDaily = normalizeLowStockItems(today.inventory?.lowStockItems);
+
+  const seenNames = new Set();
+  const lowStockItems = [];
+  for (const item of [...fromRepo, ...fromDaily]) {
+    const key = item.item_name.toLowerCase();
+    if (seenNames.has(key)) continue;
+    seenNames.add(key);
+    lowStockItems.push(item);
+  }
+
   const cashCurrent = Number(cashFlow?.closingCash ?? cashFlow?.summary?.closingCash ?? 0);
 
-  // ─────────────────────────────────────────────
-  // Health Score
-  // ─────────────────────────────────────────────
   const healthObj = analytics?.health || snapshot?.health || {};
-
-  const healthScore = Number(
-    healthObj.score ??
-    healthObj.overallScore ??
-    0
-  );
-
-  const healthStatus =
-    healthObj.status ||
-    healthObj.overallStatus ||
-    'NEUTRAL';
+  const healthScore = Number(healthObj.score ?? healthObj.overallScore ?? 0);
+  const healthStatus = healthObj.status || healthObj.overallStatus || 'NEUTRAL';
 
   const topRisks = (risk?.risks?.all || [])
     .filter((r) => r.severity === 'CRITICAL' || r.severity === 'HIGH')
@@ -477,6 +483,7 @@ async function fetchDashboardData({ userId, businessId, role }) { // ★ Accept 
     inventory: {
       total: inventoryTotal,
       lowStock: lowStockCount,
+      lowStockItems,
       formatted: `₦${Number(inventoryTotal).toLocaleString()}`,
       label: 'Inventory Value',
     },
@@ -511,7 +518,6 @@ async function fetchDashboardData({ userId, businessId, role }) { // ★ Accept 
     },
   };
 
-  // ★ NEW: Apply Role-Based Filtering for CASHIERS
   if (role === 'CASHIER') {
     kpiResponse.revenue = { today: 0, month: 0, growth: 0, formatted: '₦0', label: 'Revenue Today' };
     kpiResponse.profit = { today: 0, month: 0, margin: 0, formatted: '₦0', label: 'Profit Today' };
@@ -542,7 +548,7 @@ async function fetchDashboardData({ userId, businessId, role }) { // ★ Accept 
       businessId,
       generatedAt: new Date().toISOString(),
       source: 'cashflow+daily+analytics+risk+repos+projects+invoices+cashinout+students',
-      version: '2.8.0',
+      version: '2.9.2',
     },
   };
 }

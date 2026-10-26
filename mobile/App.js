@@ -7,6 +7,7 @@ import * as Notifications from 'expo-notifications';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { OfflineProvider } from './src/context/OfflineContext';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
+import { NotificationProvider } from './src/context/NotificationContext';
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
 import { VerifyEmailScreen } from './src/screens/VerifyEmailScreen';
@@ -33,6 +34,9 @@ const Tab = createBottomTabNavigator();
 
 function MainTabs() {
   const { theme } = useTheme();
+  const { user } = useAuth();
+  const isCashier = user?.role === 'CASHIER';
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -53,9 +57,13 @@ function MainTabs() {
     >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Sales" component={RecordSaleScreen} options={{ title: 'Record Sale' }} />
-      <Tab.Screen name="History" component={SalesHistoryScreen} options={{ title: 'History' }} />
+      {!isCashier && (
+        <Tab.Screen name="History" component={SalesHistoryScreen} options={{ title: 'History' }} />
+      )}
       <Tab.Screen name="Inventory" component={InventoryScreen} />
-      <Tab.Screen name="Debtors" component={DebtorsScreen} />
+      {!isCashier && (
+        <Tab.Screen name="Debtors" component={DebtorsScreen} />
+      )}
     </Tab.Navigator>
   );
 }
@@ -133,7 +141,9 @@ export default function App() {
     <ThemeProvider>
       <OfflineProvider>
         <AuthProvider>
-          <AppNavigator />
+          <NotificationProvider>
+            <AppNavigator />
+          </NotificationProvider>
         </AuthProvider>
       </OfflineProvider>
     </ThemeProvider>
