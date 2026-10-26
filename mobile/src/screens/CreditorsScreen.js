@@ -3,11 +3,13 @@ import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Mod
 import { Ionicons } from '@expo/vector-icons';
 import api from '../services/api';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 
 const PAGE_SIZES = [10, 25, 50, 75, 100];
 
 export const CreditorsScreen = ({ navigation }) => {
   const { theme } = useTheme();
+  const { isReadOnly } = useAuth();
   
   const [creditors, setCreditors] = useState([]);
   const [summary, setSummary] = useState(null);
@@ -83,6 +85,7 @@ export const CreditorsScreen = ({ navigation }) => {
   }, [creditors, searchQuery]);
 
   const handleRecordPayment = async () => {
+    if (isReadOnly) return Alert.alert('Expired', 'Your subscription has expired.');
     if (!paymentAmount || parseFloat(paymentAmount) <= 0) {
       return Alert.alert('Error', 'Enter a valid payment amount');
     }
@@ -143,9 +146,13 @@ export const CreditorsScreen = ({ navigation }) => {
             <Ionicons name="chevron-back" size={28} color={theme.text} />
           </TouchableOpacity>
           <Text style={[styles.title, { color: theme.text }]}>Creditors</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('AddCreditor')}>
-            <Ionicons name="add" size={28} color={theme.primary} />
-          </TouchableOpacity>
+          {!isReadOnly ? (
+            <TouchableOpacity onPress={() => navigation.navigate('AddCreditor')}>
+              <Ionicons name="add" size={28} color={theme.primary} />
+            </TouchableOpacity>
+          ) : (
+            <View style={{ width: 28 }} />
+          )}
         </View>
 
         {/* Summary Card */}
@@ -216,13 +223,17 @@ export const CreditorsScreen = ({ navigation }) => {
                   <Text style={{ fontSize: 10, color: theme.textMuted, textTransform: 'uppercase' }}>{item.status}</Text>
                 </View>
               </View>
-              <TouchableOpacity 
-                style={[{ flexDirection: 'row', backgroundColor: theme.success, padding: 10, borderRadius: 8, justifyContent: 'center', alignItems: 'center', gap: 6 }]} 
-                onPress={() => setSelectedCreditor(item)}
-              >
-                <Ionicons name="cash-outline" size={16} color="#fff" />
-                <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 14 }}>Record Payment</Text>
-              </TouchableOpacity>
+              
+              {/* Record Payment Button (Hidden if read-only) */}
+              {!isReadOnly && (
+                <TouchableOpacity 
+                  style={[{ flexDirection: 'row', backgroundColor: theme.success, padding: 10, borderRadius: 8, justifyContent: 'center', alignItems: 'center', gap: 6 }]} 
+                  onPress={() => setSelectedCreditor(item)}
+                >
+                  <Ionicons name="cash-outline" size={16} color="#fff" />
+                  <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 14 }}>Record Payment</Text>
+                </TouchableOpacity>
+              )}
             </View>
           )}
         />

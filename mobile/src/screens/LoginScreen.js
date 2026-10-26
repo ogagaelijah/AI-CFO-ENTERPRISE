@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 
@@ -24,6 +25,16 @@ export default function LoginScreen({ navigation }) {
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
       <View style={[styles.container, { backgroundColor: theme.background }]}>
+        {/* Back button */}
+        <TouchableOpacity
+          onPress={() => navigation.navigate('Welcome')}
+          style={styles.backBtn}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="arrow-back" size={22} color={theme.text} />
+          <Text style={[styles.backText, { color: theme.text }]}>Back</Text>
+        </TouchableOpacity>
+
         <Text style={[styles.title, { color: theme.text }]}>AI CFO Enterprise</Text>
         
         <TextInput
@@ -48,12 +59,10 @@ export default function LoginScreen({ navigation }) {
           {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Log In</Text>}
         </TouchableOpacity>
 
-        {/* ★ NEW: Forgot Password Link */}
         <TouchableOpacity style={styles.linkBtn} onPress={() => navigation.navigate('ForgotPassword')}>
           <Text style={{ color: theme.textMuted }}>Forgot Password?</Text>
         </TouchableOpacity>
 
-        {/* Sign Up Link */}
         <TouchableOpacity style={styles.linkBtn} onPress={() => navigation.navigate('Register')}>
           <Text style={{ color: theme.textMuted }}>Don't have an account? <Text style={{ color: theme.primary, fontWeight: 'bold' }}>Sign Up</Text></Text>
         </TouchableOpacity>
@@ -64,9 +73,20 @@ export default function LoginScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: 'center', padding: 20 },
+  backBtn: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 56 : 24,
+    left: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 8,
+    paddingRight: 12,
+  },
+  backText: { fontSize: 15, fontWeight: '600' },
   title: { fontSize: 28, fontWeight: 'bold', textAlign: 'center', marginBottom: 40 },
   input: { padding: 15, borderRadius: 8, marginBottom: 15, borderWidth: 1 },
   button: { padding: 15, borderRadius: 8, alignItems: 'center', marginTop: 10 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
-  linkBtn: { alignItems: 'center', marginTop: 20 }
+  linkBtn: { alignItems: 'center', marginTop: 20 },
 });

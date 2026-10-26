@@ -3,11 +3,13 @@ import { View, Text, StyleSheet, ActivityIndicator, RefreshControl, FlatList, Te
 import { Ionicons } from '@expo/vector-icons';
 import api from '../services/api';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 
 const PAGE_SIZES = [10, 25, 50, 75, 100];
 
 export const InventoryScreen = ({ navigation }) => {
   const { theme } = useTheme();
+  const { isReadOnly } = useAuth();
   const [inventory, setInventory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -298,13 +300,15 @@ export const InventoryScreen = ({ navigation }) => {
         }}
       />
 
-      {/* Floating Action Button */}
-      <TouchableOpacity 
-        style={[styles.fab, { backgroundColor: theme.primary }]}
-        onPress={() => navigation.navigate('AddEditInventory')}
-      >
-        <Ionicons name="add" size={30} color="#fff" />
-      </TouchableOpacity>
+      {/* Floating Action Button (Hidden if read-only) */}
+      {!isReadOnly && (
+        <TouchableOpacity 
+          style={[styles.fab, { backgroundColor: theme.primary }]}
+          onPress={() => navigation.navigate('AddEditInventory')}
+        >
+          <Ionicons name="add" size={30} color="#fff" />
+        </TouchableOpacity>
+      )}
     </View>
   );
 };

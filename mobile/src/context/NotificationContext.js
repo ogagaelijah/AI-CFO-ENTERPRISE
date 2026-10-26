@@ -1,6 +1,5 @@
 // mobile/src/context/NotificationContext.js
-// Single source of truth for notifications. Badge count, list, and mark-as-read
-// all live here so every screen stays in sync automatically.
+// v2.1.0-prod — Graceful network error handling. Keeps previous state on fail.
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import api from '../services/api';
@@ -13,15 +12,16 @@ export const NotificationProvider = ({ children }) => {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
 
   const applyNotifications = (items, count) => {
     const arr = Array.isArray(items) ? items : [];
     setNotifications(arr);
+    
     if (typeof count === 'number') {
       setUnreadCount(count);
     } else {
-      setUnreadCount(arr.filter(n => n.is_read === false || n.is_read === 0).length);
+      // FIX: !n.is_read correctly catches false, 0, null, and undefined
+      setUnreadCount(arr.filter(n => !n.is_read).length);
     }
   };
 
@@ -32,15 +32,17 @@ export const NotificationProvider = ({ children }) => {
       return;
     }
     setLoading(true);
-    setError(null);
     try {
       const res = await api.get('/notifications');
       if (res.data?.success) {
         applyNotifications(res.data.data, res.data.unreadCount);
       }
     } catch (err) {
-      console.log('❌ Notification fetch error:', err?.message);
-      setError('Could not load notifications.');
+      // ★ GRACEFUL FALLBACK: Do NOT clear the notifications or badge on network failure.
+      // Only log as a warning (not an error) to avoid red screens in dev.
+      if (err.message !== 'Network Error') {
+        console.warn('⚠️ Notification fetch failed:', err.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -66,11 +68,10 @@ export const NotificationProvider = ({ children }) => {
     try {
       await api.put(`/notifications/${id}/read`);
     } catch (err) {
-      console.log('❌ Mark-as-read failed, refetching:', err?.message);
-      // Revert by refetching the truth
-      fetchNotifications();
+      // If we can't reach the server, we keep the optimistic update. 
+      // It will sync on the next successful fetch.
     }
-  }, [fetchNotifications]);
+  }, []);
 
   const markAllAsRead = useCallback(async () => {
     const unread = notifications.filter(n => !n.is_read);
@@ -87,10 +88,9 @@ export const NotificationProvider = ({ children }) => {
         await Promise.all(unread.map(n => api.put(`/notifications/${n.id}/read`).catch(() => null)));
       }
     } catch (err) {
-      console.log('❌ Mark-all failed, refetching:', err?.message);
-      fetchNotifications();
+      // Silent fail — optimistic update already applied
     }
-  }, [notifications, fetchNotifications]);
+  }, [notifications]);
 
   return (
     <NotificationContext.Provider
@@ -98,7 +98,6 @@ export const NotificationProvider = ({ children }) => {
         notifications,
         unreadCount,
         loading,
-        error,
         fetchNotifications,
         markAsRead,
         markAllAsRead,

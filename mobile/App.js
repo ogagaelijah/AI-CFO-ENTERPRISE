@@ -8,6 +8,7 @@ import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { OfflineProvider } from './src/context/OfflineContext';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { NotificationProvider } from './src/context/NotificationContext';
+import WelcomeScreen from './src/screens/WelcomeScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
 import { VerifyEmailScreen } from './src/screens/VerifyEmailScreen';
@@ -57,9 +58,7 @@ function MainTabs() {
     >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Sales" component={RecordSaleScreen} options={{ title: 'Record Sale' }} />
-      {!isCashier && (
-        <Tab.Screen name="History" component={SalesHistoryScreen} options={{ title: 'History' }} />
-      )}
+      <Tab.Screen name="History" component={SalesHistoryScreen} options={{ title: 'History' }} />
       <Tab.Screen name="Inventory" component={InventoryScreen} />
       {!isCashier && (
         <Tab.Screen name="Debtors" component={DebtorsScreen} />
@@ -86,12 +85,8 @@ function AppNavigator() {
     });
 
     return () => {
-      if (notificationListener.current) {
-        Notifications.removeNotificationSubscription(notificationListener.current);
-      }
-      if (responseListener.current) {
-        Notifications.removeNotificationSubscription(responseListener.current);
-      }
+      if (notificationListener.current) notificationListener.current.remove();
+      if (responseListener.current) responseListener.current.remove();
     };
   }, []);
 
@@ -126,6 +121,8 @@ function AppNavigator() {
           )
         ) : (
           <React.Fragment>
+            {/* Welcome is now the first screen for unauthenticated users */}
+            <Stack.Screen name="Welcome" component={WelcomeScreen} />
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="Register" component={RegisterScreen} />
             <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />

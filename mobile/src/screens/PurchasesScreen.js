@@ -3,9 +3,11 @@ import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert,
 import { Ionicons } from '@expo/vector-icons';
 import api from '../services/api';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 
 export const PurchasesScreen = ({ navigation }) => {
   const { theme } = useTheme();
+  const { isReadOnly } = useAuth();
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [summary, setSummary] = useState({ total_amount: 0, total_outstanding: 0 });
@@ -30,8 +32,12 @@ export const PurchasesScreen = ({ navigation }) => {
   };
 
   useEffect(() => {
-    fetchPurchases();
-  }, []);
+    if (!isReadOnly) {
+      fetchPurchases();
+    } else {
+      setLoading(false);
+    }
+  }, [isReadOnly]);
 
   const handleItemChange = (index, field, value) => {
     const newItems = [...items];
@@ -45,6 +51,7 @@ export const PurchasesScreen = ({ navigation }) => {
   const calculateTotal = () => items.reduce((sum, item) => sum + ((parseFloat(item.quantity) || 0) * (parseFloat(item.unitCost) || 0)), 0);
 
   const handleSubmit = async () => {
+    if (isReadOnly) return Alert.alert('Expired', 'Your subscription has expired.');
     if (!supplierName.trim()) return Alert.alert('Error', 'Supplier name is required');
     
     const validItems = items.filter(i => i.name.trim() && parseFloat(i.quantity) > 0 && parseFloat(i.unitCost) > 0);
@@ -81,6 +88,31 @@ export const PurchasesScreen = ({ navigation }) => {
   };
 
   if (loading) return <View style={[styles.center, { backgroundColor: theme.background }]}><ActivityIndicator size="large" color={theme.primary} /></View>;
+
+  // ─── SUBSCRIPTION EXPIRED BLOCK ───
+  if (isReadOnly) {
+    return (
+      <View style={[styles.center, { backgroundColor: theme.background, padding: 24 }]}>
+        <View style={{ backgroundColor: theme.cardBg, padding: 24, borderRadius: 20, alignItems: 'center', borderWidth: 1, borderColor: theme.border, width: '100%' }}>
+          <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: theme.warning + '20', justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
+            <Ionicons name="lock-closed" size={32} color={theme.warning} />
+          </View>
+          <Text style={{ fontSize: 20, fontWeight: 'bold', color: theme.text, textAlign: 'center', marginBottom: 8 }}>
+            Subscription Expired
+          </Text>
+          <Text style={{ fontSize: 14, color: theme.textMuted, textAlign: 'center', marginBottom: 24, lineHeight: 20 }}>
+            You cannot record new purchases while your account is in read-only mode. Please renew your plan to continue.
+          </Text>
+          <TouchableOpacity 
+            style={{ backgroundColor: theme.primary, paddingVertical: 14, borderRadius: 12, width: '100%', alignItems: 'center' }}
+            onPress={() => navigation.navigate('Profile')}
+          >
+            <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>Renew Subscription</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   const totalAmount = calculateTotal();
   const balanceRemaining = totalAmount - (parseFloat(amountPaid) || 0);
