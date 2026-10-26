@@ -8,8 +8,12 @@ import { useFocusEffect } from '@react-navigation/native';
 import api from '../services/api';
 import { Ionicons } from '@expo/vector-icons';
 
+// Matches web: formatCurrency = Math.round before toLocaleString
+const formatCurrency = (n) => `₦${Math.round(Number(n) || 0).toLocaleString()}`;
+const formatNumber = (n) => Math.round(Number(n) || 0).toLocaleString();
+
 export default function HomeScreen({ navigation }) {
-  const { user, isReadOnly, subscriptionStatus } = useAuth();
+  const { user, isReadOnly } = useAuth();
   const { queue, syncQueue } = useOffline();
   const { theme } = useTheme();
   const { unreadCount, fetchNotifications } = useNotifications();
@@ -60,8 +64,10 @@ export default function HomeScreen({ navigation }) {
 
   const kpis = data?.kpis || {};
   const revenueToday = kpis.revenue?.today || 0;
+  const revenueMonth = kpis.revenue?.month || 0;
   const salesToday = kpis.sales?.today || 0;
   const profitToday = kpis.profit?.today || 0;
+  const profitMonth = kpis.profit?.month || 0;
   const expensesToday = kpis.expenses?.today || 0;
   const inventoryValue = kpis.inventory?.total || 0;
   const debtorsOwed = kpis.debtors?.total || 0;
@@ -142,7 +148,7 @@ export default function HomeScreen({ navigation }) {
           </Text>
           <TouchableOpacity 
             style={{ backgroundColor: theme.warning, paddingVertical: 12, borderRadius: 8, alignItems: 'center' }}
-            onPress={() => navigation.navigate('Profile')} // Or your Subscription screen
+            onPress={() => navigation.navigate('Profile')}
           >
             <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 14 }}>Renew / Upgrade Plan</Text>
           </TouchableOpacity>
@@ -156,57 +162,72 @@ export default function HomeScreen({ navigation }) {
             <Text style={styles.heroLabel}>My Sales Today</Text>
             <Ionicons name="cart" size={24} color="rgba(255,255,255,0.8)" />
           </View>
-          <Text style={styles.heroValue}>{salesToday} Sales</Text>
+          <Text style={styles.heroValue}>{formatNumber(salesToday)} Sales</Text>
           
           <View style={styles.heroDivider} />
           
           <View style={styles.heroSubRow}>
             <View style={styles.heroSubItem}>
               <Text style={styles.heroSubLabel}>Cash Received</Text>
-              <Text style={styles.heroSubValue}>₦{Number(cashInToday).toLocaleString()}</Text>
+              <Text style={styles.heroSubValue}>{formatCurrency(cashInToday)}</Text>
             </View>
           </View>
         </View>
       ) : (
-        /* ─── OWNER / ADMIN VIEW ─── */
+        /* ─── OWNER / ADMIN VIEW (Web Parity Grid) ─── */
         <View style={styles.statsGrid}>
           <View style={styles.statRow}>
+            {/* Revenue Today */}
             <View style={[styles.statCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
               <View style={[styles.statIconWrap, { backgroundColor: theme.primary + '15' }]}>
                 <Ionicons name="trending-up" size={18} color={theme.primary} />
               </View>
-              <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>₦{Number(revenueToday).toLocaleString()}</Text>
+              <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>{formatCurrency(revenueToday)}</Text>
+              {revenueMonth > 0 && (
+                <Text style={{ fontSize: 11, color: theme.textMuted, marginBottom: 2 }} numberOfLines={1}>
+                  {formatCurrency(revenueMonth)} this month
+                </Text>
+              )}
               <Text style={[styles.statLabel, { color: theme.textMuted }]}>Revenue Today</Text>
             </View>
 
+            {/* Sales Today */}
             <View style={[styles.statCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
               <View style={[styles.statIconWrap, { backgroundColor: '#3B82F615' }]}>
                 <Ionicons name="cart" size={18} color="#3B82F6" />
               </View>
-              <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>{salesToday}</Text>
+              <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>{formatNumber(salesToday)}</Text>
               <Text style={[styles.statLabel, { color: theme.textMuted }]}>Sales Today</Text>
             </View>
           </View>
 
           <View style={styles.statRow}>
+            {/* Profit Today */}
             <View style={[styles.statCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
               <View style={[styles.statIconWrap, { backgroundColor: theme.success + '15' }]}>
                 <Ionicons name="trending-up" size={18} color={theme.success} />
               </View>
-              <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>₦{Number(profitToday).toLocaleString()}</Text>
+              <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>{formatCurrency(profitToday)}</Text>
+              {profitMonth > 0 && (
+                <Text style={{ fontSize: 11, color: theme.textMuted, marginBottom: 2 }} numberOfLines={1}>
+                  {formatCurrency(profitMonth)} this month
+                </Text>
+              )}
               <Text style={[styles.statLabel, { color: theme.textMuted }]}>Profit Today</Text>
             </View>
 
+            {/* Expenses Today */}
             <View style={[styles.statCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
               <View style={[styles.statIconWrap, { backgroundColor: theme.danger + '15' }]}>
                 <Ionicons name="trending-down" size={18} color={theme.danger} />
               </View>
-              <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>₦{Number(expensesToday).toLocaleString()}</Text>
+              <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>{formatCurrency(expensesToday)}</Text>
               <Text style={[styles.statLabel, { color: theme.textMuted }]}>Expenses Today</Text>
             </View>
           </View>
 
           <View style={styles.statRow}>
+            {/* Inventory Value with Low Stock Names */}
             <TouchableOpacity 
               style={[styles.statCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]} 
               onPress={() => navigation.navigate('Inventory')}
@@ -215,7 +236,7 @@ export default function HomeScreen({ navigation }) {
               <View style={[styles.statIconWrap, { backgroundColor: theme.primary + '15' }]}>
                 <Ionicons name="cube" size={18} color={theme.primary} />
               </View>
-              <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>₦{Number(inventoryValue).toLocaleString()}</Text>
+              <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>{formatCurrency(inventoryValue)}</Text>
               <Text style={[styles.statLabel, { color: theme.textMuted }]}>Inventory Value</Text>
               
               {lowStock > 0 && (
@@ -236,6 +257,7 @@ export default function HomeScreen({ navigation }) {
               )}
             </TouchableOpacity>
 
+            {/* Debtors Owed */}
             <TouchableOpacity 
               style={[styles.statCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]} 
               onPress={() => navigation.navigate('Debtors')}
@@ -244,12 +266,13 @@ export default function HomeScreen({ navigation }) {
               <View style={[styles.statIconWrap, { backgroundColor: theme.warning + '15' }]}>
                 <Ionicons name="people" size={18} color={theme.warning} />
               </View>
-              <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>₦{Number(debtorsOwed).toLocaleString()}</Text>
+              <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>{formatCurrency(debtorsOwed)}</Text>
               <Text style={[styles.statLabel, { color: theme.textMuted }]}>Debtors Owed</Text>
             </TouchableOpacity>
           </View>
 
           <View style={styles.statRow}>
+            {/* You Owe */}
             <TouchableOpacity 
               style={[styles.statCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]} 
               onPress={() => navigation.navigate('Creditors')}
@@ -258,33 +281,36 @@ export default function HomeScreen({ navigation }) {
               <View style={[styles.statIconWrap, { backgroundColor: '#F9731615' }]}>
                 <Ionicons name="briefcase" size={18} color="#F97316" />
               </View>
-              <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>₦{Number(creditorsOwed).toLocaleString()}</Text>
+              <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>{formatCurrency(creditorsOwed)}</Text>
               <Text style={[styles.statLabel, { color: theme.textMuted }]}>You Owe</Text>
             </TouchableOpacity>
 
+            {/* Cash Position */}
             <View style={[styles.statCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
               <View style={[styles.statIconWrap, { backgroundColor: '#A855F715' }]}>
                 <Ionicons name="wallet" size={18} color="#A855F7" />
               </View>
-              <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>₦{Number(cashPosition).toLocaleString()}</Text>
+              <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>{formatCurrency(cashPosition)}</Text>
               <Text style={[styles.statLabel, { color: theme.textMuted }]}>Cash Position</Text>
             </View>
           </View>
 
           <View style={styles.statRow}>
+            {/* Cash Received Today */}
             <View style={[styles.statCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
               <View style={[styles.statIconWrap, { backgroundColor: theme.success + '15' }]}>
                 <Ionicons name="arrow-down" size={18} color={theme.success} />
               </View>
-              <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>₦{Number(cashInToday).toLocaleString()}</Text>
+              <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>{formatCurrency(cashInToday)}</Text>
               <Text style={[styles.statLabel, { color: theme.textMuted }]}>Cash Received</Text>
             </View>
 
+            {/* Cash Paid Today */}
             <View style={[styles.statCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
               <View style={[styles.statIconWrap, { backgroundColor: theme.danger + '15' }]}>
                 <Ionicons name="arrow-up" size={18} color={theme.danger} />
               </View>
-              <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>₦{Number(cashOutToday).toLocaleString()}</Text>
+              <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>{formatCurrency(cashOutToday)}</Text>
               <Text style={[styles.statLabel, { color: theme.textMuted }]}>Cash Paid Today</Text>
             </View>
           </View>
