@@ -57,10 +57,13 @@ function MainTabs() {
     >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Sales" component={RecordSaleScreen} options={{ title: 'Record Sale' }} />
-      {!isCashier && (
-        <Tab.Screen name="History" component={SalesHistoryScreen} options={{ title: 'History' }} />
-      )}
+      
+      {/* ★ FIX: Cashiers CAN now see History */}
+      <Tab.Screen name="History" component={SalesHistoryScreen} options={{ title: 'History' }} />
+      
       <Tab.Screen name="Inventory" component={InventoryScreen} />
+      
+      {/* Cashiers still cannot see Debtors */}
       {!isCashier && (
         <Tab.Screen name="Debtors" component={DebtorsScreen} />
       )}
@@ -86,12 +89,9 @@ function AppNavigator() {
     });
 
     return () => {
-      if (notificationListener.current) {
-        Notifications.removeNotificationSubscription(notificationListener.current);
-      }
-      if (responseListener.current) {
-        Notifications.removeNotificationSubscription(responseListener.current);
-      }
+      // FIX: Modern expo-notifications cleanup
+      if (notificationListener.current) notificationListener.current.remove();
+      if (responseListener.current) responseListener.current.remove();
     };
   }, []);
 

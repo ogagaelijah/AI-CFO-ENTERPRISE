@@ -18,10 +18,14 @@ export const NotificationProvider = ({ children }) => {
   const applyNotifications = (items, count) => {
     const arr = Array.isArray(items) ? items : [];
     setNotifications(arr);
+    
+    // Trust the backend's unreadCount if it's a number.
+    // Otherwise, fallback to a safe check for unread status.
     if (typeof count === 'number') {
       setUnreadCount(count);
     } else {
-      setUnreadCount(arr.filter(n => n.is_read === false || n.is_read === 0).length);
+      // FIX: !n.is_read correctly catches false, 0, null, and undefined
+      setUnreadCount(arr.filter(n => !n.is_read).length);
     }
   };
 

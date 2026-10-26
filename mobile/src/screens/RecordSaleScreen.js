@@ -136,17 +136,21 @@ export const RecordSaleScreen = ({ navigation }) => {
         const res = await api.post('/sales', payload);
         if (res.data?.success) {
           Alert.alert('Success', 'Sale recorded successfully!');
-          navigation.navigate('History');
+          // ★ SAFE NAVIGATION: Targets the History tab inside the Main Stack
+          navigation.navigate('Main', { screen: 'History' });
         }
       } catch (networkError) {
         if (networkError.message.includes('Network Error')) {
           await addSaleToQueue(payload);
           Alert.alert('Saved Offline', 'No network. Sale saved and will sync when you are back online.');
-          navigation.navigate('History');
+          // ★ SAFE NAVIGATION: Targets the History tab inside the Main Stack
+          navigation.navigate('Main', { screen: 'History' });
+          return; // Stop further execution to prevent double reset
         } else {
           throw networkError;
         }
       }
+      
       setCustomerName('');
       setCustomerPhone('');
       setItems([{ name: '', quantity: '', price: '', unitMultiplier: 1, soldUnit: 'Piece', inventoryId: null }]);

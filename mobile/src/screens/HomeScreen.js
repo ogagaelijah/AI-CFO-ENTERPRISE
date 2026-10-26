@@ -62,18 +62,25 @@ export default function HomeScreen({ navigation }) {
   const revenueToday = kpis.revenue?.today || 0;
   const salesToday = kpis.sales?.today || 0;
   const profitToday = kpis.profit?.today || 0;
+  const expensesToday = kpis.expenses?.today || 0;
+  const inventoryValue = kpis.inventory?.total || 0;
+  const debtorsOwed = kpis.debtors?.total || 0;
+  const creditorsOwed = kpis.creditors?.total || 0;
+  const cashPosition = kpis.cash?.current || 0;
   const cashInToday = kpis.cash_in?.today || 0;
   const cashOutToday = kpis.cash_out?.today || 0;
-  const inventoryValue = kpis.inventory?.total || 0;
+
   const lowStock = kpis.inventory?.lowStock || 0;
   
   const rawLowStockItems = Array.isArray(kpis.inventory?.lowStockItems) ? kpis.inventory.lowStockItems : [];
-  const lowStockItems = rawLowStockItems.map(item => ({
-    id: item.id,
-    item_name: item.item_name || item.name || 'Unknown',
-    quantity: Number(item.quantity) || 0,
-    base_unit: item.base_unit || item.baseUnit || 'units',
-  }));
+  const lowStockItems = rawLowStockItems
+    .map(item => ({
+      id: item.id,
+      item_name: item.item_name || item.name || 'Unknown',
+      quantity: Number(item.quantity) || 0,
+      base_unit: item.base_unit || item.baseUnit || 'units',
+    }))
+    .filter(item => item.item_name !== 'Unknown');
 
   const displayName = user?.businessName || user?.business_name || user?.fullName || 'User';
   const isCashier = user?.role === 'CASHIER';
@@ -85,6 +92,7 @@ export default function HomeScreen({ navigation }) {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
       showsVerticalScrollIndicator={false}
     >
+      {/* ─── SLEEK HEADER ─── */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.navigate('Profile')} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
           <View style={[styles.avatarSmall, { backgroundColor: theme.primary }]}>
@@ -106,6 +114,7 @@ export default function HomeScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
+      {/* Error & Sync Banners */}
       {error && !loading && (
         <TouchableOpacity onPress={() => { setLoading(true); fetchDashboard(); }} style={[styles.errorBanner, { backgroundColor: theme.danger + '15', borderColor: theme.danger }]}>
           <Ionicons name="alert-circle" size={18} color={theme.danger} />
@@ -121,28 +130,8 @@ export default function HomeScreen({ navigation }) {
         </TouchableOpacity>
       )}
 
-      {!isCashier ? (
-        <View style={[styles.heroCard, { backgroundColor: theme.primary }]}>
-          <View style={styles.heroHeader}>
-            <Text style={styles.heroLabel}>Total Revenue Today</Text>
-            <Ionicons name="trending-up" size={24} color="rgba(255,255,255,0.8)" />
-          </View>
-          <Text style={styles.heroValue}>₦{Number(revenueToday).toLocaleString()}</Text>
-          
-          <View style={styles.heroDivider} />
-          
-          <View style={styles.heroSubRow}>
-            <View style={styles.heroSubItem}>
-              <Text style={styles.heroSubLabel}>Sales Count</Text>
-              <Text style={styles.heroSubValue}>{salesToday}</Text>
-            </View>
-            <View style={styles.heroSubItem}>
-              <Text style={styles.heroSubLabel}>Profit Today</Text>
-              <Text style={styles.heroSubValue}>₦{Number(profitToday).toLocaleString()}</Text>
-            </View>
-          </View>
-        </View>
-      ) : (
+      {/* ─── CASHIER VIEW (Untouched) ─── */}
+      {isCashier ? (
         <View style={[styles.heroCard, { backgroundColor: theme.primary }]}>
           <View style={styles.heroHeader}>
             <Text style={styles.heroLabel}>My Sales Today</Text>
@@ -159,13 +148,142 @@ export default function HomeScreen({ navigation }) {
             </View>
           </View>
         </View>
+      ) : (
+        /* ─── OWNER / ADMIN VIEW (Web Parity Grid) ─── */
+        <View style={styles.statsGrid}>
+          {/* Row 1 */}
+          <View style={styles.statRow}>
+            <View style={[styles.statCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+              <View style={[styles.statIconWrap, { backgroundColor: theme.primary + '15' }]}>
+                <Ionicons name="trending-up" size={18} color={theme.primary} />
+              </View>
+              <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>₦{Number(revenueToday).toLocaleString()}</Text>
+              <Text style={[styles.statLabel, { color: theme.textMuted }]}>Revenue Today</Text>
+            </View>
+
+            <View style={[styles.statCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+              <View style={[styles.statIconWrap, { backgroundColor: '#3B82F615' }]}>
+                <Ionicons name="cart" size={18} color="#3B82F6" />
+              </View>
+              <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>{salesToday}</Text>
+              <Text style={[styles.statLabel, { color: theme.textMuted }]}>Sales Today</Text>
+            </View>
+          </View>
+
+          {/* Row 2 */}
+          <View style={styles.statRow}>
+            <View style={[styles.statCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+              <View style={[styles.statIconWrap, { backgroundColor: theme.success + '15' }]}>
+                <Ionicons name="trending-up" size={18} color={theme.success} />
+              </View>
+              <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>₦{Number(profitToday).toLocaleString()}</Text>
+              <Text style={[styles.statLabel, { color: theme.textMuted }]}>Profit Today</Text>
+            </View>
+
+            <View style={[styles.statCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+              <View style={[styles.statIconWrap, { backgroundColor: theme.danger + '15' }]}>
+                <Ionicons name="trending-down" size={18} color={theme.danger} />
+              </View>
+              <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>₦{Number(expensesToday).toLocaleString()}</Text>
+              <Text style={[styles.statLabel, { color: theme.textMuted }]}>Expenses Today</Text>
+            </View>
+          </View>
+
+          {/* Row 3 (Inventory, Debtors) */}
+          <View style={styles.statRow}>
+            <TouchableOpacity 
+              style={[styles.statCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]} 
+              onPress={() => navigation.navigate('Inventory')}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.statIconWrap, { backgroundColor: theme.primary + '15' }]}>
+                <Ionicons name="cube" size={18} color={theme.primary} />
+              </View>
+              <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>₦{Number(inventoryValue).toLocaleString()}</Text>
+              <Text style={[styles.statLabel, { color: theme.textMuted }]}>Inventory Value</Text>
+              
+              {lowStock > 0 && (
+                <View style={{ marginTop: 6, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 6 }}>
+                  <Text style={{ fontSize: 10, color: theme.warning, fontWeight: 'bold', marginBottom: 2 }}>
+                    ⚠ {lowStock} items low
+                  </Text>
+                  {lowStockItems.slice(0, 3).map((item, idx) => (
+                    <View key={item.id || idx} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                      <Text style={{ fontSize: 10, color: theme.textMuted, flex: 1 }} numberOfLines={1}>{item.item_name}</Text>
+                      <Text style={{ fontSize: 10, color: theme.warning, fontWeight: 'bold' }}>{item.quantity}</Text>
+                    </View>
+                  ))}
+                  {lowStockItems.length > 3 && (
+                    <Text style={{ fontSize: 10, color: theme.textMuted, marginTop: 2 }}>+{lowStockItems.length - 3} more</Text>
+                  )}
+                </View>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.statCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]} 
+              onPress={() => navigation.navigate('Debtors')}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.statIconWrap, { backgroundColor: theme.warning + '15' }]}>
+                <Ionicons name="people" size={18} color={theme.warning} />
+              </View>
+              <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>₦{Number(debtorsOwed).toLocaleString()}</Text>
+              <Text style={[styles.statLabel, { color: theme.textMuted }]}>Debtors Owed</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Row 4 (Creditors, Cash) */}
+          <View style={styles.statRow}>
+            <TouchableOpacity 
+              style={[styles.statCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]} 
+              onPress={() => navigation.navigate('Creditors')}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.statIconWrap, { backgroundColor: '#F9731615' }]}>
+                <Ionicons name="briefcase" size={18} color="#F97316" />
+              </View>
+              <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>₦{Number(creditorsOwed).toLocaleString()}</Text>
+              <Text style={[styles.statLabel, { color: theme.textMuted }]}>You Owe</Text>
+            </TouchableOpacity>
+
+            <View style={[styles.statCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+              <View style={[styles.statIconWrap, { backgroundColor: '#A855F715' }]}>
+                <Ionicons name="wallet" size={18} color="#A855F7" />
+              </View>
+              <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>₦{Number(cashPosition).toLocaleString()}</Text>
+              <Text style={[styles.statLabel, { color: theme.textMuted }]}>Cash Position</Text>
+            </View>
+          </View>
+
+          {/* Row 5 (Cash In, Cash Out) */}
+          <View style={styles.statRow}>
+            <View style={[styles.statCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+              <View style={[styles.statIconWrap, { backgroundColor: theme.success + '15' }]}>
+                <Ionicons name="arrow-down" size={18} color={theme.success} />
+              </View>
+              <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>₦{Number(cashInToday).toLocaleString()}</Text>
+              <Text style={[styles.statLabel, { color: theme.textMuted }]}>Cash Received</Text>
+            </View>
+
+            <View style={[styles.statCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+              <View style={[styles.statIconWrap, { backgroundColor: theme.danger + '15' }]}>
+                <Ionicons name="arrow-up" size={18} color={theme.danger} />
+              </View>
+              <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>₦{Number(cashOutToday).toLocaleString()}</Text>
+              <Text style={[styles.statLabel, { color: theme.textMuted }]}>Cash Paid Today</Text>
+            </View>
+          </View>
+        </View>
       )}
 
+      {/* ─── BUSINESS MANAGEMENT (Owner/Admin Only) ─── */}
       {canRecordFinance && (
         <>
           <Text style={[styles.sectionTitle, { color: theme.text, marginTop: 8 }]}>Business Management</Text>
           
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 24 }}>
+            {/* 1. Record Expense */}
             <TouchableOpacity 
               style={[styles.actionPill, { backgroundColor: theme.cardBg }]} 
               onPress={() => navigation.navigate('Expenses')}
@@ -177,6 +295,7 @@ export default function HomeScreen({ navigation }) {
               <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600', marginTop: 8, textAlign: 'center' }} numberOfLines={1}>Record Expense</Text>
             </TouchableOpacity>
 
+            {/* 2. Record Purchase */}
             <TouchableOpacity 
               style={[styles.actionPill, { backgroundColor: theme.cardBg }]} 
               onPress={() => navigation.navigate('Purchases')}
@@ -188,6 +307,7 @@ export default function HomeScreen({ navigation }) {
               <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600', marginTop: 8, textAlign: 'center' }} numberOfLines={1}>Record Purchase</Text>
             </TouchableOpacity>
 
+            {/* 3. Purchase History */}
             <TouchableOpacity 
               style={[styles.actionPill, { backgroundColor: theme.cardBg }]} 
               onPress={() => navigation.navigate('PurchasesHistory')}
@@ -199,6 +319,7 @@ export default function HomeScreen({ navigation }) {
               <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600', marginTop: 8, textAlign: 'center' }} numberOfLines={1}>Purchase History</Text>
             </TouchableOpacity>
 
+            {/* 4. Creditors */}
             <TouchableOpacity 
               style={[styles.actionPill, { backgroundColor: theme.cardBg }]} 
               onPress={() => navigation.navigate('Creditors')}
@@ -212,85 +333,6 @@ export default function HomeScreen({ navigation }) {
           </View>
         </>
       )}
-
-      {!isCashier && (
-        <>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>Today's Cash Flow</Text>
-          <View style={styles.cashFlowGrid}>
-            <View style={[styles.cashCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
-              <View style={[styles.cashIconWrap, { backgroundColor: theme.isDark ? '#064E3B' : '#D1FAE5' }]}>
-                <Ionicons name="arrow-down" size={20} color={theme.success} />
-              </View>
-              <Text style={[styles.cashLabel, { color: theme.textMuted }]}>Cash In</Text>
-              <Text style={[styles.cashValue, { color: theme.text }]}>₦{Number(cashInToday).toLocaleString()}</Text>
-            </View>
-
-            <View style={[styles.cashCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
-              <View style={[styles.cashIconWrap, { backgroundColor: theme.isDark ? '#7F1D1D' : '#FEE2E2' }]}>
-                <Ionicons name="arrow-up" size={20} color={theme.danger} />
-              </View>
-              <Text style={[styles.cashLabel, { color: theme.textMuted }]}>Cash Out</Text>
-              <Text style={[styles.cashValue, { color: theme.text }]}>₦{Number(cashOutToday).toLocaleString()}</Text>
-            </View>
-          </View>
-        </>
-      )}
-
-      <Text style={[styles.sectionTitle, { color: theme.text }]}>Inventory Snapshot</Text>
-      <TouchableOpacity 
-        style={[styles.inventoryCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
-        onPress={() => navigation.navigate('Inventory')}
-        activeOpacity={0.7}
-      >
-        <View style={styles.invHeader}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <View style={[styles.invIconWrap, { backgroundColor: theme.primary + '20' }]}>
-              <Ionicons name="cube" size={20} color={theme.primary} />
-            </View>
-            <Text style={{ fontSize: 14, fontWeight: '600', color: theme.text }}>Total Value</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
-        </View>
-        
-        <Text style={{ fontSize: 28, fontWeight: 'bold', color: theme.text, marginBottom: 12 }}>
-          ₦{Number(inventoryValue).toLocaleString()}
-        </Text>
-
-        {lowStock > 0 && (
-          <View style={[styles.lowStockBox, { backgroundColor: theme.isDark ? '#422006' : '#FEF3C7' }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-              <Ionicons name="warning" size={16} color={theme.warning} />
-              <Text style={{ fontSize: 13, color: theme.warning, fontWeight: 'bold' }}>
-                {lowStock} item(s) low on stock
-              </Text>
-            </View>
-            
-            {lowStockItems.length > 0 ? (
-              lowStockItems.slice(0, 5).map((item, index) => (
-                <View key={item.id || index} style={[styles.lowStockRow, index > 0 && { borderTopWidth: 1, borderTopColor: theme.isDark ? '#452a00' : '#FDE68A' }]}>
-                  <Text style={{ fontSize: 13, color: theme.text, flex: 1, fontWeight: '500' }} numberOfLines={1}>
-                    {item.item_name}
-                  </Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <Text style={{ fontSize: 13, color: theme.warning, fontWeight: 'bold' }}>
-                      {item.quantity}
-                    </Text>
-                    <Text style={{ fontSize: 11, color: theme.textMuted }}>
-                      {item.base_unit}
-                    </Text>
-                  </View>
-                </View>
-              ))
-            ) : null}
-            
-            {lowStockItems.length > 5 && (
-              <Text style={{ fontSize: 12, color: theme.textMuted, marginTop: 8, textAlign: 'center' }}>
-                +{lowStockItems.length - 5} more items low on stock
-              </Text>
-            )}
-          </View>
-        )}
-      </TouchableOpacity>
 
       <View style={{ height: 40 }} />
     </ScrollView>
@@ -308,6 +350,15 @@ const styles = StyleSheet.create({
   badge: { position: 'absolute', top: 6, right: 6, backgroundColor: 'red', borderRadius: 10, width: 16, height: 16, justifyContent: 'center', alignItems: 'center' },
   badgeText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
 
+  // New Web-Parity Stats Grid
+  statsGrid: { marginBottom: 24, gap: 12 },
+  statRow: { flexDirection: 'row', gap: 12 },
+  statCard: { flex: 1, padding: 14, borderRadius: 16, borderWidth: 1 },
+  statIconWrap: { width: 32, height: 32, borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
+  statValue: { fontSize: 18, fontWeight: 'bold', marginBottom: 2 },
+  statLabel: { fontSize: 12, fontWeight: '500' },
+
+  // Quick Action Pill Styles (Business Management)
   actionPill: { 
     width: '23%', 
     paddingVertical: 12, 
@@ -339,16 +390,4 @@ const styles = StyleSheet.create({
   heroSubValue: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
   
   sectionTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 12 },
-  
-  cashFlowGrid: { flexDirection: 'row', gap: 12, marginBottom: 24 },
-  cashCard: { flex: 1, padding: 16, borderRadius: 16, borderWidth: 1 },
-  cashIconWrap: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
-  cashLabel: { fontSize: 13, marginBottom: 4, fontWeight: '500' },
-  cashValue: { fontSize: 18, fontWeight: 'bold' },
-  
-  inventoryCard: { padding: 16, borderRadius: 16, borderWidth: 1, marginBottom: 8 },
-  invHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  invIconWrap: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
-  lowStockBox: { padding: 12, borderRadius: 12, marginTop: 4 },
-  lowStockRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8 },
 });
