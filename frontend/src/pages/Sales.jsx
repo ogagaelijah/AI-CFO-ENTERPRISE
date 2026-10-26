@@ -1,5 +1,6 @@
 // frontend/src/pages/Sales.jsx
-// v1.3.0-prod — Adds local search + page size selector.
+// v1.4.0-prod — Passes unitMultiplier + soldUnit to backend so pack sales
+//               deduct correct base quantity (Carton = 20 pieces, etc.)
 
 import { useState, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -94,6 +95,9 @@ const Sales = () => {
           costPrice: parseFloat(item.costPrice) || 0,
           sellingPrice: parseFloat(item.sellingPrice) || 0,
           inventoryId: item.inventoryId || null,
+          // ★ CRITICAL FIX: Forward pack metadata so backend deducts base quantity
+          unitMultiplier: item.unitMultiplier || 1,
+          soldUnit: item.soldUnit || 'Piece',
         })),
         totalCost: data.totalCost,
         totalRevenue: data.totalRevenue,

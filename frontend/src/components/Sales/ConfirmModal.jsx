@@ -1,4 +1,6 @@
 // frontend/src/components/Sales/ConfirmModal.jsx
+// v2.1.0-prod — Fixes pack COGS calculation and restores original table structure.
+
 import { X, Loader2 } from 'lucide-react';
 
 const ConfirmModal = ({ isOpen, data, totalRevenue, onConfirm, onCancel, submitting = false }) => {
@@ -40,14 +42,23 @@ const ConfirmModal = ({ isOpen, data, totalRevenue, onConfirm, onCancel, submitt
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-slate-700">
                 {items.map((item, idx) => {
-                  const qty = item.quantity || 0;
-                  const cost = item.costPrice || 0;
-                  const sell = item.sellingPrice || 0;
+                  const qty = parseFloat(item.quantity) || 0;
+                  const cost = parseFloat(item.costPrice) || 0;
+                  const sell = parseFloat(item.sellingPrice) || 0;
+                  
                   const total = qty * sell;
-                  const profit = qty * (sell - cost);
+                  // ★ FIXED: item.costPrice already includes the pack multiplier from RecordSaleModal
+                  const rowCogs = qty * cost; 
+                  const profit = total - rowCogs;
+
                   return (
                     <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-slate-700/50">
-                      <td className="px-3 py-2 text-gray-900 dark:text-white">{item.name}</td>
+                      <td className="px-3 py-2 text-gray-900 dark:text-white">
+                        {item.name}
+                        {item.unitMultiplier > 1 && (
+                          <span className="block text-xs text-blue-500 mt-0.5">({item.unitMultiplier} units)</span>
+                        )}
+                      </td>
                       <td className="px-3 py-2 text-center text-gray-600 dark:text-gray-400">{qty}</td>
                       <td className="px-3 py-2 text-right text-gray-600 dark:text-gray-400">₦{cost.toLocaleString()}</td>
                       <td className="px-3 py-2 text-right text-gray-600 dark:text-gray-400">₦{sell.toLocaleString()}</td>

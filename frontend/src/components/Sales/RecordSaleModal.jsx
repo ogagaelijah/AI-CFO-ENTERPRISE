@@ -1,8 +1,9 @@
 // frontend/src/components/Sales/RecordSaleModal.jsx
-// v2.1.1-prod — Shows inventory stock immediately upon item selection.
+// v3.1.0-prod — Fixes pack selection logic (4 arguments), ensures full inventory fetch,
+// and renders clickable Pack buttons.
 
 import { useState, useEffect } from 'react';
-import { X, Plus, Trash2, AlertTriangle } from 'lucide-react';
+import { X, Trash2, AlertTriangle } from 'lucide-react';
 import api from '../../services/api';
 import { useWriteGuard } from '../../hooks/useWriteGuard';
 import ReadOnlyBanner from '../common/ReadOnlyBanner';
@@ -33,8 +34,9 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
   const fetchInventoryItems = async () => {
     try {
       setIsLoadingInventory(true);
+      // Fetch all inventory items to ensure packs are available
       const response = await api.get('/inventory', {
-        params: { userId: user?.id },
+        params: { userId: user?.id, limit: 1000 },
       });
       const items = response.data?.data || response.data || [];
       setInventoryItems(items);
@@ -59,6 +61,7 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
 
     const inventoryItem = findInventoryItem(value);
     if (inventoryItem && !formData.skipInventory) {
+      // Auto-fill base price
       newItems[index].costPrice = String(inventoryItem.cost_price || '');
       newItems[index].sellingPrice = String(inventoryItem.selling_price || '');
       newItems[index].inventoryId = inventoryItem.id;
@@ -78,23 +81,22 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
     setShowInventoryWarning(false);
   };
 
-  const handleUnitChange = (index, packString) => {
+  // ★ FIXED: Accepts 4 distinct arguments directly from the button click
+  const handleUnitChange = (index, multiplier, unitName, packPrice) => {
     const newItems = [...formData.items];
     const inventoryItem = findInventoryItem(newItems[index].name);
     
     if (!inventoryItem) return;
 
-    const [multiplier, unitName] = packString.split('|');
-    newItems[index].unitMultiplier = parseInt(multiplier);
+    newItems[index].unitMultiplier = Number(multiplier) || 1;
     newItems[index].soldUnit = unitName;
 
-    if (unitName !== 'Piece' && inventoryItem.packs) {
-      const packData = inventoryItem.packs.find(p => p.pack_name === unitName);
-      if (packData) {
-        newItems[index].sellingPrice = String(packData.selling_price || '');
-        newItems[index].costPrice = String((inventoryItem.cost_price || 0) * parseInt(multiplier));
-      }
+    if (unitName !== 'Piece') {
+      // For packs, use the specific pack price
+      newItems[index].sellingPrice = String(packPrice || '');
+      newItems[index].costPrice = String((inventoryItem.cost_price || 0) * (Number(multiplier) || 1));
     } else {
+      // For base unit, use base selling price
       newItems[index].sellingPrice = String(inventoryItem.selling_price || '');
       newItems[index].costPrice = String(inventoryItem.cost_price || '');
     }
@@ -172,9 +174,9 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
       for (const item of validItems) {
         const inventoryItem = findInventoryItem(item.name);
         if (inventoryItem) {
-          const requestedBaseStock = parseFloat(item.quantity) * item.unitMultiplier;
+          const requestedBaseStock = parseFloat(item.quantity) * (item.unitMultiplier || 1);
           if (inventoryItem.quantity < requestedBaseStock) {
-            setError(`Insufficient stock for "${item.name}". Available: ${inventoryItem.quantity} pieces, Requested: ${requestedBaseStock} pieces`);
+            setError(`Insufficient stock for "${item.name}". Available: ${inventoryItem.quantity} base units, Requested: ${requestedBaseStock} base units`);
             return;
           }
         }
@@ -204,7 +206,7 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-slate-700 sticky top-0 bg-white dark:bg-slate-800 z-10">
           <h2 className="text-xl font-bold text-gray-900 dark:text-white">Record Sale</h2>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition">
@@ -244,9 +246,7 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Payment Status
-              </label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Payment Status</label>
               <select
                 value={formData.paymentStatus}
                 onChange={(e) => setFormData({ ...formData, paymentStatus: e.target.value })}
@@ -258,9 +258,7 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Date
-              </label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Date</label>
               <input
                 type="date"
                 value={formData.date}
@@ -272,9 +270,7 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
 
           {(formData.paymentStatus === 'PARTIAL' || formData.paymentStatus === 'UNPAID') && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Payment Terms
-              </label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Payment Terms</label>
               <select
                 value={formData.dueDays}
                 onChange={(e) => setFormData({ ...formData, dueDays: parseInt(e.target.value) })}
@@ -303,22 +299,12 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
               onChange={(e) => {
                 setFormData({ ...formData, skipInventory: e.target.checked });
                 if (e.target.checked) {
-                  const newItems = formData.items.map(item => ({
-                    ...item,
-                    costPrice: '',
-                    inventoryId: null,
-                    stock: 0,
-                  }));
+                  const newItems = formData.items.map(item => ({ ...item, costPrice: '', inventoryId: null, stock: 0 }));
                   setFormData({ ...formData, skipInventory: true, items: newItems });
                 } else {
                   const newItems = formData.items.map(item => {
                     const inv = findInventoryItem(item.name);
-                    return {
-                      ...item,
-                      costPrice: inv?.cost_price ? String(inv.cost_price) : '',
-                      inventoryId: inv?.id || null,
-                      stock: inv?.quantity || 0,
-                    };
+                    return { ...item, costPrice: inv?.cost_price ? String(inv.cost_price) : '', inventoryId: inv?.id || null, stock: inv?.quantity || 0 };
                   });
                   setFormData({ ...formData, skipInventory: false, items: newItems });
                 }
@@ -333,19 +319,15 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Items *</label>
-              <button
-                type="button"
-                onClick={addItem}
-                className="text-sm text-primary-600 dark:text-gold-400 hover:underline"
-              >
+              <button type="button" onClick={addItem} className="text-sm text-primary-600 dark:text-gold-400 hover:underline">
                 + Add Item
               </button>
             </div>
 
             <div className="grid grid-cols-12 gap-2 mb-1 text-xs text-gray-500 dark:text-gray-400">
-              <div className="col-span-4">Item & Unit</div>
+              <div className="col-span-4">Item & Pack</div>
               <div className="col-span-2 text-center">Qty</div>
-              <div className="col-span-2 text-center">Cost Price</div>
+              <div className="col-span-2 text-center">Cost</div>
               <div className="col-span-2 text-center">Sell Price</div>
               <div className="col-span-1 text-center">Total</div>
               <div className="col-span-1"></div>
@@ -358,23 +340,14 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
               const requestedBaseStock = (parseFloat(item.quantity) || 0) * (item.unitMultiplier || 1);
               const isLowStock = stockAvailable > 0 && stockAvailable < requestedBaseStock;
 
-              const packOptions = [
-                { label: `Piece (${inventoryItem?.base_unit || 'Unit'})`, value: `1|Piece` }
-              ];
-              if (inventoryItem?.packs && inventoryItem.packs.length > 0) {
-                inventoryItem.packs.forEach(p => {
-                  packOptions.push({ label: `${p.pack_name} (${p.multiplier} pcs)`, value: `${p.multiplier}|${p.pack_name}` });
-                });
-              }
-
               return (
-                <div key={index} className="grid grid-cols-12 gap-2 mb-4 items-start">
-                  <div className="col-span-4 relative space-y-1">
+                <div key={index} className="grid grid-cols-12 gap-2 mb-4 items-start bg-gray-50 dark:bg-slate-800/50 p-2 rounded-lg">
+                  <div className="col-span-4 space-y-2">
                     <input
                       type="text"
                       value={item.name}
                       onChange={(e) => handleItemNameChange(index, e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm font-medium"
                       placeholder="Item name"
                       list={`inventory-suggestions-${index}`}
                     />
@@ -384,21 +357,40 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
                       ))}
                     </datalist>
                     
-                    {inventoryItem && inventoryItem.packs && inventoryItem.packs.length > 0 && (
-                      <select
-                        value={`${item.unitMultiplier}|${item.soldUnit}`}
-                        onChange={(e) => handleUnitChange(index, e.target.value)}
-                        className="w-full px-2 py-1 text-xs border border-blue-200 bg-blue-50 dark:bg-slate-700 dark:border-slate-600 dark:text-white rounded"
-                      >
-                        {packOptions.map(opt => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    {/* ★ PROMINENT PACK SELECTOR BUTTONS */}
+                    {inventoryItem && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        <button
+                          type="button"
+                          onClick={() => handleUnitChange(index, 1, 'Piece', inventoryItem.selling_price)}
+                          className={`px-2 py-1 text-xs rounded border transition ${
+                            item.soldUnit === 'Piece' 
+                              ? 'bg-primary-600 text-white border-primary-600 font-bold' 
+                              : 'bg-white dark:bg-slate-700 text-gray-600 dark:text-gray-300 border-gray-300 dark:border-slate-600 hover:border-primary-400'
+                          }`}
+                        >
+                          1 {inventoryItem.base_unit || 'Piece'} (₦{(inventoryItem.selling_price || 0).toLocaleString()})
+                        </button>
+                        
+                        {(inventoryItem.packs || []).map((p) => (
+                          <button
+                            key={p.id || p.pack_name}
+                            type="button"
+                            onClick={() => handleUnitChange(index, p.multiplier, p.pack_name, p.selling_price)}
+                            className={`px-2 py-1 text-xs rounded border transition ${
+                              item.soldUnit === p.pack_name 
+                                ? 'bg-blue-600 text-white border-blue-600 font-bold' 
+                                : 'bg-white dark:bg-slate-700 text-gray-600 dark:text-gray-300 border-gray-300 dark:border-slate-600 hover:border-blue-400'
+                            }`}
+                          >
+                            {p.pack_name} ({p.multiplier} {inventoryItem.base_unit}) - ₦{(p.selling_price || 0).toLocaleString()}
+                          </button>
                         ))}
-                      </select>
+                      </div>
                     )}
 
-                    {/* ★ FIXED: Shows stock immediately upon item selection, regardless of quantity */}
                     {!formData.skipInventory && inventoryItem && (
-                      <p className={`text-xs mt-1 ${isLowStock ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                      <p className={`text-[11px] mt-1 ${isLowStock ? 'text-red-600 dark:text-red-400 font-bold' : 'text-green-600 dark:text-green-400'}`}>
                         {isLowStock ? `⚠️ Only ${stockAvailable} base units available` : `✅ ${stockAvailable} base units in stock`}
                       </p>
                     )}
@@ -415,7 +407,7 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
                     type="number"
                     value={item.costPrice}
                     onChange={(e) => updateItem(index, 'costPrice', e.target.value)}
-                    className="col-span-2 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-center mt-0.5"
+                    className={`col-span-2 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-center mt-0.5 ${(!formData.skipInventory && inventoryItem) ? 'bg-gray-100 dark:bg-slate-800' : 'bg-white dark:bg-slate-700'}`}
                     min="0"
                     step="0.01"
                     placeholder="0.00"
@@ -425,13 +417,13 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
                     type="number"
                     value={item.sellingPrice}
                     onChange={(e) => updateItem(index, 'sellingPrice', e.target.value)}
-                    className="col-span-2 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-center mt-0.5"
+                    className="col-span-2 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-center mt-0.5 font-medium"
                     min="0"
                     step="0.01"
                     placeholder="0.00"
                   />
-                  <div className="col-span-1 text-center text-sm font-medium text-blue-600 dark:text-blue-400 mt-2">
-                    ₦{itemTotal.toFixed(0)}
+                  <div className="col-span-1 text-center text-sm font-bold text-blue-600 dark:text-blue-400 mt-2">
+                    ₦{itemTotal.toLocaleString()}
                   </div>
                   <div className="col-span-1 text-center mt-1">
                     {formData.items.length > 1 && (

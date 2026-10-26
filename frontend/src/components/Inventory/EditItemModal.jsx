@@ -1,8 +1,9 @@
 // frontend/src/components/Inventory/EditItemModal.jsx
-// v2.0.0-prod — Adds Base Unit and Pack editing.
+// v3.1.0-prod — Prominent "Add Pack" button (dashed full-width) so it's
+//               impossible to miss. Preserves all existing logic.
 
 import { useState, useEffect } from 'react';
-import { X } from 'lucide-react';
+import { X, Plus, Trash2 } from 'lucide-react';
 import { useWriteGuard } from '../../hooks/useWriteGuard';
 import ReadOnlyBanner from '../common/ReadOnlyBanner';
 import CommentSection from '../Comments/CommentSection';
@@ -15,9 +16,7 @@ const EditItemModal = ({ isOpen, item, onClose, onSubmit }) => {
     sellingPrice: 0,
     reorderLevel: 5,
     baseUnit: 'Piece',
-    packName: '',
-    packMultiplier: '',
-    packPrice: '',
+    packs: [],
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -29,9 +28,7 @@ const EditItemModal = ({ isOpen, item, onClose, onSubmit }) => {
         sellingPrice: item.selling_price || 0,
         reorderLevel: item.reorder_level || 5,
         baseUnit: item.base_unit || 'Piece',
-        packName: item.packs?.[0]?.pack_name || '',
-        packMultiplier: item.packs?.[0]?.multiplier || '',
-        packPrice: item.packs?.[0]?.selling_price || '',
+        packs: item.packs || [],
       });
     }
   }, [item]);
@@ -41,6 +38,24 @@ const EditItemModal = ({ isOpen, item, onClose, onSubmit }) => {
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData({ ...formData, [name]: value });
+  };
+
+  const handleAddPack = () => {
+    setFormData({
+      ...formData,
+      packs: [...formData.packs, { packName: '', multiplier: '', sellingPrice: '' }]
+    });
+  };
+
+  const handleRemovePack = (index) => {
+    const newPacks = formData.packs.filter((_, i) => i !== index);
+    setFormData({ ...formData, packs: newPacks });
+  };
+
+  const handlePackChange = (index, field, value) => {
+    const newPacks = [...formData.packs];
+    newPacks[index][field] = value;
+    setFormData({ ...formData, packs: newPacks });
   };
 
   const handleSubmit = async (e) => {
@@ -54,11 +69,13 @@ const EditItemModal = ({ isOpen, item, onClose, onSubmit }) => {
         sellingPrice: parseFloat(formData.sellingPrice) || 0,
         reorderLevel: parseFloat(formData.reorderLevel) || 0,
         baseUnit: formData.baseUnit,
-        packs: formData.packName && formData.packMultiplier ? [{
-          packName: formData.packName,
-          multiplier: parseFloat(formData.packMultiplier),
-          sellingPrice: parseFloat(formData.packPrice) || 0
-        }] : []
+        packs: formData.packs
+          .filter(p => (p.packName || p.pack_name) && p.multiplier)
+          .map(p => ({
+            packName: p.packName || p.pack_name,
+            multiplier: parseFloat(p.multiplier),
+            sellingPrice: parseFloat(p.sellingPrice || p.selling_price) || 0
+          }))
       };
       await onSubmit(item.id, payload);
     } catch (err) {
@@ -100,10 +117,11 @@ const EditItemModal = ({ isOpen, item, onClose, onSubmit }) => {
               Base Unit
             </label>
             <select name="baseUnit" value={formData.baseUnit} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
-              <option value="Piece">Piece</option>
+              <option value="Piece">Piece / Roll</option>
               <option value="Kg">Kilogram (Kg)</option>
               <option value="Bag">Bag</option>
               <option value="Litre">Litre</option>
+              <option value="Sachet">Sachet</option>
             </select>
           </div>
 
@@ -119,21 +137,56 @@ const EditItemModal = ({ isOpen, item, onClose, onSubmit }) => {
           </div>
 
           <div className="border-t border-gray-200 dark:border-gray-700 pt-4 mt-2">
-            <p className="text-xs text-gray-500 mb-2">Wholesale Pack (Optional)</p>
-            <div className="grid grid-cols-3 gap-2">
-              <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Pack Name</label>
-                <input type="text" name="packName" value={formData.packName} onChange={handleChange} placeholder="Carton" className="w-full px-2 py-1.5 border rounded-lg dark:bg-gray-700 dark:text-white dark:border-gray-600 text-sm" />
+            <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Wholesale Packs</p>
+            <p className="text-xs text-gray-500 mb-3">e.g. Carton, Half Carton, Quarter Carton</p>
+            
+            {formData.packs.length === 0 && (
+              <p className="text-xs text-gray-500 mb-2 italic">No packs defined yet.</p>
+            )}
+
+            {formData.packs.map((pack, index) => (
+              <div key={index} className="flex gap-2 mb-2 items-start bg-gray-50 dark:bg-slate-700 p-2 rounded-lg border border-gray-200 dark:border-slate-600">
+                <div className="flex-1">
+                  <input
+                    type="text"
+                    placeholder="Pack Name (e.g. Carton)"
+                    value={pack.packName || pack.pack_name || ''}
+                    onChange={(e) => handlePackChange(index, 'packName', e.target.value)}
+                    className="w-full px-2 py-1.5 text-sm border rounded dark:bg-slate-800 dark:border-slate-600 dark:text-white"
+                  />
+                </div>
+                <div className="w-20">
+                  <input
+                    type="number"
+                    placeholder="Qty"
+                    value={pack.multiplier || ''}
+                    onChange={(e) => handlePackChange(index, 'multiplier', e.target.value)}
+                    className="w-full px-2 py-1.5 text-sm border rounded dark:bg-slate-800 dark:border-slate-600 dark:text-white"
+                  />
+                </div>
+                <div className="w-24">
+                  <input
+                    type="number"
+                    placeholder="Price ₦"
+                    value={pack.sellingPrice || pack.selling_price || ''}
+                    onChange={(e) => handlePackChange(index, 'sellingPrice', e.target.value)}
+                    className="w-full px-2 py-1.5 text-sm border rounded dark:bg-slate-800 dark:border-slate-600 dark:text-white"
+                  />
+                </div>
+                <button type="button" onClick={() => handleRemovePack(index)} className="p-1.5 text-red-500 hover:bg-red-50 rounded mt-0.5">
+                  <Trash2 className="w-4 h-4" />
+                </button>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Qty per Pack</label>
-                <input type="number" name="packMultiplier" value={formData.packMultiplier} onChange={handleChange} placeholder="12" className="w-full px-2 py-1.5 border rounded-lg dark:bg-gray-700 dark:text-white dark:border-gray-600 text-sm" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Price / Pack</label>
-                <input type="number" name="packPrice" value={formData.packPrice} onChange={handleChange} placeholder="0.00" className="w-full px-2 py-1.5 border rounded-lg dark:bg-gray-700 dark:text-white dark:border-gray-600 text-sm" />
-              </div>
-            </div>
+            ))}
+
+            {/* ★ PROMINENT ADD PACK BUTTON */}
+            <button
+              type="button"
+              onClick={handleAddPack}
+              className="w-full mt-2 py-2 flex items-center justify-center gap-2 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-600 dark:text-gray-400 hover:border-primary-500 hover:text-primary-600 transition"
+            >
+              <Plus className="w-4 h-4" /> Add Wholesale Pack
+            </button>
           </div>
 
           <div>

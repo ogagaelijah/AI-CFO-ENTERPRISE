@@ -1,12 +1,13 @@
 // src/interfaces/http/routes/inventoryRoutes.js
-// v1.6.0-prod — Adds Multi-Pack (base_unit + inventory_packs) support.
-// v1.5.0-prod — Writes IN / ADJUSTMENT_IN / ADJUSTMENT_OUT movements.
+// v1.7.0-prod — GET / now attaches `packs` to each item so the sale modal
+//               can render wholesale buttons (Carton, Half, Quarter).
+//               All other logic (pagination, filters, movements) unchanged.
 
 const express = require('express');
 const router = express.Router();
 const InventoryRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryRepository');
 const InventoryMovementRepository = require('../../../infrastructure/database/sqlite/repositories/InventoryMovementRepository');
-const { query } = require('../../../infrastructure/database/sqlite/connection'); // ★ NEW: For saving packs
+const { query } = require('../../../infrastructure/database/sqlite/connection');
 const { authMiddleware } = require('../middleware/authMiddleware');
 const { requireRole } = require('../middleware/requireRole');
 const { invalidateAfterWrite } = require('../middleware/cacheInvalidator');
@@ -19,9 +20,6 @@ router.use(authMiddleware);
 
 const WRITE_ROLES = ['OWNER', 'ADMIN', 'MANAGER'];
 
-/**
- * Classify error message → correct HTTP status.
- */
 function classifyError(error) {
   const msg = String(error?.message || '');
   if (/not found|does not exist/i.test(msg)) return 404;
@@ -31,10 +29,6 @@ function classifyError(error) {
   return 500;
 }
 
-/**
- * Write an inventory movement. Never throws — a failure logs but does not
- * block the primary operation.
- */
 async function writeMovementSafe(payload) {
     try {
         await inventoryMovementRepo.create(payload);
@@ -45,6 +39,38 @@ async function writeMovementSafe(payload) {
             movementType: payload.movementType,
         });
     }
+}
+
+// ★ NEW: Attach packs to a list of inventory items with a single query
+async function attachPacks(items) {
+    if (!Array.isArray(items) || items.length === 0) return items;
+    const ids = items.map(i => i.id).filter(Boolean);
+    if (ids.length === 0) return items;
+
+    // Placeholder list: $1, $2, ... for the IN clause
+    const placeholders = ids.map((_, i) => `$${i + 1}`).join(',');
+    const packsResult = await query(
+        `SELECT * FROM inventory_packs WHERE inventory_id IN (${placeholders})`,
+        ids
+    );
+
+    const packsByItem = {};
+    for (const pack of packsResult.rows) {
+        const key = String(pack.inventory_id);
+        if (!packsByItem[key]) packsByItem[key] = [];
+        packsByItem[key].push({
+            id: pack.id,
+            inventory_id: pack.inventory_id,
+            pack_name: pack.pack_name,
+            multiplier: Number(pack.multiplier) || 1,
+            selling_price: Number(pack.selling_price) || 0,
+        });
+    }
+
+    return items.map(item => ({
+        ...item,
+        packs: packsByItem[String(item.id)] || [],
+    }));
 }
 
 // =============================================
@@ -65,7 +91,8 @@ router.get('/', async (req, res) => {
         if (lowStock === 'true') {
             const all = await inventoryRepo.findLowStock(businessId);
             const total = all.length;
-            const items = all.slice(offset, offset + limit);
+            const sliced = all.slice(offset, offset + limit);
+            const items = await attachPacks(sliced); // ★ Attach packs
             const summary = await inventoryRepo.getSummary(businessId);
 
             return res.json({
@@ -78,15 +105,17 @@ router.get('/', async (req, res) => {
 
         const filters = { search: searchTerm };
 
-        const [items, total, summary] = await Promise.all([
+        const [rawItems, total, summary] = await Promise.all([
             inventoryRepo.findByBusinessId(businessId, { ...filters, limit, offset }),
             inventoryRepo.countByBusinessId(businessId, filters),
             inventoryRepo.getSummary(businessId),
         ]);
 
+        const items = await attachPacks(rawItems || []); // ★ Attach packs
+
         res.json({
             success: true,
-            data: items || [],
+            data: items,
             summary: summary || {
                 total_items: 0,
                 total_quantity: 0,
@@ -136,7 +165,8 @@ router.get('/low-stock', async (req, res) => {
         }
 
         const threshold = parseInt(req.query.threshold) || 5;
-        const items = await inventoryRepo.findLowStock(businessId, threshold);
+        const rawItems = await inventoryRepo.findLowStock(businessId, threshold);
+        const items = await attachPacks(rawItems); // ★ Attach packs
 
         res.json({
             success: true,
@@ -167,7 +197,6 @@ router.get('/:id', async (req, res) => {
             return res.status(403).json({ success: false, message: 'Access denied' });
         }
 
-        // ★ NEW: Fetch packs for this item
         const packsResult = await query('SELECT * FROM inventory_packs WHERE inventory_id = $1', [id]);
         item.packs = packsResult.rows || [];
 
@@ -181,13 +210,11 @@ router.get('/:id', async (req, res) => {
 
 // =============================================
 // POST /api/inventory — OWNER / ADMIN / MANAGER
-// Writes an IN movement on creation.
 // =============================================
 router.post('/', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const userId = req.user.id;
         const businessId = req.user.businessId;
-        // ★ NEW: Accept baseUnit and packs
         const { itemName, quantity, costPrice, sellingPrice, reorderLevel = 5, baseUnit = 'Piece', packs = [] } = req.body;
 
         if (!businessId) {
@@ -224,10 +251,9 @@ router.post('/', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, 
             selling_price: sellingPrice,
             last_purchase_cost: costPrice,
             reorder_level: reorderLevel,
-            base_unit: baseUnit // ★ Pass to repository
+            base_unit: baseUnit
         });
 
-        // ★ NEW: Save packs to the new table
         if (packs && packs.length > 0) {
             for (const pack of packs) {
                 await query(
@@ -238,7 +264,6 @@ router.post('/', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, 
             }
         }
 
-        // ★ NEW: write IN movement for the initial stock
         const qty = Number(quantity);
         const cost = Number(costPrice) || 0;
         await writeMovementSafe({
@@ -281,7 +306,6 @@ router.put('/:id', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req
         const { id } = req.params;
         const userId = req.user.id;
         const businessId = req.user.businessId;
-        // ★ NEW: Accept baseUnit and packs
         const { itemName, costPrice, sellingPrice, reorderLevel, baseUnit, packs } = req.body;
 
         const existing = await inventoryRepo.findById(id);
@@ -297,11 +321,10 @@ router.put('/:id', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req
         if (costPrice !== undefined) updateData.cost_price = costPrice;
         if (sellingPrice !== undefined) updateData.selling_price = sellingPrice;
         if (reorderLevel !== undefined) updateData.reorder_level = reorderLevel;
-        if (baseUnit !== undefined) updateData.base_unit = baseUnit; // ★ NEW
+        if (baseUnit !== undefined) updateData.base_unit = baseUnit;
 
         const updated = await inventoryRepo.update(id, updateData);
 
-        // ★ NEW: Update packs (Delete old, insert new)
         if (packs !== undefined) {
             await query('DELETE FROM inventory_packs WHERE inventory_id = $1', [id]);
             if (packs && packs.length > 0) {
@@ -328,8 +351,7 @@ router.put('/:id', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req
 });
 
 // =============================================
-// PATCH /api/inventory/:id/stock — OWNER / ADMIN / MANAGER
-// Writes ADJUSTMENT_IN or ADJUSTMENT_OUT movement.
+// PATCH /api/inventory/:id/stock
 // =============================================
 router.patch('/:id/stock', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
@@ -407,8 +429,7 @@ router.patch('/:id/stock', requireRole(...WRITE_ROLES), invalidateAfterWrite, as
 });
 
 // =============================================
-// DELETE /api/inventory/:id — OWNER / ADMIN / MANAGER
-// Hard delete. No movement (item is removed).
+// DELETE /api/inventory/:id
 // =============================================
 router.delete('/:id', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {

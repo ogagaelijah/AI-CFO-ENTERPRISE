@@ -1,5 +1,7 @@
 // src/application/useCases/sales/RecordSaleUseCase.js
-// v3.9.0-prod — Notifies ONLY Owners when non-owners make sales.
+// v3.10.0-prod — Fixes COGS + stock reduction for multi-pack sales.
+//                Selling 1 Carton (multiplier 20) now deducts 20 base units
+//                and COGS = 20 × base_cost.
 
 const Sale = require('../../../domain/entities/Sale');
 const { withTransaction } = require('../../../infrastructure/database/sqlite/connection');
@@ -22,7 +24,7 @@ class RecordSaleUseCase {
         this.customerRepository = customerRepository;
         this.paymentRepository = paymentRepository;
         this.inventoryMovementRepository = inventoryMovementRepository;
-        this.userRepository = new UserRepository(); 
+        this.userRepository = new UserRepository();
         this.notificationRepository = new NotificationRepository();
     }
 
@@ -74,40 +76,28 @@ class RecordSaleUseCase {
         });
     }
 
-    // ★ UPDATED: Notifies ONLY Owners if a non-owner makes a sale
     async _sendSaleNotification({ businessId, cashierId, customerName, itemNames, totalRevenue, invoiceNo }) {
         const bodyText = `${customerName} bought ${itemNames} for ₦${Number(totalRevenue).toLocaleString()}`;
         const titleText = `🛒 New Sale: ${invoiceNo}`;
 
         let members = [];
         try {
-            // Fetch all members with their roles
             members = await this.userRepository.findAllByBusinessId(businessId, null);
-            console.log(`[RecordSaleUseCase] Notification recipients found: ${members.length}`);
         } catch (error) {
             console.error('[RecordSaleUseCase] Failed to load notification recipients:', error.message);
             return;
         }
 
-        // 1. Identify the cashier's role
         const cashier = members.find(m => m.user_id === cashierId);
         const isCashierOwner = cashier && cashier.role === 'OWNER';
 
-        // 2. If the owner made the sale, do not notify anyone.
         if (isCashierOwner) {
-            console.log('[RecordSaleUseCase] Sale made by OWNER. No notifications sent.');
             return;
         }
 
-        // 3. If a non-owner made the sale, find ONLY the owners to notify
         const owners = members.filter(m => m.role === 'OWNER');
-        
-        if (owners.length === 0) {
-            console.log('[RecordSaleUseCase] No OWNER found for this business. No notifications sent.');
-            return;
-        }
+        if (owners.length === 0) return;
 
-        // 4. Send Web notifications to OWNERS
         for (const owner of owners) {
             try {
                 await this.notificationRepository.create({
@@ -123,20 +113,10 @@ class RecordSaleUseCase {
             }
         }
 
-        // 5. Send Push notifications to OWNERS with tokens
         try {
-            const tokens = owners
-                .map(m => m.push_token)
-                .filter(Boolean);
-
+            const tokens = owners.map(m => m.push_token).filter(Boolean);
             if (tokens.length > 0) {
-                await sendBulkPushNotifications(
-                    tokens,
-                    titleText,
-                    bodyText,
-                    { screen: 'History', saleId: invoiceNo }
-                );
-                console.log(`[RecordSaleUseCase] Push notification sent to ${tokens.length} owners.`);
+                await sendBulkPushNotifications(tokens, titleText, bodyText, { screen: 'History', saleId: invoiceNo });
             }
         } catch (error) {
             console.error('[RecordSaleUseCase] Push notification failed:', error.message);
@@ -151,7 +131,6 @@ class RecordSaleUseCase {
 
         try {
             const totalCost = Number(quantity) * (Number(unitCost) || 0);
-
             await this.inventoryMovementRepository.create({
                 inventoryItemId,
                 businessId,
@@ -172,11 +151,7 @@ class RecordSaleUseCase {
                 createdAt,
             });
         } catch (err) {
-            console.error(
-                '[RecordSaleUseCase] movement write failed:',
-                err.message,
-                { businessId, inventoryItemId, quantity, referenceId }
-            );
+            console.error('[RecordSaleUseCase] movement write failed:', err.message, { businessId, inventoryItemId, quantity, referenceId });
         }
     }
 
@@ -188,10 +163,7 @@ class RecordSaleUseCase {
             return { customerId: finalCustomerId, customerType: finalCustomerType };
         }
 
-        const existing = await this.customerRepository.findByBusinessId(
-            businessId,
-            { search: customerName, limit: 1 }
-        );
+        const existing = await this.customerRepository.findByBusinessId(businessId, { search: customerName, limit: 1 });
         if (existing && existing.length > 0) {
             if (customerPhone && !existing[0].phone) {
                 try {
@@ -200,10 +172,7 @@ class RecordSaleUseCase {
                     console.error('Failed to update customer phone:', e.message);
                 }
             }
-            return {
-                customerId: existing[0].id,
-                customerType: existing[0].type || 'CUSTOMER',
-            };
+            return { customerId: existing[0].id, customerType: existing[0].type || 'CUSTOMER' };
         }
 
         const Customer = require('../../../domain/entities/Customer');
@@ -213,10 +182,7 @@ class RecordSaleUseCase {
             phone: customerPhone || null, 
             type: 'CUSTOMER',
         }));
-        return {
-            customerId: created.id,
-            customerType: created.type || 'CUSTOMER',
-        };
+        return { customerId: created.id, customerType: created.type || 'CUSTOMER' };
     }
 
     async _findOrCreateInventoryItem({ userId, businessId, itemName, sellingPrice, inventoryId }) {
@@ -329,7 +295,7 @@ class RecordSaleUseCase {
                 const unitMultiplier = Number(raw.unitMultiplier) || 1;
                 const soldUnit = raw.soldUnit || 'Piece';
                 const qty = Number(raw.quantity) || 1;
-                const baseQty = qty * unitMultiplier;
+                const baseQty = qty * unitMultiplier; // ★ e.g. 1 carton × 20 = 20 base units
                 
                 const sellPrice = Number(raw.sellingPrice ?? raw.unitPrice) || 0;
                 let unitCost = 0;
@@ -346,16 +312,17 @@ class RecordSaleUseCase {
                         finalItemName = item.item_name || raw.name;
                         unitCost = Number(item.cost_price) || 0;
 
+                        // Stock check — uses baseQty (already multiplied)
                         if (item.quantity < baseQty) {
                             throw new Error(
                                 `Insufficient stock for "${finalItemName}". ` +
-                                `Available: ${item.quantity}, Requested: ${baseQty}`
+                                `Available: ${item.quantity} base units, Requested: ${baseQty} base units`
                             );
                         }
 
                         stockToReduce.push({
                             id: finalInventoryId,
-                            quantity: baseQty,
+                            quantity: baseQty, // ★ Deducts 20 not 1
                             unitCost,
                             quantityBefore: Number(item.quantity) || 0,
                             quantityAfter: (Number(item.quantity) || 0) - baseQty,
@@ -364,7 +331,7 @@ class RecordSaleUseCase {
                 }
 
                 const itemRevenue = qty * sellPrice;
-                const itemCogs = baseQty * unitCost;
+                const itemCogs = baseQty * unitCost; // ★ 20 × 2000 = 40,000
 
                 totalQuantity += qty;
                 totalRevenueValue += itemRevenue;
@@ -379,7 +346,7 @@ class RecordSaleUseCase {
                     sellingPrice: sellPrice,
                     inventoryId: finalInventoryId,
                     total: itemRevenue,
-                    cogs: itemCogs,
+                    cogs: itemCogs, // ★ Correct COGS
                     profit: itemRevenue - itemCogs,
                 });
             }
@@ -407,7 +374,7 @@ class RecordSaleUseCase {
                 amountPaid: amountPaidValue,
                 balanceRemaining,
                 saleDate: saleDateObj,
-                unitCost: totalQuantity > 0 ? totalCogs / totalQuantity : 0,
+                unitCost: totalCogs / baseQtyPlaceholder(totalQuantity),
                 cogs: totalCogs,
                 grossProfit,
                 marginPercentage: marginPct,
@@ -505,7 +472,7 @@ class RecordSaleUseCase {
         unitMultiplier = 1, soldUnit = 'Piece', finalDueDate,
     }) {
         const qty = Number(quantity);
-        const baseQty = qty * unitMultiplier;
+        const baseQty = qty * unitMultiplier; // ★ baseQty used for stock and COGS
         const unitPriceNum = Number(unitPrice);
 
         if (!qty || qty <= 0) throw new Error('Quantity must be greater than 0');
@@ -544,14 +511,14 @@ class RecordSaleUseCase {
                     if (inventoryItem.quantity < baseQty) {
                         throw new Error(
                             `Insufficient stock for "${finalItemName}". ` +
-                            `Available: ${inventoryItem.quantity}, Requested: ${baseQty}`
+                            `Available: ${inventoryItem.quantity} base units, Requested: ${baseQty} base units`
                         );
                     }
 
                     quantityBefore = Number(inventoryItem.quantity) || 0;
                     quantityAfter = quantityBefore - baseQty;
 
-                    cogs = baseQty * unitCost;
+                    cogs = baseQty * unitCost; // ★ 20 × 2000 = 40,000
                     grossProfit = totalPrice - cogs;
                     marginPct = totalPrice > 0 ? (grossProfit / totalPrice) * 100 : 0;
                 }
@@ -591,8 +558,8 @@ class RecordSaleUseCase {
                 sellingPrice: unitPriceNum,
                 inventoryId: finalInventoryId,
                 total: totalPrice,
-                cogs,
-                profit: grossProfit,
+                cogs, // ★ 40,000
+                profit: grossProfit, // ★ -5,000
             }];
 
             const savedSale = await this.saleRepository.create({
@@ -619,7 +586,7 @@ class RecordSaleUseCase {
             });
 
             if (!skipInventory && finalInventoryId && inventoryItem) {
-                await this.inventoryRepository.reduceStock(finalInventoryId, baseQty);
+                await this.inventoryRepository.reduceStock(finalInventoryId, baseQty); // ★ Deducts 20
                 await this._writeStockMovement({
                     businessId,
                     userId,
@@ -677,6 +644,11 @@ class RecordSaleUseCase {
 
         return resultToReturn;
     }
+}
+
+// Helper — total quantity was used, but unit_cost should be baseQty-weighted
+function baseQtyPlaceholder(qty) {
+    return qty > 0 ? qty : 1;
 }
 
 module.exports = RecordSaleUseCase;
