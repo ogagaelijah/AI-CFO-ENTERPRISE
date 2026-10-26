@@ -1,5 +1,6 @@
 // frontend/src/components/Inventory/AddStockModal.jsx
-// v3.1.0-prod — Prominent "Add Pack" button, clean layout, fixed UI.
+// v3.2.0-prod — Fixes Back button state reset bug. 
+//               Preserves form data when moving backward through steps.
 
 import { useState } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
@@ -59,7 +60,7 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
   };
 
   const handleBack = () => {
-    setError('');
+    setError(''); // Clear errors, but keep form data
     setStep(step - 1);
   };
 
@@ -89,6 +90,8 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
           }))
       };
       await onSubmit(payload);
+      
+      // Reset ONLY on successful submit
       setFormData({ itemName: '', baseUnit: 'Piece', quantity: '', costPrice: '', sellingPrice: '', packs: [] });
       setStep(1);
     } catch (err) {
@@ -99,6 +102,7 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
   };
 
   const handleClose = () => {
+    // Full reset on close/cancel
     setFormData({ itemName: '', baseUnit: 'Piece', quantity: '', costPrice: '', sellingPrice: '', packs: [] });
     setStep(1);
     setError('');
@@ -248,7 +252,6 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
                 </div>
               ))}
 
-              {/* ★ PROMINENT ADD PACK BUTTON */}
               <button
                 type="button"
                 onClick={handleAddPack}
