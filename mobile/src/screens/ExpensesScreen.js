@@ -3,9 +3,11 @@ import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert,
 import { Ionicons } from '@expo/vector-icons';
 import api from '../services/api';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 
 export const ExpensesScreen = ({ navigation }) => {
   const { theme } = useTheme();
+  const { isReadOnly } = useAuth();
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [expenses, setExpenses] = useState([]);
@@ -32,10 +34,15 @@ export const ExpensesScreen = ({ navigation }) => {
   };
 
   useEffect(() => {
-    fetchExpenses();
-  }, []);
+    if (!isReadOnly) {
+      fetchExpenses();
+    } else {
+      setLoading(false);
+    }
+  }, [isReadOnly]);
 
   const handleSubmit = async () => {
+    if (isReadOnly) return Alert.alert('Expired', 'Your subscription has expired.');
     if (!category.trim()) return Alert.alert('Error', 'Category is required');
     if (!amount || parseFloat(amount) <= 0) return Alert.alert('Error', 'Valid amount is required');
     
@@ -71,6 +78,33 @@ export const ExpensesScreen = ({ navigation }) => {
       </View>
     </View>
   );
+
+  if (loading && !isReadOnly) return <View style={[styles.center, { backgroundColor: theme.background }]}><ActivityIndicator size="large" color={theme.primary} /></View>;
+
+  // ─── SUBSCRIPTION EXPIRED BLOCK ───
+  if (isReadOnly) {
+    return (
+      <View style={[styles.center, { backgroundColor: theme.background, padding: 24 }]}>
+        <View style={{ backgroundColor: theme.cardBg, padding: 24, borderRadius: 20, alignItems: 'center', borderWidth: 1, borderColor: theme.border, width: '100%' }}>
+          <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: theme.warning + '20', justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
+            <Ionicons name="lock-closed" size={32} color={theme.warning} />
+          </View>
+          <Text style={{ fontSize: 20, fontWeight: 'bold', color: theme.text, textAlign: 'center', marginBottom: 8 }}>
+            Subscription Expired
+          </Text>
+          <Text style={{ fontSize: 14, color: theme.textMuted, textAlign: 'center', marginBottom: 24, lineHeight: 20 }}>
+            You cannot record new expenses while your account is in read-only mode. Please renew your plan to continue.
+          </Text>
+          <TouchableOpacity 
+            style={{ backgroundColor: theme.primary, paddingVertical: 14, borderRadius: 12, width: '100%', alignItems: 'center' }}
+            onPress={() => navigation.navigate('Profile')}
+          >
+            <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>Renew Subscription</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -122,6 +156,7 @@ export const ExpensesScreen = ({ navigation }) => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 20 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, marginTop: 20 },
   title: { fontSize: 20, fontWeight: 'bold' },
   summaryCard: { padding: 20, borderRadius: 16, marginBottom: 20 },

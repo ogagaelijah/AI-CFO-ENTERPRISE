@@ -7,7 +7,7 @@ import { useOffline } from '../context/OfflineContext';
 import { useTheme } from '../context/ThemeContext';
 
 export const RecordSaleScreen = ({ navigation }) => {
-  const { user } = useAuth();
+  const { user, isReadOnly } = useAuth();
   const { addSaleToQueue } = useOffline();
   const { theme } = useTheme();
   const [inventory, setInventory] = useState([]);
@@ -25,7 +25,14 @@ export const RecordSaleScreen = ({ navigation }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeItemIndex, setActiveItemIndex] = useState(null);
 
-  useEffect(() => { fetchInventory(); }, []);
+  useEffect(() => { 
+    // Only fetch inventory if we are actually allowed to record a sale
+    if (!isReadOnly) {
+      fetchInventory(); 
+    } else {
+      setLoading(false);
+    }
+  }, [isReadOnly]);
 
   const fetchInventory = async () => {
     try {
@@ -105,6 +112,7 @@ export const RecordSaleScreen = ({ navigation }) => {
   );
 
   const handleSubmit = async () => {
+    if (isReadOnly) return Alert.alert('Expired', 'Your subscription has expired.');
     if (!customerName.trim()) return Alert.alert('Error', 'Customer name is required');
     const validItems = items.filter(i => i.name.trim() && parseFloat(i.quantity) > 0);
     if (validItems.length === 0) return Alert.alert('Error', 'Add at least one valid item');
@@ -136,16 +144,14 @@ export const RecordSaleScreen = ({ navigation }) => {
         const res = await api.post('/sales', payload);
         if (res.data?.success) {
           Alert.alert('Success', 'Sale recorded successfully!');
-          // ★ SAFE NAVIGATION: Targets the History tab inside the Main Stack
           navigation.navigate('Main', { screen: 'History' });
         }
       } catch (networkError) {
         if (networkError.message.includes('Network Error')) {
           await addSaleToQueue(payload);
           Alert.alert('Saved Offline', 'No network. Sale saved and will sync when you are back online.');
-          // ★ SAFE NAVIGATION: Targets the History tab inside the Main Stack
           navigation.navigate('Main', { screen: 'History' });
-          return; // Stop further execution to prevent double reset
+          return; 
         } else {
           throw networkError;
         }
@@ -163,7 +169,34 @@ export const RecordSaleScreen = ({ navigation }) => {
     }
   };
 
-  if (loading && inventory.length === 0) return <View style={[styles.center, { backgroundColor: theme.background }]}><ActivityIndicator size="large" color={theme.primary} /></View>;
+  if (loading && inventory.length === 0 && !isReadOnly) {
+    return <View style={[styles.center, { backgroundColor: theme.background }]}><ActivityIndicator size="large" color={theme.primary} /></View>;
+  }
+
+  // ─── SUBSCRIPTION EXPIRED BLOCK ───
+  if (isReadOnly) {
+    return (
+      <View style={[styles.center, { backgroundColor: theme.background, padding: 24 }]}>
+        <View style={{ backgroundColor: theme.cardBg, padding: 24, borderRadius: 20, alignItems: 'center', borderWidth: 1, borderColor: theme.border, width: '100%' }}>
+          <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: theme.warning + '20', justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
+            <Ionicons name="lock-closed" size={32} color={theme.warning} />
+          </View>
+          <Text style={{ fontSize: 20, fontWeight: 'bold', color: theme.text, textAlign: 'center', marginBottom: 8 }}>
+            Subscription Expired
+          </Text>
+          <Text style={{ fontSize: 14, color: theme.textMuted, textAlign: 'center', marginBottom: 24, lineHeight: 20 }}>
+            You cannot record new sales while your account is in read-only mode. Please renew your plan to continue.
+          </Text>
+          <TouchableOpacity 
+            style={{ backgroundColor: theme.primary, paddingVertical: 14, borderRadius: 12, width: '100%', alignItems: 'center' }}
+            onPress={() => navigation.navigate('Profile')}
+          >
+            <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>Renew Subscription</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   const totalAmount = calculateTotal();
   const balanceRemaining = totalAmount - (parseFloat(amountPaid) || 0);

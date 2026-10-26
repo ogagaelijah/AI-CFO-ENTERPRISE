@@ -3,11 +3,13 @@ import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ActivityInd
 import { Ionicons } from '@expo/vector-icons';
 import api from '../services/api';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 
 const PAGE_SIZES = [10, 25, 50, 75, 100];
 
 export const DebtorsScreen = () => {
   const { theme } = useTheme();
+  const { isReadOnly } = useAuth();
   const [debtors, setDebtors] = useState([]);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -90,6 +92,7 @@ export const DebtorsScreen = () => {
   }, [debtors, searchQuery]);
 
   const handleRecordPayment = async () => {
+    if (isReadOnly) return Alert.alert('Expired', 'Your subscription has expired.');
     if (!paymentAmount || parseFloat(paymentAmount) <= 0) return Alert.alert('Error', 'Enter a valid payment amount');
     setIsSubmitting(true);
     try {
@@ -220,17 +223,21 @@ export const DebtorsScreen = () => {
                     )}
                   </View>
                 </View>
-                <TouchableOpacity style={[{ flexDirection: 'row', backgroundColor: theme.success, padding: 10, borderRadius: 8, justifyContent: 'center', alignItems: 'center', gap: 6 }]} onPress={() => setSelectedDebtor(debtor)}>
-                  <Ionicons name="cash-outline" size={16} color="#fff" />
-                  <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 14 }}>Record Payment</Text>
-                </TouchableOpacity>
+                
+                {/* Record Payment Button (Hidden if read-only) */}
+                {!isReadOnly && (
+                  <TouchableOpacity style={[{ flexDirection: 'row', backgroundColor: theme.success, padding: 10, borderRadius: 8, justifyContent: 'center', alignItems: 'center', gap: 6 }]} onPress={() => setSelectedDebtor(debtor)}>
+                    <Ionicons name="cash-outline" size={16} color="#fff" />
+                    <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 14 }}>Record Payment</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             );
           }}
         />
       </View>
 
-      {/* Payment Modal */}
+      {/* Payment Modal (Still intact but unreachable if hidden) */}
       <Modal visible={!!selectedDebtor} animationType="slide" transparent={true}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
           <View style={[{ backgroundColor: theme.cardBg, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 }]}>

@@ -9,7 +9,7 @@ import api from '../services/api';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function HomeScreen({ navigation }) {
-  const { user } = useAuth();
+  const { user, isReadOnly, subscriptionStatus } = useAuth();
   const { queue, syncQueue } = useOffline();
   const { theme } = useTheme();
   const { unreadCount, fetchNotifications } = useNotifications();
@@ -130,7 +130,26 @@ export default function HomeScreen({ navigation }) {
         </TouchableOpacity>
       )}
 
-      {/* ─── CASHIER VIEW (Untouched) ─── */}
+      {/* ─── PROFESSIONAL SUBSCRIPTION EXPIRED CARD ─── */}
+      {isReadOnly && (
+        <View style={[styles.expiredCard, { backgroundColor: theme.isDark ? '#451a03' : '#FFFBEB', borderColor: theme.warning }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <Ionicons name="lock-closed" size={20} color={theme.warning} />
+            <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.warning }}>Subscription Expired</Text>
+          </View>
+          <Text style={{ fontSize: 13, color: theme.isDark ? '#fcd34d' : '#92400e', marginBottom: 16, lineHeight: 18 }}>
+            Your account is currently in read-only mode. You can view your data, but you cannot record new sales, expenses, or purchases until you renew.
+          </Text>
+          <TouchableOpacity 
+            style={{ backgroundColor: theme.warning, paddingVertical: 12, borderRadius: 8, alignItems: 'center' }}
+            onPress={() => navigation.navigate('Profile')} // Or your Subscription screen
+          >
+            <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 14 }}>Renew / Upgrade Plan</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* ─── CASHIER VIEW ─── */}
       {isCashier ? (
         <View style={[styles.heroCard, { backgroundColor: theme.primary }]}>
           <View style={styles.heroHeader}>
@@ -149,9 +168,8 @@ export default function HomeScreen({ navigation }) {
           </View>
         </View>
       ) : (
-        /* ─── OWNER / ADMIN VIEW (Web Parity Grid) ─── */
+        /* ─── OWNER / ADMIN VIEW ─── */
         <View style={styles.statsGrid}>
-          {/* Row 1 */}
           <View style={styles.statRow}>
             <View style={[styles.statCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
               <View style={[styles.statIconWrap, { backgroundColor: theme.primary + '15' }]}>
@@ -170,7 +188,6 @@ export default function HomeScreen({ navigation }) {
             </View>
           </View>
 
-          {/* Row 2 */}
           <View style={styles.statRow}>
             <View style={[styles.statCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
               <View style={[styles.statIconWrap, { backgroundColor: theme.success + '15' }]}>
@@ -189,7 +206,6 @@ export default function HomeScreen({ navigation }) {
             </View>
           </View>
 
-          {/* Row 3 (Inventory, Debtors) */}
           <View style={styles.statRow}>
             <TouchableOpacity 
               style={[styles.statCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]} 
@@ -233,7 +249,6 @@ export default function HomeScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          {/* Row 4 (Creditors, Cash) */}
           <View style={styles.statRow}>
             <TouchableOpacity 
               style={[styles.statCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]} 
@@ -256,7 +271,6 @@ export default function HomeScreen({ navigation }) {
             </View>
           </View>
 
-          {/* Row 5 (Cash In, Cash Out) */}
           <View style={styles.statRow}>
             <View style={[styles.statCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
               <View style={[styles.statIconWrap, { backgroundColor: theme.success + '15' }]}>
@@ -277,13 +291,12 @@ export default function HomeScreen({ navigation }) {
         </View>
       )}
 
-      {/* ─── BUSINESS MANAGEMENT (Owner/Admin Only) ─── */}
-      {canRecordFinance && (
+      {/* ─── BUSINESS MANAGEMENT (HIDDEN IF EXPIRED) ─── */}
+      {canRecordFinance && !isReadOnly && (
         <>
           <Text style={[styles.sectionTitle, { color: theme.text, marginTop: 8 }]}>Business Management</Text>
           
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 24 }}>
-            {/* 1. Record Expense */}
             <TouchableOpacity 
               style={[styles.actionPill, { backgroundColor: theme.cardBg }]} 
               onPress={() => navigation.navigate('Expenses')}
@@ -295,7 +308,6 @@ export default function HomeScreen({ navigation }) {
               <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600', marginTop: 8, textAlign: 'center' }} numberOfLines={1}>Record Expense</Text>
             </TouchableOpacity>
 
-            {/* 2. Record Purchase */}
             <TouchableOpacity 
               style={[styles.actionPill, { backgroundColor: theme.cardBg }]} 
               onPress={() => navigation.navigate('Purchases')}
@@ -307,7 +319,6 @@ export default function HomeScreen({ navigation }) {
               <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600', marginTop: 8, textAlign: 'center' }} numberOfLines={1}>Record Purchase</Text>
             </TouchableOpacity>
 
-            {/* 3. Purchase History */}
             <TouchableOpacity 
               style={[styles.actionPill, { backgroundColor: theme.cardBg }]} 
               onPress={() => navigation.navigate('PurchasesHistory')}
@@ -319,7 +330,6 @@ export default function HomeScreen({ navigation }) {
               <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600', marginTop: 8, textAlign: 'center' }} numberOfLines={1}>Purchase History</Text>
             </TouchableOpacity>
 
-            {/* 4. Creditors */}
             <TouchableOpacity 
               style={[styles.actionPill, { backgroundColor: theme.cardBg }]} 
               onPress={() => navigation.navigate('Creditors')}
@@ -350,7 +360,8 @@ const styles = StyleSheet.create({
   badge: { position: 'absolute', top: 6, right: 6, backgroundColor: 'red', borderRadius: 10, width: 16, height: 16, justifyContent: 'center', alignItems: 'center' },
   badgeText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
 
-  // New Web-Parity Stats Grid
+  expiredCard: { padding: 16, borderRadius: 16, borderWidth: 1, marginBottom: 24 },
+
   statsGrid: { marginBottom: 24, gap: 12 },
   statRow: { flexDirection: 'row', gap: 12 },
   statCard: { flex: 1, padding: 14, borderRadius: 16, borderWidth: 1 },
@@ -358,7 +369,6 @@ const styles = StyleSheet.create({
   statValue: { fontSize: 18, fontWeight: 'bold', marginBottom: 2 },
   statLabel: { fontSize: 12, fontWeight: '500' },
 
-  // Quick Action Pill Styles (Business Management)
   actionPill: { 
     width: '23%', 
     paddingVertical: 12, 

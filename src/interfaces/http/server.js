@@ -1,5 +1,5 @@
 // src/interfaces/http/server.js
-// v2.19.0-prod — Mounts /api/comments.
+// v2.20.0-prod — Starts the daily overdue notification cron at 7:00 AM Africa/Lagos.
 
 const { initSentry, Sentry } = require('../../shared/utils/sentry');
 initSentry();
@@ -11,11 +11,7 @@ const pinoHttp = require('pino-http');
 require('dotenv').config();
 
 const logger = require('../../shared/utils/logger');
-
-const {
-  warmPool,
-  poolStats,
-} = require('../../infrastructure/database/sqlite/connection');
+const { warmPool, poolStats } = require('../../infrastructure/database/sqlite/connection');
 
 const app = express();
 const PORT = process.env.PORT || process.env.HTTP_PORT || 5000;
@@ -120,7 +116,7 @@ const chatRoutes = require('./routes/chatRoutes');
 const teamRoutes = require('./routes/teamRoutes');
 const platformRoutes = require('./routes/platformRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
-const commentRoutes = require('./routes/commentRoutes'); // ★ NEW
+const commentRoutes = require('./routes/commentRoutes');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/chat', chatRoutes);
@@ -128,13 +124,8 @@ app.use('/api/team', standardLimiter, teamRoutes);
 app.use('/api/subscription', standardLimiter, subscriptionRoutes);
 app.use('/api/payment', standardLimiter, paymentRoutes);
 
-// ★ NEW: Comment routes
 app.use('/api/comments', standardLimiter, authMiddleware, commentRoutes);
-
-// Notification routes
 app.use('/api/notifications', standardLimiter, authMiddleware, notificationRoutes);
-
-// Platform Admin Routes (God-mode for internal staff)
 app.use('/api/platform', standardLimiter, authMiddleware, platformRoutes);
 
 app.use('/api/users', standardLimiter, authMiddleware, userRoutes);
@@ -228,6 +219,7 @@ const server = app.listen(PORT, () => {
     logger.error({ err: err.message }, 'db: warmPool failed');
   });
 
+  // ── Paystack retry sweep (unchanged) ───────────────────────────
   if (process.env.PAYSTACK_RETRY_SWEEP_DISABLED !== 'true') {
     const PaystackWebhookRetryService = require('../../application/services/payment/PaystackWebhookRetryService');
     const retryService = new PaystackWebhookRetryService();
@@ -241,6 +233,15 @@ const server = app.listen(PORT, () => {
     logger.info({ intervalMs: SWEEP_INTERVAL_MS }, 'paystack retry sweep: scheduled');
   } else {
     logger.info('paystack retry sweep: disabled by env');
+  }
+
+  // ★ NEW: Start the overdue notification cron (7:00 AM Africa/Lagos)
+  try {
+    const { startOverdueNotificationCron } = require('../../jobs/overdueNotificationJob');
+    startOverdueNotificationCron();
+    logger.info('overdue notifications: cron scheduled for 07:00 AM Africa/Lagos');
+  } catch (err) {
+    logger.error({ err: err.message }, 'overdue notifications: failed to schedule cron');
   }
 });
 

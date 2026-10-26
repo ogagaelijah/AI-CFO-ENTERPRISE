@@ -1,9 +1,9 @@
 // frontend/src/components/dashboard/DashboardHeader.jsx
-// v1.4.0 — Uses NotificationContext; clickable notification detail modal.
+// v1.5.0 — Ensures NEW_SALE notifications stay unread until explicitly clicked.
 
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Menu, X, Bell, Sun, Moon, ChevronDown, Check, CheckCheck } from 'lucide-react';
+import { Menu, X, Bell, Sun, Moon, ChevronDown, CheckCheck } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { usePlan } from '../../hooks/usePlan';
@@ -45,13 +45,19 @@ const DashboardHeader = ({ user, industryConfig, IndustryIcon, isMobileMenuOpen,
   const toggleDropdown = (name) => {
     const opening = openDropdown !== name;
     setOpenDropdown(opening ? name : null);
-    if (name === 'notifications' && opening) fetchNotifications();
+    // Fetch fresh notifications when the bell is opened
+    if (name === 'notifications' && opening) {
+      fetchNotifications();
+    }
   };
 
   const handleOpenNotification = async (n) => {
     setSelected(n);
     setOpenDropdown(null);
-    if (!n.is_read) await markAsRead(n.id);
+    // Only mark as read when they click it
+    if (!n.is_read) {
+      await markAsRead(n.id);
+    }
   };
 
   const planStyles = {
@@ -152,7 +158,7 @@ const DashboardHeader = ({ user, industryConfig, IndustryIcon, isMobileMenuOpen,
                             >
                               <div className="flex justify-between items-start gap-2">
                                 <div className="min-w-0 flex-1">
-                                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{n.title}</p>
+                                  <p className={`text-sm ${!n.is_read ? 'font-bold' : 'font-medium'} text-gray-900 dark:text-white truncate`}>{n.title}</p>
                                   <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">{n.message}</p>
                                   <p className="text-[10px] text-gray-400 mt-2">{new Date(n.created_at).toLocaleString()}</p>
                                 </div>

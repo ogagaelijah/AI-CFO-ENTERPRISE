@@ -1,4 +1,8 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+// mobile/src/context/AuthContext.js
+// v2.0.0-prod — Adds subscription state (isReadOnly, subscriptionStatus).
+//               Includes fail-open safety net + dashboard cache warming.
+
+import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import api from '../services/api';
 import { registerForPushNotificationsAsync } from '../services/notifications';
@@ -8,7 +12,33 @@ const AuthContext = createContext({});
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  
+  // Subscription State
+  const [subscriptionStatus, setSubscriptionStatus] = useState('ACTIVE');
+  const [isReadOnly, setIsReadOnly] = useState(false);
 
+  // ─── Subscription Fetcher ───
+  const checkSubscription = useCallback(async () => {
+    try {
+      const response = await api.get('/subscription/current');
+      if (response.data?.success && response.data?.data) {
+        const status = response.data.data.status;
+        const readOnly = response.data.data.isReadOnly === true || status === 'EXPIRED' || status === 'READ_ONLY';
+        
+        setSubscriptionStatus(status);
+        setIsReadOnly(readOnly);
+      }
+    } catch (error) {
+      // ⚠️ FAIL-OPEN SAFETY RULE: 
+      // If the network fails (not a 403 Forbidden), we must NOT lock the user out.
+      // We default to ACTIVE so they can continue working until the network is stable.
+      console.warn('⚠️ Subscription check failed, defaulting to ACTIVE (fail-open).', error.message);
+      setSubscriptionStatus('ACTIVE');
+      setIsReadOnly(false);
+    }
+  }, []);
+
+  // ─── Initial Load & Auth Validation ───
   useEffect(() => {
     const loadToken = async () => {
       try {
@@ -16,6 +46,9 @@ export const AuthProvider = ({ children }) => {
         const userData = await SecureStore.getItemAsync('userData');
         if (token && userData) {
           setUser(JSON.parse(userData));
+          // Check subscription and warm dashboard cache
+          await checkSubscription();
+          api.get('/dashboard/summary').catch(() => {}); 
         }
       } catch (e) {
         console.error('Failed to load token', e);
@@ -24,7 +57,7 @@ export const AuthProvider = ({ children }) => {
       }
     };
     loadToken();
-  }, []);
+  }, [checkSubscription]);
 
   const handlePushToken = async () => {
     try {
@@ -57,7 +90,12 @@ export const AuthProvider = ({ children }) => {
         await SecureStore.setItemAsync('userToken', token);
         await SecureStore.setItemAsync('userData', JSON.stringify(userData));
         setUser(userData);
+        
+        // Trigger heavy background tasks (not awaited to block UI)
         await handlePushToken();
+        await checkSubscription();
+        api.get('/dashboard/summary').catch(() => {}); // Cache warm
+
         return { success: true };
       }
 
@@ -84,7 +122,11 @@ export const AuthProvider = ({ children }) => {
         await SecureStore.setItemAsync('userToken', token);
         await SecureStore.setItemAsync('userData', JSON.stringify(userData));
         setUser(userData);
+        
         await handlePushToken();
+        await checkSubscription();
+        api.get('/dashboard/summary').catch(() => {}); // Cache warm
+
         return { success: true };
       }
 
@@ -103,10 +145,21 @@ export const AuthProvider = ({ children }) => {
     await SecureStore.deleteItemAsync('userToken');
     await SecureStore.deleteItemAsync('userData');
     setUser(null);
+    setSubscriptionStatus('ACTIVE');
+    setIsReadOnly(false);
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, register, logout }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      isLoading, 
+      login, 
+      register, 
+      logout,
+      subscriptionStatus,
+      isReadOnly,
+      checkSubscription // Exposed so screens can force-check if needed
+    }}>
       {children}
     </AuthContext.Provider>
   );
