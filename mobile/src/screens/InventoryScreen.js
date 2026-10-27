@@ -1,3 +1,6 @@
+// mobile/src/screens/InventoryScreen.js
+// v2.0.0-prod — Adds pack pills to item cards.
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, RefreshControl, FlatList, TextInput, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,23 +16,16 @@ export const InventoryScreen = ({ navigation }) => {
   const [inventory, setInventory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  
-  // Summary Data State (for the new Web-style header)
   const [summaryData, setSummaryData] = useState(null);
-
-  // Pagination State
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
-
-  // Search State
   const [searchQuery, setSearchQuery] = useState('');
 
   const fetchInventory = async (pageNum = 1, currentLimit = limit) => {
     setLoading(true);
     try {
-      // 1. Fetch the paginated list for the screen
       const res = await api.get(`/inventory?page=${pageNum}&limit=${currentLimit}`);
       const fetchedItems = res.data?.data?.items || res.data?.data || res.data || [];
       const pagination = res.data?.data?.pagination;
@@ -44,7 +40,6 @@ export const InventoryScreen = ({ navigation }) => {
         setTotalItems(fetchedItems.length);
       }
 
-      // 2. Fetch the dashboard summary to get the exact Web stats & low stock list
       try {
         const dashRes = await api.get(`/dashboard/summary?_t=${Date.now()}`);
         if (dashRes.data?.success && dashRes.data?.data?.kpis?.inventory) {
@@ -53,7 +48,6 @@ export const InventoryScreen = ({ navigation }) => {
       } catch (dashErr) {
         console.log("Could not load inventory summary stats", dashErr.message);
       }
-
     } catch (error) {
       console.error(error);
     } finally {
@@ -63,17 +57,13 @@ export const InventoryScreen = ({ navigation }) => {
   };
 
   useEffect(() => { 
-    // Refresh when the screen comes back into focus (after adding/editing)
     const unsubscribe = navigation.addListener('focus', () => {
       fetchInventory(page, limit);
     });
     return unsubscribe;
   }, [navigation, page, limit]);
 
-  const onRefresh = () => { 
-    setRefreshing(true); 
-    fetchInventory(page, limit); 
-  };
+  const onRefresh = () => { setRefreshing(true); fetchInventory(page, limit); };
 
   const handleLimitChange = (newLimit) => {
     if (newLimit === limit) return;
@@ -81,43 +71,25 @@ export const InventoryScreen = ({ navigation }) => {
     setPage(1);
   };
 
-  const handleNextPage = () => {
-    if (page < totalPages) setPage(prev => prev + 1);
-  };
+  const handleNextPage = () => { if (page < totalPages) setPage(prev => prev + 1); };
+  const handlePrevPage = () => { if (page > 1) setPage(prev => prev - 1); };
 
-  const handlePrevPage = () => {
-    if (page > 1) setPage(prev => prev - 1);
-  };
-
-  // Filter inventory locally
   const filteredInventory = useMemo(() => {
     if (!searchQuery.trim()) return inventory;
     const lowerQuery = searchQuery.toLowerCase();
-    return inventory.filter(item => 
-      item.item_name?.toLowerCase().includes(lowerQuery)
-    );
+    return inventory.filter(item => item.item_name?.toLowerCase().includes(lowerQuery));
   }, [inventory, searchQuery]);
 
   const renderPaginationControls = () => (
     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 16, borderTopWidth: 1, borderTopColor: theme.border, marginTop: 8 }}>
-      <TouchableOpacity 
-        onPress={handlePrevPage} 
-        disabled={page === 1}
-        style={{ flexDirection: 'row', alignItems: 'center', padding: 8, opacity: page === 1 ? 0.3 : 1 }}
-      >
+      <TouchableOpacity onPress={handlePrevPage} disabled={page === 1} style={{ flexDirection: 'row', alignItems: 'center', padding: 8, opacity: page === 1 ? 0.3 : 1 }}>
         <Ionicons name="chevron-back" size={20} color={theme.primary} />
         <Text style={{ color: theme.primary, fontWeight: 'bold' }}>Prev</Text>
       </TouchableOpacity>
-      
       <Text style={{ fontSize: 13, color: theme.textMuted, fontWeight: '600' }}>
         Page {page} of {totalPages} ({totalItems} total)
       </Text>
-      
-      <TouchableOpacity 
-        onPress={handleNextPage} 
-        disabled={page >= totalPages}
-        style={{ flexDirection: 'row', alignItems: 'center', padding: 8, opacity: page >= totalPages ? 0.3 : 1 }}
-      >
+      <TouchableOpacity onPress={handleNextPage} disabled={page >= totalPages} style={{ flexDirection: 'row', alignItems: 'center', padding: 8, opacity: page >= totalPages ? 0.3 : 1 }}>
         <Text style={{ color: theme.primary, fontWeight: 'bold' }}>Next</Text>
         <Ionicons name="chevron-forward" size={20} color={theme.primary} />
       </TouchableOpacity>
@@ -128,12 +100,10 @@ export const InventoryScreen = ({ navigation }) => {
     return <View style={[styles.center, { backgroundColor: theme.background }]}><ActivityIndicator size="large" color={theme.primary} /></View>;
   }
 
-  // Fallback calculations if the summary API failed, based ONLY on the current page
   const fallbackTotalValue = inventory.reduce((sum, item) => sum + (Number(item.quantity) * Number(item.selling_price)), 0);
   const fallbackTotalQty = inventory.reduce((sum, item) => sum + Number(item.quantity), 0);
   const fallbackTotalProfit = inventory.reduce((sum, item) => sum + (Number(item.quantity) * (Number(item.selling_price) - Number(item.cost_price))), 0);
 
-  // Use actual summary data from backend if available (which matches Web)
   const displayTotalItems = summaryData?.total_items !== undefined ? summaryData.total_items : totalItems;
   const displayTotalQty = summaryData?.total_quantity !== undefined ? summaryData.total_quantity : fallbackTotalQty;
   const displayTotalValue = summaryData?.total !== undefined ? summaryData.total : fallbackTotalValue;
@@ -143,13 +113,11 @@ export const InventoryScreen = ({ navigation }) => {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
-      {/* Header: Title */}
       <View style={{ padding: 16, paddingBottom: 8 }}>
         <Text style={{ fontSize: 24, fontWeight: 'bold', color: theme.text }}>Inventory</Text>
         <Text style={{ fontSize: 13, color: theme.textMuted, marginTop: 2 }}>Stock on hand and valuation</Text>
       </View>
 
-      {/* Search & Filter Bar */}
       <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.inputBg, borderRadius: 8, borderWidth: 1, borderColor: theme.border, paddingHorizontal: 12, marginBottom: 12 }}>
           <Ionicons name="search" size={20} color={theme.textMuted} />
@@ -174,10 +142,9 @@ export const InventoryScreen = ({ navigation }) => {
         keyExtractor={(item) => String(item.id)}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
         ListFooterComponent={renderPaginationControls}
-        contentContainerStyle={{ paddingBottom: 100 }} // Space for the FAB
+        contentContainerStyle={{ paddingBottom: 100 }}
         ListHeaderComponent={
           <>
-            {/* ─── WEB-STYLE LOW STOCK ALERT BANNER ─── */}
             {displayLowStockCount > 0 && (
               <View style={{ backgroundColor: theme.isDark ? '#3f2a00' : '#fffbeb', borderColor: theme.warning, borderWidth: 1, borderRadius: 8, padding: 12, marginBottom: 16 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
@@ -186,17 +153,11 @@ export const InventoryScreen = ({ navigation }) => {
                     {displayLowStockCount} items below reorder level
                   </Text>
                 </View>
-                <Text style={{ fontSize: 12, color: theme.textMuted, marginBottom: 8 }}>
-                  Consider reordering soon to avoid stockouts.
-                </Text>
-                
-                {/* List the actual items inline just like the Web */}
+                <Text style={{ fontSize: 12, color: theme.textMuted, marginBottom: 8 }}>Consider reordering soon to avoid stockouts.</Text>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
                   {displayLowStockItems.slice(0, 10).map((item, idx) => (
                     <View key={item.id || idx} style={{ backgroundColor: theme.warning + '20', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 }}>
-                      <Text style={{ fontSize: 12, color: theme.warning, fontWeight: '600' }}>
-                        {item.item_name} ({item.quantity})
-                      </Text>
+                      <Text style={{ fontSize: 12, color: theme.warning, fontWeight: '600' }}>{item.item_name} ({item.quantity})</Text>
                     </View>
                   ))}
                   {displayLowStockItems.length > 10 && (
@@ -206,10 +167,7 @@ export const InventoryScreen = ({ navigation }) => {
               </View>
             )}
 
-            {/* ─── WEB-STYLE 4-CARD GRID ─── */}
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 16 }}>
-              
-              {/* Card 1: Total Items */}
               <View style={[styles.statCard, { backgroundColor: theme.isDark ? '#1e293b' : '#eef2ff', borderColor: theme.primary + '40' }]}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <Text style={{ fontSize: 12, color: theme.isDark ? '#818cf8' : '#4f46e5', fontWeight: '600' }}>Total Items</Text>
@@ -218,7 +176,6 @@ export const InventoryScreen = ({ navigation }) => {
                 <Text style={{ fontSize: 22, fontWeight: 'bold', color: theme.primary, marginTop: 8 }}>{displayTotalItems}</Text>
               </View>
 
-              {/* Card 2: Total Quantity */}
               <View style={[styles.statCard, { backgroundColor: theme.isDark ? '#1e1b4b' : '#f5f3ff', borderColor: '#8b5cf640' }]}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <Text style={{ fontSize: 12, color: theme.isDark ? '#a78bfa' : '#7c3aed', fontWeight: '600' }}>Total Qty</Text>
@@ -227,7 +184,6 @@ export const InventoryScreen = ({ navigation }) => {
                 <Text style={{ fontSize: 22, fontWeight: 'bold', color: '#8b5cf6', marginTop: 8 }}>{displayTotalQty}</Text>
               </View>
 
-              {/* Card 3: Inventory Value */}
               <View style={[styles.statCard, { backgroundColor: theme.isDark ? '#064e3b' : '#ecfdf5', borderColor: '#10b98140' }]}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <Text style={{ fontSize: 12, color: theme.isDark ? '#34d399' : '#059669', fontWeight: '600' }}>Total Value</Text>
@@ -238,7 +194,6 @@ export const InventoryScreen = ({ navigation }) => {
                 </Text>
               </View>
 
-              {/* Card 4: Potential Profit */}
               <View style={[styles.statCard, { backgroundColor: theme.isDark ? '#3b0764' : '#faf5ff', borderColor: '#d8b4fe40' }]}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <Text style={{ fontSize: 12, color: theme.isDark ? '#d8b4fe' : '#9333ea', fontWeight: '600' }}>Potential Profit</Text>
@@ -248,10 +203,8 @@ export const InventoryScreen = ({ navigation }) => {
                   ₦{Number(displayProfit).toLocaleString()}
                 </Text>
               </View>
-
             </View>
 
-            {/* Page size / List Header */}
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
               <Text style={[styles.sectionTitle, { color: theme.text, marginTop: 0 }]}>All Items</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -276,6 +229,8 @@ export const InventoryScreen = ({ navigation }) => {
         }
         renderItem={({ item }) => {
           const itemValue = Number(item.quantity) * Number(item.selling_price);
+          const packs = item.packs || [];
+          
           return (
             <TouchableOpacity 
               style={[styles.invCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
@@ -287,6 +242,24 @@ export const InventoryScreen = ({ navigation }) => {
                 <Text style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>
                   {item.quantity} {item.base_unit || 'Pieces'} @ ₦{Number(item.selling_price).toLocaleString()}
                 </Text>
+                
+                {/* ★ NEW: Pack price pills */}
+                {packs.length > 0 && (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+                    {packs.slice(0, 3).map((p, idx) => (
+                      <View key={p.id || idx} style={{ backgroundColor: '#2563EB15', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                        <Text style={{ fontSize: 10, color: '#2563EB', fontWeight: '600' }}>
+                          {p.pack_name} x{p.multiplier} — ₦{Number(p.selling_price).toLocaleString()}
+                        </Text>
+                      </View>
+                    ))}
+                    {packs.length > 3 && (
+                      <View style={{ paddingHorizontal: 6, paddingVertical: 2 }}>
+                        <Text style={{ fontSize: 10, color: theme.textMuted }}>+{packs.length - 3} more</Text>
+                      </View>
+                    )}
+                  </View>
+                )}
               </View>
               <View style={{ alignItems: 'flex-end', flexDirection: 'row', gap: 12 }}>
                 <View>
@@ -300,7 +273,6 @@ export const InventoryScreen = ({ navigation }) => {
         }}
       />
 
-      {/* Floating Action Button (Hidden if read-only) */}
       {!isReadOnly && (
         <TouchableOpacity 
           style={[styles.fab, { backgroundColor: theme.primary }]}

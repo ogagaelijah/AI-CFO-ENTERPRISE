@@ -1,5 +1,8 @@
+// mobile/App.js
+// v2.1.0-prod — Notification deep linking (tap push → navigate to correct screen).
+
 import React, { useEffect, useRef } from 'react';
-import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme, DarkTheme, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
@@ -32,6 +35,7 @@ import { ActivityIndicator, View } from 'react-native';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
+const navigationRef = createNavigationContainerRef();
 
 function MainTabs() {
   const { theme } = useTheme();
@@ -82,6 +86,25 @@ function AppNavigator() {
     responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
       const data = response.notification.request.content.data;
       console.log('Notification tapped, payload:', data);
+      
+      // ★ Deep linking — navigate to correct screen based on payload
+      if (navigationRef.isReady()) {
+        try {
+          if (data?.screen === 'History') {
+            navigationRef.navigate('Main', { screen: 'History' });
+          } else if (data?.screen === 'Debtors') {
+            navigationRef.navigate('Main', { screen: 'Debtors' });
+          } else if (data?.screen === 'Inventory') {
+            navigationRef.navigate('Main', { screen: 'Inventory' });
+          } else if (data?.screen === 'Notifications') {
+            navigationRef.navigate('Notifications');
+          } else {
+            navigationRef.navigate('Main', { screen: 'Home' });
+          }
+        } catch (err) {
+          console.log('Navigation from notification failed:', err.message);
+        }
+      }
     });
 
     return () => {
@@ -99,7 +122,7 @@ function AppNavigator() {
   }
 
   return (
-    <NavigationContainer theme={isDark ? DarkTheme : DefaultTheme}>
+    <NavigationContainer ref={navigationRef} theme={isDark ? DarkTheme : DefaultTheme}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {user ? (
           user.emailVerified === false ? (
@@ -121,7 +144,6 @@ function AppNavigator() {
           )
         ) : (
           <React.Fragment>
-            {/* Welcome is now the first screen for unauthenticated users */}
             <Stack.Screen name="Welcome" component={WelcomeScreen} />
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="Register" component={RegisterScreen} />
