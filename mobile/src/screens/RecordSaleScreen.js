@@ -1,3 +1,7 @@
+// mobile/src/screens/RecordSaleScreen.js
+// v3.0.0-prod — Prominent pack selector buttons (Carton / Half / Quarter).
+//               Sends unitMultiplier + soldUnit to backend.
+
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Modal, FlatList, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,14 +23,13 @@ export const RecordSaleScreen = ({ navigation }) => {
   const [paymentStatus, setPaymentStatus] = useState('PAID');
   const [amountPaid, setAmountPaid] = useState('');
   const [dueDays, setDueDays] = useState(3); 
-  const [items, setItems] = useState([{ name: '', quantity: '', price: '', unitMultiplier: 1, soldUnit: 'Piece', inventoryId: null }]);
+  const [items, setItems] = useState([{ name: '', quantity: '', price: '', unitMultiplier: 1, soldUnit: 'Piece', inventoryId: null, costPrice: '' }]);
 
   const [showItemModal, setShowItemModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeItemIndex, setActiveItemIndex] = useState(null);
 
   useEffect(() => { 
-    // Only fetch inventory if we are actually allowed to record a sale
     if (!isReadOnly) {
       fetchInventory(); 
     } else {
@@ -61,6 +64,7 @@ export const RecordSaleScreen = ({ navigation }) => {
       if (matchedItem) {
         newItems[index].inventoryId = matchedItem.id;
         newItems[index].price = String(matchedItem.selling_price || '');
+        newItems[index].costPrice = String(matchedItem.cost_price || '');
         newItems[index].unitMultiplier = 1;
         newItems[index].soldUnit = 'Piece';
       } else {
@@ -70,21 +74,28 @@ export const RecordSaleScreen = ({ navigation }) => {
     setItems(newItems);
   };
 
-  const handleUnitChange = (index, multiplier, unitName) => {
+  // ★ UPDATED: pack selector sets multiplier AND price from pack data
+  const handlePackSelect = (index, packName, multiplier, packPrice) => {
     const newItems = [...items];
-    newItems[index].unitMultiplier = multiplier;
-    newItems[index].soldUnit = unitName;
     const matchedItem = findMatchedItem(newItems[index].name);
-    if (matchedItem && unitName !== 'Piece' && matchedItem.packs) {
-      const pack = matchedItem.packs.find(p => p.pack_name === unitName);
-      if (pack) newItems[index].price = String(pack.selling_price || '');
-    } else if (matchedItem) {
-      newItems[index].price = String(matchedItem.selling_price || '');
+    
+    newItems[index].unitMultiplier = multiplier;
+    newItems[index].soldUnit = packName;
+    
+    if (multiplier === 1) {
+      // Base unit — use base selling price
+      newItems[index].price = String(matchedItem?.selling_price || '');
+      newItems[index].costPrice = String(matchedItem?.cost_price || '');
+    } else {
+      // Pack — use pack-specific price and pack-adjusted cost
+      newItems[index].price = String(packPrice || '');
+      newItems[index].costPrice = String((matchedItem?.cost_price || 0) * multiplier);
     }
+    
     setItems(newItems);
   };
 
-  const addItem = () => setItems([...items, { name: '', quantity: '', price: '', unitMultiplier: 1, soldUnit: 'Piece', inventoryId: null }]);
+  const addItem = () => setItems([...items, { name: '', quantity: '', price: '', unitMultiplier: 1, soldUnit: 'Piece', inventoryId: null, costPrice: '' }]);
   const removeItem = (index) => items.length > 1 && setItems(items.filter((_, i) => i !== index));
   const calculateTotal = () => items.reduce((sum, item) => sum + ((parseFloat(item.quantity) || 0) * (parseFloat(item.price) || 0)), 0);
 
@@ -100,6 +111,7 @@ export const RecordSaleScreen = ({ navigation }) => {
     newItems[activeItemIndex].name = selectedInventoryItem.item_name;
     newItems[activeItemIndex].inventoryId = selectedInventoryItem.id;
     newItems[activeItemIndex].price = String(selectedInventoryItem.selling_price || '');
+    newItems[activeItemIndex].costPrice = String(selectedInventoryItem.cost_price || '');
     newItems[activeItemIndex].unitMultiplier = 1;
     newItems[activeItemIndex].soldUnit = 'Piece';
     setItems(newItems);
@@ -159,7 +171,7 @@ export const RecordSaleScreen = ({ navigation }) => {
       
       setCustomerName('');
       setCustomerPhone('');
-      setItems([{ name: '', quantity: '', price: '', unitMultiplier: 1, soldUnit: 'Piece', inventoryId: null }]);
+      setItems([{ name: '', quantity: '', price: '', unitMultiplier: 1, soldUnit: 'Piece', inventoryId: null, costPrice: '' }]);
       setAmountPaid('');
       setPaymentStatus('PAID');
     } catch (error) {
@@ -173,7 +185,6 @@ export const RecordSaleScreen = ({ navigation }) => {
     return <View style={[styles.center, { backgroundColor: theme.background }]}><ActivityIndicator size="large" color={theme.primary} /></View>;
   }
 
-  // ─── SUBSCRIPTION EXPIRED BLOCK ───
   if (isReadOnly) {
     return (
       <View style={[styles.center, { backgroundColor: theme.background, padding: 24 }]}>
@@ -265,19 +276,48 @@ export const RecordSaleScreen = ({ navigation }) => {
                 <TextInput style={[styles.input, { backgroundColor: theme.inputBg, color: theme.text, borderColor: theme.border }]} placeholder="0.00" placeholderTextColor={theme.textMuted} keyboardType="numeric" value={item.price} onChangeText={(val) => handleItemChange(index, 'price', val)} />
               </View>
             </View>
+            
+            {/* ★ NEW: PROMINENT PACK BUTTONS */}
             {hasPacks && (
               <View style={styles.packRow}>
-                <Text style={{ fontSize: 12, width: '100%', marginBottom: 4, color: theme.textMuted }}>Sell by:</Text>
-                <TouchableOpacity style={[styles.packBtn, { backgroundColor: theme.background, borderColor: theme.border }, item.unitMultiplier === 1 && { backgroundColor: theme.primary, borderColor: theme.primary }]} onPress={() => handleUnitChange(index, 1, 'Piece')}>
-                  <Text style={[{ fontSize: 12, color: theme.text, fontWeight: '500' }, item.unitMultiplier === 1 && { color: '#fff' }]}>Piece</Text>
+                <Text style={{ fontSize: 12, width: '100%', marginBottom: 6, color: theme.textMuted, fontWeight: '600' }}>Sell by:</Text>
+                
+                {/* Base unit button */}
+                <TouchableOpacity 
+                  style={[
+                    styles.packBtn, 
+                    { backgroundColor: theme.background, borderColor: theme.border }, 
+                    item.unitMultiplier === 1 && { backgroundColor: theme.primary, borderColor: theme.primary }
+                  ]} 
+                  onPress={() => handlePackSelect(index, 'Piece', 1, matchedItem.selling_price)}
+                >
+                  <Text style={[{ fontSize: 12, color: theme.text, fontWeight: '500' }, item.unitMultiplier === 1 && { color: '#fff' }]}>
+                    1 {matchedItem.base_unit || 'Piece'} — ₦{Number(matchedItem.selling_price || 0).toLocaleString()}
+                  </Text>
                 </TouchableOpacity>
+                
+                {/* Pack buttons */}
                 {matchedItem.packs.map(p => (
-                  <TouchableOpacity key={p.id} style={[styles.packBtn, { backgroundColor: theme.background, borderColor: theme.border }, item.unitMultiplier === p.multiplier && { backgroundColor: theme.primary, borderColor: theme.primary }]} onPress={() => handleUnitChange(index, p.multiplier, p.pack_name)}>
-                    <Text style={[{ fontSize: 12, color: theme.text, fontWeight: '500' }, item.unitMultiplier === p.multiplier && { color: '#fff' }]}>{p.pack_name}</Text>
+                  <TouchableOpacity 
+                    key={p.id || p.pack_name} 
+                    style={[
+                      styles.packBtn, 
+                      { backgroundColor: theme.background, borderColor: theme.border }, 
+                      item.unitMultiplier === p.multiplier && item.soldUnit === p.pack_name && { backgroundColor: '#2563EB', borderColor: '#2563EB' }
+                    ]} 
+                    onPress={() => handlePackSelect(index, p.pack_name, p.multiplier, p.selling_price)}
+                  >
+                    <Text style={[
+                      { fontSize: 12, color: theme.text, fontWeight: '500' }, 
+                      item.unitMultiplier === p.multiplier && item.soldUnit === p.pack_name && { color: '#fff' }
+                    ]}>
+                      {p.pack_name} ({p.multiplier} {matchedItem.base_unit}) — ₦{Number(p.selling_price || 0).toLocaleString()}
+                    </Text>
                   </TouchableOpacity>
                 ))}
               </View>
             )}
+            
             {items.length > 1 && (
               <TouchableOpacity onPress={() => removeItem(index)} style={styles.removeBtn}>
                 <Ionicons name="trash" size={16} color={theme.danger} />
@@ -372,8 +412,8 @@ const styles = StyleSheet.create({
   statusBtn: { flex: 1, padding: 10, borderRadius: 8, borderWidth: 1, alignItems: 'center' },
   itemCard: { padding: 12, borderRadius: 12, marginBottom: 12, borderWidth: 1, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
   row: { flexDirection: 'row', marginTop: 8 },
-  packRow: { flexDirection: 'row', gap: 8, marginTop: 8, flexWrap: 'wrap' },
-  packBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1 },
+  packRow: { flexDirection: 'row', gap: 6, marginTop: 10, flexWrap: 'wrap' },
+  packBtn: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, borderWidth: 1, marginBottom: 6 },
   removeBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 },
   addBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 12, marginBottom: 16 },
   totalCard: { padding: 16, borderRadius: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, borderWidth: 1 },
