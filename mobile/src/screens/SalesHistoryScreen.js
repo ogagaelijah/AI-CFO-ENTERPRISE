@@ -1,3 +1,6 @@
+// mobile/src/screens/SalesHistoryScreen.js
+// v2.0.0-prod — Sale detail reads item.cogs from backend (correct pack COGS).
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Modal, RefreshControl, FlatList, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,16 +16,13 @@ export const SalesHistoryScreen = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   
-  // Pagination State
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
 
-  // Search State
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Detail Modal State
   const [selectedSale, setSelectedSale] = useState(null);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
 
@@ -63,22 +63,17 @@ export const SalesHistoryScreen = () => {
   const handleLimitChange = (newLimit) => {
     if (newLimit === limit) return;
     setLimit(newLimit);
-    setPage(1); // Reset to page 1 when changing page size
+    setPage(1);
   };
 
   const handleNextPage = () => {
-    if (page < totalPages) {
-      setPage(prev => prev + 1);
-    }
+    if (page < totalPages) setPage(prev => prev + 1);
   };
 
   const handlePrevPage = () => {
-    if (page > 1) {
-      setPage(prev => prev - 1);
-    }
+    if (page > 1) setPage(prev => prev - 1);
   };
 
-  // Filter sales locally (only applies to the current page of 10 items)
   const filteredSales = useMemo(() => {
     if (!searchQuery.trim()) return sales;
     const lowerQuery = searchQuery.toLowerCase();
@@ -138,7 +133,6 @@ export const SalesHistoryScreen = () => {
   return (
     <>
       <View style={{ flex: 1, backgroundColor: theme.background }}>
-        {/* Search & Filter Bar */}
         <View style={{ padding: 16, paddingBottom: 0 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.inputBg, borderRadius: 8, borderWidth: 1, borderColor: theme.border, paddingHorizontal: 12, marginBottom: 12 }}>
             <Ionicons name="search" size={20} color={theme.textMuted} />
@@ -156,7 +150,6 @@ export const SalesHistoryScreen = () => {
             )}
           </View>
           
-          {/* Page Size Selector */}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
             <Text style={{ fontSize: 12, color: theme.textMuted, fontWeight: '600' }}>Items per page:</Text>
             <View style={{ flexDirection: 'row', gap: 6 }}>
@@ -212,7 +205,6 @@ export const SalesHistoryScreen = () => {
         />
       </View>
 
-      {/* Read-Only Sale Detail Modal */}
       <Modal visible={!!selectedSale} animationType="slide" transparent={true}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
           <View style={{ backgroundColor: theme.cardBg, borderTopLeftRadius: 24, borderTopRightRadius: 24, height: '85%', padding: 20 }}>
@@ -258,7 +250,12 @@ export const SalesHistoryScreen = () => {
                 ListEmptyComponent={<Text style={{ padding: 16, textAlign: 'center', color: theme.textMuted }}>No item details found.</Text>}
                 renderItem={({ item }) => (
                   <View style={{ flexDirection: 'row', padding: 12, borderBottomWidth: 1, borderBottomColor: theme.border }}>
-                    <Text style={{ flex: 2, fontSize: 14, color: theme.text }}>{item.name}</Text>
+                    <View style={{ flex: 2 }}>
+                      <Text style={{ fontSize: 14, color: theme.text }}>{item.name}</Text>
+                      {item.unitMultiplier > 1 && (
+                        <Text style={{ fontSize: 10, color: '#3B82F6', marginTop: 2 }}>({item.unitMultiplier} units)</Text>
+                      )}
+                    </View>
                     <Text style={{ flex: 1, fontSize: 14, color: theme.text, textAlign: 'center' }}>{item.quantity}</Text>
                     <Text style={{ flex: 1.5, fontSize: 14, color: theme.text, textAlign: 'right' }}>₦{Number(item.sellingPrice || item.unitPrice || 0).toLocaleString()}</Text>
                     <Text style={{ flex: 1.5, fontSize: 14, fontWeight: 'bold', color: theme.text, textAlign: 'right' }}>₦{(item.quantity * (item.sellingPrice || item.unitPrice || 0)).toLocaleString()}</Text>
@@ -271,8 +268,23 @@ export const SalesHistoryScreen = () => {
                         <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.text }}>Total Amount</Text>
                         <Text style={{ fontSize: 20, fontWeight: 'bold', color: theme.primary }}>₦{Number(selectedSale.total_price).toLocaleString()}</Text>
                       </View>
+
+                      {/* ★ NEW: COGS row — reads backend value if available */}
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                        <Text style={{ fontSize: 14, color: theme.textMuted }}>Total COGS</Text>
+                        <Text style={{ fontSize: 14, fontWeight: 'bold', color: theme.warning }}>
+                          ₦{Number(
+                            selectedSale.cogs !== undefined && selectedSale.cogs !== null
+                              ? selectedSale.cogs
+                              : (selectedSale.items || []).reduce((sum, it) => {
+                                  const q = parseFloat(it.quantity) || 0;
+                                  const c = it.cogs !== undefined ? it.cogs : (q * (it.costPrice || it.unitCost || 0));
+                                  return sum + (it.cogs !== undefined ? it.cogs : (q * (it.costPrice || it.unitCost || 0)));
+                                }, 0)
+                          ).toLocaleString()}
+                        </Text>
+                      </View>
                       
-                      {/* ★ NEW: Profit Row */}
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
                         <Text style={{ fontSize: 14, color: theme.textMuted }}>Profit</Text>
                         <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.success }}>₦{Number(selectedSale.gross_profit || 0).toLocaleString()}</Text>
