@@ -1,16 +1,19 @@
 // mobile/src/screens/SalesHistoryScreen.js
-// v2.0.0-prod — Sale detail reads item.cogs from backend (correct pack COGS).
+// v2.3.0-prod — Adds Share Receipt button (uses OS share sheet for copy/text).
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Modal, RefreshControl, FlatList, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../services/api';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
+import { shareReceipt } from '../utils/shareReceipt';
 
 const PAGE_SIZES = [10, 25, 50, 75, 100];
 
 export const SalesHistoryScreen = () => {
   const { theme } = useTheme();
+  const { user } = useAuth();
   
   const [sales, setSales] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -25,6 +28,8 @@ export const SalesHistoryScreen = () => {
 
   const [selectedSale, setSelectedSale] = useState(null);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
+
+  const businessName = user?.businessName || user?.business_name || 'AI CFO ENTERPRISE';
 
   const fetchSales = async (pageNum = 1, currentLimit = limit) => {
     setLoading(true);
@@ -100,6 +105,11 @@ export const SalesHistoryScreen = () => {
     } finally {
       setIsDetailLoading(false);
     }
+  };
+
+  const handleShare = () => {
+    if (!selectedSale) return;
+    shareReceipt(selectedSale, { businessName });
   };
 
   const renderPaginationControls = () => (
@@ -269,7 +279,6 @@ export const SalesHistoryScreen = () => {
                         <Text style={{ fontSize: 20, fontWeight: 'bold', color: theme.primary }}>₦{Number(selectedSale.total_price).toLocaleString()}</Text>
                       </View>
 
-                      {/* ★ NEW: COGS row — reads backend value if available */}
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
                         <Text style={{ fontSize: 14, color: theme.textMuted }}>Total COGS</Text>
                         <Text style={{ fontSize: 14, fontWeight: 'bold', color: theme.warning }}>
@@ -295,6 +304,16 @@ export const SalesHistoryScreen = () => {
                         <Text style={{ fontSize: 14, fontWeight: 'bold', color: selectedSale.payment_status === 'PAID' ? theme.success : theme.danger }}>{selectedSale.payment_status}</Text>
                       </View>
                     </View>
+
+                    {/* ★ Share Receipt Button */}
+                    <TouchableOpacity
+                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: theme.primary, paddingVertical: 14, borderRadius: 12, marginTop: 16 }}
+                      onPress={handleShare}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="share-social" size={20} color="#fff" />
+                      <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>Share Receipt</Text>
+                    </TouchableOpacity>
 
                     <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.text, marginTop: 24, marginBottom: 12 }}>Notes</Text>
                     {selectedSale.notes ? (

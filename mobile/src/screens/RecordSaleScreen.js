@@ -1,6 +1,5 @@
 // mobile/src/screens/RecordSaleScreen.js
-// v3.0.0-prod — Prominent pack selector buttons (Carton / Half / Quarter).
-//               Sends unitMultiplier + soldUnit to backend.
+// v3.1.0-prod — Fixes bottom safe area in item selector modal.
 
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Modal, FlatList, KeyboardAvoidingView, Platform } from 'react-native';
@@ -74,7 +73,6 @@ export const RecordSaleScreen = ({ navigation }) => {
     setItems(newItems);
   };
 
-  // ★ UPDATED: pack selector sets multiplier AND price from pack data
   const handlePackSelect = (index, packName, multiplier, packPrice) => {
     const newItems = [...items];
     const matchedItem = findMatchedItem(newItems[index].name);
@@ -83,11 +81,9 @@ export const RecordSaleScreen = ({ navigation }) => {
     newItems[index].soldUnit = packName;
     
     if (multiplier === 1) {
-      // Base unit — use base selling price
       newItems[index].price = String(matchedItem?.selling_price || '');
       newItems[index].costPrice = String(matchedItem?.cost_price || '');
     } else {
-      // Pack — use pack-specific price and pack-adjusted cost
       newItems[index].price = String(packPrice || '');
       newItems[index].costPrice = String((matchedItem?.cost_price || 0) * multiplier);
     }
@@ -277,12 +273,10 @@ export const RecordSaleScreen = ({ navigation }) => {
               </View>
             </View>
             
-            {/* ★ NEW: PROMINENT PACK BUTTONS */}
             {hasPacks && (
               <View style={styles.packRow}>
                 <Text style={{ fontSize: 12, width: '100%', marginBottom: 6, color: theme.textMuted, fontWeight: '600' }}>Sell by:</Text>
                 
-                {/* Base unit button */}
                 <TouchableOpacity 
                   style={[
                     styles.packBtn, 
@@ -296,7 +290,6 @@ export const RecordSaleScreen = ({ navigation }) => {
                   </Text>
                 </TouchableOpacity>
                 
-                {/* Pack buttons */}
                 {matchedItem.packs.map(p => (
                   <TouchableOpacity 
                     key={p.id || p.pack_name} 
@@ -357,7 +350,7 @@ export const RecordSaleScreen = ({ navigation }) => {
       <Modal visible={showItemModal} animationType="slide" transparent={true}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
           <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
-            <View style={{ backgroundColor: theme.cardBg, borderTopLeftRadius: 24, borderTopRightRadius: 24, height: '80%', padding: 20 }}>
+            <View style={{ backgroundColor: theme.cardBg, borderTopLeftRadius: 24, borderTopRightRadius: 24, height: '80%', padding: 20, paddingBottom: 60 }}>
               
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                 <Text style={{ fontSize: 20, fontWeight: 'bold', color: theme.text }}>Select Item</Text>
@@ -379,6 +372,7 @@ export const RecordSaleScreen = ({ navigation }) => {
                 data={filteredInventory}
                 keyExtractor={(item) => String(item.id)}
                 keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: 40 }}
                 ListEmptyComponent={
                   <Text style={{ textAlign: 'center', marginTop: 20, color: theme.textMuted }}>No items found.</Text>
                 }

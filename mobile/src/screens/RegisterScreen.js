@@ -1,22 +1,27 @@
+// mobile/src/screens/RegisterScreen.js
+// v1.1.0-prod — Fixes industry label to "Wholesale / Retail".
+
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 
+// Value sent to backend stays as 'RETAIL' (matches web's normalizeIndustry)
+// But the label shown to the user is 'Wholesale / Retail'
 const READY_INDUSTRIES = [
-  'RETAIL',
-  'CONSTRUCTION',
-  'CONSULTANCY',
-  'EDUCATION',
-  'NGO',
+  { value: 'RETAIL', label: 'Wholesale / Retail' },
+  { value: 'CONSTRUCTION', label: 'Construction' },
+  { value: 'CONSULTANCY', label: 'Consultancy / Services' },
+  { value: 'EDUCATION', label: 'Education' },
+  { value: 'NGO', label: 'NGO / Non-profit' },
 ];
 
 const COMING_SOON_INDUSTRIES = [
-  'MANUFACTURING',
-  'HEALTHCARE',
-  'REAL_ESTATE',
-  'LOGISTICS',
+  { value: 'MANUFACTURING', label: 'Manufacturing' },
+  { value: 'HEALTHCARE', label: 'Healthcare' },
+  { value: 'REAL_ESTATE', label: 'Real Estate' },
+  { value: 'LOGISTICS', label: 'Logistics' },
 ];
 
 export default function RegisterScreen({ navigation }) {
@@ -61,7 +66,6 @@ export default function RegisterScreen({ navigation }) {
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
       <ScrollView style={[styles.container, { backgroundColor: theme.background }]} keyboardShouldPersistTaps="handled">
         
-        {/* Header with Back Button */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={[styles.backBtn, { backgroundColor: theme.cardBg }]}>
             <Ionicons name="chevron-back" size={24} color={theme.text} />
@@ -131,11 +135,16 @@ export default function RegisterScreen({ navigation }) {
         <View style={styles.industryWrap}>
           {READY_INDUSTRIES.map(ind => (
             <TouchableOpacity
-              key={ind}
-              style={[{ paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: theme.border, backgroundColor: theme.cardBg }, industry === ind && { backgroundColor: theme.primary, borderColor: theme.primary }]}
-              onPress={() => setIndustry(ind)}
+              key={ind.value}
+              style={[
+                { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: theme.border, backgroundColor: theme.cardBg }, 
+                industry === ind.value && { backgroundColor: theme.primary, borderColor: theme.primary }
+              ]}
+              onPress={() => setIndustry(ind.value)}
             >
-              <Text style={{ fontSize: 12, fontWeight: 'bold', color: industry === ind ? '#fff' : theme.text }}>{ind}</Text>
+              <Text style={{ fontSize: 12, fontWeight: 'bold', color: industry === ind.value ? '#fff' : theme.text }}>
+                {ind.label}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -143,10 +152,10 @@ export default function RegisterScreen({ navigation }) {
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
           {COMING_SOON_INDUSTRIES.map(ind => (
             <View
-              key={ind}
+              key={ind.value}
               style={{ paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: theme.border, backgroundColor: theme.background, opacity: 0.5 }}
             >
-              <Text style={{ fontSize: 12, fontWeight: 'bold', color: theme.textMuted }}>{ind} (Soon)</Text>
+              <Text style={{ fontSize: 12, fontWeight: 'bold', color: theme.textMuted }}>{ind.label} (Soon)</Text>
             </View>
           ))}
         </View>
