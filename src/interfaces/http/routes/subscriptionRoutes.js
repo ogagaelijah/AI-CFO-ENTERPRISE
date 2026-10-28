@@ -1,7 +1,5 @@
 // src/interfaces/http/routes/subscriptionRoutes.js
-// v2.1.0-prod — Authenticated routes require OWNER only (billing).
-//               Error classification applied.
-// v2.0.2-prod — Public /plans route + auth-gated subscription routes.
+// v2.2.1-prod — Team members inherit business subscription status.
 
 const express = require('express');
 const router = express.Router();
@@ -11,6 +9,7 @@ const { requireRole } = require('../middleware/requireRole');
 const BusinessRepository = require('../../../infrastructure/database/sqlite/repositories/BusinessRepository');
 const SubscriptionRepository = require('../../../infrastructure/database/sqlite/repositories/SubscriptionRepository');
 const CancelSubscriptionUseCase = require('../../../application/useCases/subscriptions/CancelSubscriptionUseCase');
+const { query } = require('../../../infrastructure/database/sqlite/connection');
 const plans = require('../../../config/plans');
 
 const businessRepo = new BusinessRepository();
@@ -31,7 +30,7 @@ function classifyError(error) {
 }
 
 // ─────────────────────────────────────────────
-// PUBLIC ROUTE — must be BEFORE authMiddleware
+// PUBLIC ROUTE
 // ─────────────────────────────────────────────
 router.get('/plans', (req, res) => {
     try {
@@ -56,20 +55,31 @@ router.get('/plans', (req, res) => {
     }
 });
 
-// ─────────────────────────────────────────────
-// All routes BELOW this line require auth
-// ─────────────────────────────────────────────
 router.use(authMiddleware);
 
 // ─────────────────────────────────────────────
-// GET /api/subscription/current — OWNER / ADMIN / MANAGER / ACCOUNTANT
-// (Plan info is needed app-wide; only cancel is restricted)
+// GET /api/subscription/current — ALL ROLES
 // ─────────────────────────────────────────────
 router.get('/current', async (req, res) => {
     try {
         const userId = req.user.id;
-        const businesses = await businessRepo.findByUserId(userId);
-        const business = businesses?.[0] || null;
+        
+        // 1. Try to find a business owned by this user
+        const ownedBusinesses = await businessRepo.findByUserId(userId);
+        let business = ownedBusinesses?.[0] || null;
+
+        // 2. If no owned business, check if they are a team member
+        if (!business) {
+            const memberQuery = await query(
+                'SELECT business_id FROM business_members WHERE user_id = $1 AND status = $2 LIMIT 1',
+                [userId, 'ACTIVE']
+            );
+            
+            if (memberQuery.rows.length > 0) {
+                const memberBusinessId = memberQuery.rows[0].business_id;
+                business = await businessRepo.findById(memberBusinessId);
+            }
+        }
 
         if (!business) {
             return res.json({
@@ -160,7 +170,7 @@ router.post('/cancel', requireRole('OWNER'), async (req, res) => {
         if (!business) {
             return res.status(400).json({
                 success: false,
-                message: 'Business not found',
+                message: 'Business not found or you are not the owner',
             });
         }
 
