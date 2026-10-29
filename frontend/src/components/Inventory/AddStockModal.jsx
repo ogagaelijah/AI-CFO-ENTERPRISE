@@ -1,6 +1,5 @@
 // frontend/src/components/Inventory/AddStockModal.jsx
-// v3.2.0-prod — Fixes Back button state reset bug. 
-//               Preserves form data when moving backward through steps.
+// v3.3.0-prod — Allows decimals in quantity and packs.
 
 import { useState } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
@@ -60,7 +59,7 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
   };
 
   const handleBack = () => {
-    setError(''); // Clear errors, but keep form data
+    setError('');
     setStep(step - 1);
   };
 
@@ -91,7 +90,6 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
       };
       await onSubmit(payload);
       
-      // Reset ONLY on successful submit
       setFormData({ itemName: '', baseUnit: 'Piece', quantity: '', costPrice: '', sellingPrice: '', packs: [] });
       setStep(1);
     } catch (err) {
@@ -102,7 +100,6 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
   };
 
   const handleClose = () => {
-    // Full reset on close/cancel
     setFormData({ itemName: '', baseUnit: 'Piece', quantity: '', costPrice: '', sellingPrice: '', packs: [] });
     setStep(1);
     setError('');
@@ -157,8 +154,9 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
                 value={formData.quantity}
                 onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                min="1"
-                placeholder="e.g. 100"
+                min="0"
+                step="any" // ★ ALLOWS DECIMALS
+                placeholder="e.g. 100.5"
               />
               <p className="text-xs text-gray-500 mt-1">How many individual pieces/rolls do you have in total?</p>
             </div>
@@ -176,7 +174,7 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
               onChange={(e) => setFormData({ ...formData, costPrice: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               min="0"
-              step="0.01"
+              step="any"
               placeholder="0.00"
             />
           </div>
@@ -207,7 +205,7 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
                 onChange={(e) => setFormData({ ...formData, sellingPrice: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                 min="0"
-                step="0.01"
+                step="any"
                 placeholder="0.00"
               />
               <p className="text-xs text-gray-500 mt-1">This is the price for 1 {formData.baseUnit} (e.g., 1 Roll).</p>
@@ -235,6 +233,7 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
                       value={pack.multiplier}
                       onChange={(e) => handlePackChange(index, 'multiplier', e.target.value)}
                       className="w-full px-2 py-1.5 text-sm border rounded dark:bg-slate-800 dark:border-slate-600 dark:text-white"
+                      step="any" // ★ ALLOWS DECIMALS
                     />
                   </div>
                   <div className="w-24">
@@ -244,6 +243,7 @@ const AddStockModal = ({ isOpen, onClose, onSubmit }) => {
                       value={pack.sellingPrice}
                       onChange={(e) => handlePackChange(index, 'sellingPrice', e.target.value)}
                       className="w-full px-2 py-1.5 text-sm border rounded dark:bg-slate-800 dark:border-slate-600 dark:text-white"
+                      step="any"
                     />
                   </div>
                   <button type="button" onClick={() => handleRemovePack(index)} className="p-1.5 text-red-500 hover:bg-red-50 rounded mt-0.5">

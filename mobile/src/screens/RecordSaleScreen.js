@@ -1,5 +1,5 @@
 // mobile/src/screens/RecordSaleScreen.js
-// v3.1.0-prod — Fixes bottom safe area in item selector modal.
+// v3.2.0-prod — Allows decimals in quantity inputs.
 
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Modal, FlatList, KeyboardAvoidingView, Platform } from 'react-native';
