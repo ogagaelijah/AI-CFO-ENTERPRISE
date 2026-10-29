@@ -1,5 +1,5 @@
 // frontend/src/components/Inventory/AdjustStockModal.jsx
-// v1.2.0-prod — Fixes empty input for quantity.
+// v1.3.0-prod — Fixes negative math bug and allows decimals.
 
 import { useState } from 'react';
 import { X } from 'lucide-react';
@@ -10,7 +10,7 @@ const AdjustStockModal = ({ isOpen, item, onClose, onSubmit }) => {
   const { canWrite, guardMessage } = useWriteGuard();
 
   const [adjustType, setAdjustType] = useState('add');
-  const [quantity, setQuantity] = useState(''); // ★ FIXED
+  const [quantity, setQuantity] = useState(''); 
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(1);
@@ -18,12 +18,13 @@ const AdjustStockModal = ({ isOpen, item, onClose, onSubmit }) => {
   if (!isOpen || !item) return null;
 
   const handleNext = () => {
-    if (!quantity || parseFloat(quantity) <= 0) {
+    const qty = parseFloat(quantity);
+    if (!quantity || isNaN(qty) || qty <= 0) {
       setError('Quantity must be greater than 0');
       return;
     }
-    if (adjustType === 'remove' && parseFloat(quantity) > item.quantity) {
-      setError(`Cannot remove ${quantity} units. Only ${item.quantity} units available.`);
+    if (adjustType === 'remove' && qty > item.quantity) {
+      setError(`Cannot remove ${qty} units. Only ${item.quantity} units available.`);
       return;
     }
     setError('');
@@ -41,12 +42,18 @@ const AdjustStockModal = ({ isOpen, item, onClose, onSubmit }) => {
     setLoading(true);
     setError('');
     try {
-      let adjustment = parseFloat(quantity);
-      if (adjustType === 'remove') adjustment = -parseFloat(quantity);
-      else if (adjustType === 'set') {
-        adjustment = parseFloat(quantity) - item.quantity;
+      const qty = Math.abs(parseFloat(quantity)); // Force positive input
+      let adjustment = 0;
+
+      if (adjustType === 'add') {
+        adjustment = qty;
+      } else if (adjustType === 'remove') {
+        adjustment = -qty;
+      } else if (adjustType === 'set') {
+        adjustment = qty - Number(item.quantity || 0);
       }
-      await onSubmit(item.id, { adjustment, reason: `Manual adjustment: ${adjustType} ${quantity} units` });
+
+      await onSubmit(item.id, { adjustment, reason: `Manual adjustment: ${adjustType} ${qty} units` });
     } catch (err) {
       // Error handled in parent
     } finally {
@@ -63,9 +70,10 @@ const AdjustStockModal = ({ isOpen, item, onClose, onSubmit }) => {
   };
 
   const getNewQuantity = () => {
-    const qty = parseFloat(quantity) || 0;
-    if (adjustType === 'add') return (item.quantity || 0) + qty;
-    if (adjustType === 'remove') return (item.quantity || 0) - qty;
+    const qty = Math.abs(parseFloat(quantity)) || 0;
+    const current = Number(item.quantity) || 0;
+    if (adjustType === 'add') return current + qty;
+    if (adjustType === 'remove') return current - qty;
     return qty;
   };
 
@@ -120,7 +128,8 @@ const AdjustStockModal = ({ isOpen, item, onClose, onSubmit }) => {
                 value={quantity}
                 onChange={(e) => { setQuantity(e.target.value); setError(''); }}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                min="1"
+                min="0"
+                step="any"
                 placeholder="0"
               />
             </div>
@@ -165,7 +174,7 @@ const AdjustStockModal = ({ isOpen, item, onClose, onSubmit }) => {
             <div className="space-y-1 text-sm">
               <p><span className="font-medium text-gray-700 dark:text-gray-300">Item:</span> {item.item_name}</p>
               <p><span className="font-medium text-gray-700 dark:text-gray-300">Current Quantity:</span> {item.quantity || 0} units</p>
-              <p><span className="font-medium text-gray-700 dark:text-gray-300">Action:</span> {adjustType === 'add' ? 'Add' : adjustType === 'remove' ? 'Remove' : 'Set to'} {quantity} units</p>
+              <p><span className="font-medium text-gray-700 dark:text-gray-300">Action:</span> {adjustType === 'add' ? 'Add' : adjustType === 'remove' ? 'Remove' : 'Set to'} {Math.abs(parseFloat(quantity))} units</p>
               <p><span className="font-medium text-gray-700 dark:text-gray-300">New Quantity:</span> <span className="font-bold text-blue-600 dark:text-blue-400">{newQuantity} units</span></p>
             </div>
           </div>

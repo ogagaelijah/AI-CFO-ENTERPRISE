@@ -1,5 +1,5 @@
 // frontend/src/components/Inventory/EditItemModal.jsx
-// v3.2.0-prod — Allows decimals in pack multipliers.
+// v3.3.0-prod — Adds Item Name editing.
 
 import { useState, useEffect } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
@@ -11,6 +11,7 @@ const EditItemModal = ({ isOpen, item, onClose, onSubmit }) => {
   const { canWrite, guardMessage } = useWriteGuard();
 
   const [formData, setFormData] = useState({
+    itemName: '',
     costPrice: 0,
     sellingPrice: 0,
     reorderLevel: 5,
@@ -23,6 +24,7 @@ const EditItemModal = ({ isOpen, item, onClose, onSubmit }) => {
   useEffect(() => {
     if (item) {
       setFormData({
+        itemName: item.item_name || '',
         costPrice: item.cost_price || 0,
         sellingPrice: item.selling_price || 0,
         reorderLevel: item.reorder_level || 5,
@@ -60,10 +62,15 @@ const EditItemModal = ({ isOpen, item, onClose, onSubmit }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!canWrite) return;
+    if (!formData.itemName.trim()) {
+      setError('Item name is required');
+      return;
+    }
     setLoading(true);
     setError('');
     try {
       const payload = {
+        itemName: formData.itemName.trim(),
         costPrice: parseFloat(formData.costPrice) || 0,
         sellingPrice: parseFloat(formData.sellingPrice) || 0,
         reorderLevel: parseFloat(formData.reorderLevel) || 0,
@@ -96,7 +103,7 @@ const EditItemModal = ({ isOpen, item, onClose, onSubmit }) => {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between z-10">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Edit Item: {item.item_name}</h2>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Edit Item</h2>
           <button onClick={handleClose} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition">
             <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
           </button>
@@ -110,6 +117,13 @@ const EditItemModal = ({ isOpen, item, onClose, onSubmit }) => {
               {error}
             </div>
           )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Item Name
+            </label>
+            <input type="text" name="itemName" value={formData.itemName} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white" required />
+          </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -161,7 +175,7 @@ const EditItemModal = ({ isOpen, item, onClose, onSubmit }) => {
                     value={pack.multiplier || ''}
                     onChange={(e) => handlePackChange(index, 'multiplier', e.target.value)}
                     className="w-full px-2 py-1.5 text-sm border rounded dark:bg-slate-800 dark:border-slate-600 dark:text-white"
-                    step="any" // ★ ALLOWS DECIMALS
+                    step="any"
                   />
                 </div>
                 <div className="w-24">
