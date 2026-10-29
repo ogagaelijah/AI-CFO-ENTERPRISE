@@ -1,6 +1,5 @@
 // frontend/src/pages/Inventory.jsx
-// v1.2.0-prod — Uses isInitialLoading so search doesn't unmount input.
-// v1.1.0-prod — Uses usePaginatedApi hook + Pagination. Server-side search.
+// v1.3.0-prod — Fixes page size selector (25, 50, etc.) and preserves logic.
 
 import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -70,6 +69,8 @@ const Inventory = () => {
     isInitialLoading,
     error: loadError,
     goToPage,
+    setLimit,           // ★ NEW: Extract setLimit
+    currentLimit,       // ★ NEW: Extract currentLimit
     refresh,
   } = usePaginatedApi('/inventory', {
     itemKey: 'items',
@@ -273,7 +274,13 @@ const Inventory = () => {
           }}
           onDelete={openDeleteModal}
         />
-        <Pagination pagination={pagination} onPageChange={goToPage} />
+        {/* ★ FIXED: Pass currentLimit and setLimit to Pagination */}
+        <Pagination 
+          pagination={pagination} 
+          onPageChange={goToPage} 
+          onLimitChange={setLimit}
+          currentLimit={currentLimit}
+        />
       </div>
 
       <AddStockModal

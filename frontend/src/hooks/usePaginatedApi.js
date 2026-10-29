@@ -1,5 +1,6 @@
 // frontend/src/hooks/usePaginatedApi.js
-// v1.3.0-prod — Adds dynamic limit support (10, 25, 50, etc.) via URL params.
+// v1.4.0-prod — Fixes browser history pollution. Uses replace:true so
+//               pagination doesn't add new back-button entries.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -55,7 +56,7 @@ export default function usePaginatedApi(url, options = {}) {
   const {
     itemKey = 'items',
     params = {},
-    initialLimit = 10, // ★ Default 10 to match mobile
+    initialLimit = 10,
     enabled = true,
     resetPageOnParamsChange = true,
   } = options;
@@ -72,7 +73,6 @@ export default function usePaginatedApi(url, options = {}) {
   const paramsKey = JSON.stringify(params || {});
   const prevParamsKeyRef = useRef(paramsKey);
 
-  // Read current page and limit from URL
   const urlPage = readIntParam(searchParams, 'page', 1);
   const urlLimit = readIntParam(searchParams, 'limit', initialLimit);
 
@@ -180,13 +180,12 @@ export default function usePaginatedApi(url, options = {}) {
           else sp.set('page', String(safe));
           return sp;
         },
-        { replace: false }
+        { replace: true } // ★ FIXED: No new history entry
       );
     },
     [setSearchParams]
   );
 
-  // ★ NEW: Change limit and reset to page 1
   const setLimit = useCallback(
     (newLimit) => {
       setSearchParams(
@@ -194,10 +193,10 @@ export default function usePaginatedApi(url, options = {}) {
           const sp = new URLSearchParams(prev);
           if (newLimit === initialLimit) sp.delete('limit');
           else sp.set('limit', String(newLimit));
-          sp.delete('page'); // Reset to page 1
+          sp.delete('page');
           return sp;
         },
-        { replace: false }
+        { replace: true } // ★ FIXED: No new history entry
       );
     },
     [setSearchParams, initialLimit]
@@ -218,8 +217,8 @@ export default function usePaginatedApi(url, options = {}) {
     isInitialLoading: isLoading && !hasLoadedOnce,
     error,
     goToPage,
-    setLimit, // ★ NEW
-    currentLimit: urlLimit, // ★ NEW
+    setLimit,
+    currentLimit: urlLimit,
     refresh,
   };
 }
