@@ -1,5 +1,6 @@
 // src/infrastructure/database/sqlite/repositories/InventoryRepository.js
-// v2.5.0-prod — getSummary now returns lowStockItems array (Hotfix 2).
+// v2.6.0-prod — Forces Number() on all update fields to prevent string concatenation bugs.
+//               getSummary returns lowStockItems array.
 
 const BaseRepository = require('./BaseRepository');
 
@@ -20,11 +21,11 @@ class InventoryRepository extends BaseRepository {
                 inventoryData.userId ?? inventoryData.user_id ?? null,
                 inventoryData.businessId ?? inventoryData.business_id ?? null,
                 String(inventoryData.item_name || inventoryData.itemName || '').trim().replace(/\b\w/g, c => c.toUpperCase()),
-                inventoryData.quantity || 0,
-                inventoryData.cost_price || inventoryData.costPrice || 0,
-                inventoryData.selling_price || inventoryData.sellingPrice || 0,
-                inventoryData.last_purchase_cost || inventoryData.lastPurchaseCost || 0,
-                inventoryData.reorder_level || inventoryData.reorderLevel || 5,
+                Number(inventoryData.quantity) || 0,
+                Number(inventoryData.cost_price || inventoryData.costPrice) || 0,
+                Number(inventoryData.selling_price || inventoryData.sellingPrice) || 0,
+                Number(inventoryData.last_purchase_cost || inventoryData.lastPurchaseCost) || 0,
+                Number(inventoryData.reorder_level || inventoryData.reorderLevel) || 5,
                 inventoryData.base_unit || inventoryData.baseUnit || 'Piece',
             ]
         );
@@ -125,23 +126,23 @@ class InventoryRepository extends BaseRepository {
         }
         if (data.quantity !== undefined) {
             fields.push(`quantity = $${i++}`);
-            values.push(data.quantity);
+            values.push(Number(data.quantity)); // ★ Force numeric
         }
         if (data.cost_price !== undefined || data.costPrice !== undefined) {
             fields.push(`cost_price = $${i++}`);
-            values.push(data.cost_price ?? data.costPrice);
+            values.push(Number(data.cost_price ?? data.costPrice) || 0); // ★ Force numeric
         }
         if (data.selling_price !== undefined || data.sellingPrice !== undefined) {
             fields.push(`selling_price = $${i++}`);
-            values.push(data.selling_price ?? data.sellingPrice);
+            values.push(Number(data.selling_price ?? data.sellingPrice) || 0); // ★ Force numeric
         }
         if (data.last_purchase_cost !== undefined || data.lastPurchaseCost !== undefined) {
             fields.push(`last_purchase_cost = $${i++}`);
-            values.push(data.last_purchase_cost ?? data.lastPurchaseCost);
+            values.push(Number(data.last_purchase_cost ?? data.lastPurchaseCost) || 0); // ★ Force numeric
         }
         if (data.reorder_level !== undefined || data.reorderLevel !== undefined) {
             fields.push(`reorder_level = $${i++}`);
-            values.push(data.reorder_level ?? data.reorderLevel);
+            values.push(Number(data.reorder_level ?? data.reorderLevel) || 5); // ★ Force numeric
         }
         if (data.businessId !== undefined || data.business_id !== undefined) {
             fields.push(`business_id = $${i++}`);
@@ -180,17 +181,17 @@ class InventoryRepository extends BaseRepository {
         const item = await this.findById(inventoryId);
         if (!item) throw new Error('Inventory item not found');
 
-        const totalCurrentValue = (item.quantity || 0) * (Number(item.cost_price) || 0);
-        const totalNewValue = quantity * unitCost;
-        const totalQuantity = (item.quantity || 0) + quantity;
+        const totalCurrentValue = (Number(item.quantity) || 0) * (Number(item.cost_price) || 0);
+        const totalNewValue = Number(quantity) * Number(unitCost);
+        const totalQuantity = (Number(item.quantity) || 0) + Number(quantity);
         const newCostPrice = totalQuantity > 0
             ? (totalCurrentValue + totalNewValue) / totalQuantity
-            : unitCost;
+            : Number(unitCost);
 
         return this.update(inventoryId, {
             quantity: totalQuantity,
             cost_price: newCostPrice,
-            last_purchase_cost: unitCost,
+            last_purchase_cost: Number(unitCost),
         });
     }
 
@@ -198,20 +199,20 @@ class InventoryRepository extends BaseRepository {
         const item = await this.findById(inventoryId);
         if (!item) throw new Error('Inventory item not found');
         return this.update(inventoryId, {
-            quantity: (item.quantity || 0) + quantity,
+            quantity: (Number(item.quantity) || 0) + Number(quantity),
         });
     }
 
     async reduceStock(inventoryId, quantity) {
         const item = await this.findById(inventoryId);
         if (!item) throw new Error('Inventory item not found');
-        if ((item.quantity || 0) < quantity) {
+        if ((Number(item.quantity) || 0) < Number(quantity)) {
             throw new Error(
                 `Insufficient stock. Available: ${item.quantity}, Requested: ${quantity}`
             );
         }
         return this.update(inventoryId, {
-            quantity: (item.quantity || 0) - quantity,
+            quantity: (Number(item.quantity) || 0) - Number(quantity),
         });
     }
 
@@ -229,7 +230,6 @@ class InventoryRepository extends BaseRepository {
             [businessId]
         );
 
-        // ★ NEW: fetch the actual low-stock items so the mobile dashboard can list names
         const lowStockResult = await this._query(
             `SELECT id, item_name, quantity, COALESCE(reorder_level, 5) as reorder_level, base_unit
              FROM inventory
@@ -242,7 +242,7 @@ class InventoryRepository extends BaseRepository {
         const r = result.rows[0] || {};
         return {
             total_items: r.total_items || 0,
-            total_quantity: r.total_quantity || 0,
+            total_quantity: Number(r.total_quantity) || 0,
             total_cost_value: Number(r.total_cost_value) || 0,
             total_selling_value: Number(r.total_selling_value) || 0,
             total_profit: Number(r.total_profit) || 0,

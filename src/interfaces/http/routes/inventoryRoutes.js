@@ -1,7 +1,6 @@
 // src/interfaces/http/routes/inventoryRoutes.js
-// v1.7.0-prod — GET / now attaches `packs` to each item so the sale modal
-//               can render wholesale buttons (Carton, Half, Quarter).
-//               All other logic (pagination, filters, movements) unchanged.
+// v1.8.0-prod — Fixes PATCH /stock string concatenation bug.
+//               Allows decimals on all adjustments.
 
 const express = require('express');
 const router = express.Router();
@@ -41,13 +40,11 @@ async function writeMovementSafe(payload) {
     }
 }
 
-// ★ NEW: Attach packs to a list of inventory items with a single query
 async function attachPacks(items) {
     if (!Array.isArray(items) || items.length === 0) return items;
     const ids = items.map(i => i.id).filter(Boolean);
     if (ids.length === 0) return items;
 
-    // Placeholder list: $1, $2, ... for the IN clause
     const placeholders = ids.map((_, i) => `$${i + 1}`).join(',');
     const packsResult = await query(
         `SELECT * FROM inventory_packs WHERE inventory_id IN (${placeholders})`,
@@ -73,9 +70,6 @@ async function attachPacks(items) {
     }));
 }
 
-// =============================================
-// GET /api/inventory?page=1&limit=50&search=gala
-// =============================================
 router.get('/', async (req, res) => {
     try {
         const businessId = req.user.businessId;
@@ -92,7 +86,7 @@ router.get('/', async (req, res) => {
             const all = await inventoryRepo.findLowStock(businessId);
             const total = all.length;
             const sliced = all.slice(offset, offset + limit);
-            const items = await attachPacks(sliced); // ★ Attach packs
+            const items = await attachPacks(sliced);
             const summary = await inventoryRepo.getSummary(businessId);
 
             return res.json({
@@ -111,7 +105,7 @@ router.get('/', async (req, res) => {
             inventoryRepo.getSummary(businessId),
         ]);
 
-        const items = await attachPacks(rawItems || []); // ★ Attach packs
+        const items = await attachPacks(rawItems || []);
 
         res.json({
             success: true,
@@ -135,9 +129,6 @@ router.get('/', async (req, res) => {
     }
 });
 
-// =============================================
-// GET /api/inventory/summary
-// =============================================
 router.get('/summary', async (req, res) => {
     try {
         const businessId = req.user.businessId;
@@ -154,9 +145,6 @@ router.get('/summary', async (req, res) => {
     }
 });
 
-// =============================================
-// GET /api/inventory/low-stock
-// =============================================
 router.get('/low-stock', async (req, res) => {
     try {
         const businessId = req.user.businessId;
@@ -166,7 +154,7 @@ router.get('/low-stock', async (req, res) => {
 
         const threshold = parseInt(req.query.threshold) || 5;
         const rawItems = await inventoryRepo.findLowStock(businessId, threshold);
-        const items = await attachPacks(rawItems); // ★ Attach packs
+        const items = await attachPacks(rawItems);
 
         res.json({
             success: true,
@@ -179,9 +167,6 @@ router.get('/low-stock', async (req, res) => {
     }
 });
 
-// =============================================
-// GET /api/inventory/:id
-// =============================================
 router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
@@ -208,9 +193,6 @@ router.get('/:id', async (req, res) => {
     }
 });
 
-// =============================================
-// POST /api/inventory — OWNER / ADMIN / MANAGER
-// =============================================
 router.post('/', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const userId = req.user.id;
@@ -298,9 +280,6 @@ router.post('/', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, 
     }
 });
 
-// =============================================
-// PUT /api/inventory/:id — OWNER / ADMIN / MANAGER
-// =============================================
 router.put('/:id', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
@@ -351,17 +330,20 @@ router.put('/:id', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req
 });
 
 // =============================================
-// PATCH /api/inventory/:id/stock
+// PATCH /api/inventory/:id/stock — FIXED
 // =============================================
 router.patch('/:id/stock', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
         const businessId = req.user.businessId;
-        const { adjustment, reason } = req.body;
+        
+        // ★ THE FIX: Force numbers and reject strings
+        const adjustment = Number(req.body?.adjustment);
+        const reason = req.body?.reason;
 
-        if (adjustment === undefined || adjustment === null) {
-            return res.status(400).json({ success: false, message: 'Adjustment amount is required' });
+        if (!Number.isFinite(adjustment)) {
+            return res.status(400).json({ success: false, message: 'Adjustment must be a valid number' });
         }
         if (adjustment === 0) {
             return res.status(400).json({ success: false, message: 'Adjustment cannot be zero' });
@@ -375,7 +357,8 @@ router.patch('/:id/stock', requireRole(...WRITE_ROLES), invalidateAfterWrite, as
             return res.status(403).json({ success: false, message: 'Access denied' });
         }
 
-        const currentQuantity = existing.quantity || 0;
+        // ★ THE FIX: Force numbers on both sides so "40.5" + "-3" doesn't become "40.5-3"
+        const currentQuantity = Number(existing.quantity) || 0;
         const newQuantity = currentQuantity + adjustment;
 
         if (newQuantity < 0) {
@@ -385,9 +368,11 @@ router.patch('/:id/stock', requireRole(...WRITE_ROLES), invalidateAfterWrite, as
             });
         }
 
-        const updated = await inventoryRepo.update(id, { quantity: newQuantity });
+        // Round to 3 decimals to match DB precision
+        const roundedQuantity = Math.round(newQuantity * 1000) / 1000;
+        const updated = await inventoryRepo.update(id, { quantity: roundedQuantity });
 
-        const adj = Number(adjustment);
+        const adj = adjustment;
         const absQty = Math.abs(adj);
         const cost = Number(existing.cost_price) || 0;
 
@@ -400,7 +385,7 @@ router.patch('/:id/stock', requireRole(...WRITE_ROLES), invalidateAfterWrite, as
             unitCost: cost,
             totalCost: absQty * cost,
             quantityBefore: currentQuantity,
-            quantityAfter: newQuantity,
+            quantityAfter: roundedQuantity,
             costPriceBefore: cost,
             costPriceAfter: cost,
             referenceType: 'ADJUSTMENT',
@@ -413,11 +398,11 @@ router.patch('/:id/stock', requireRole(...WRITE_ROLES), invalidateAfterWrite, as
 
         res.json({
             success: true,
-            message: `Stock adjusted by ${adjustment} (${adjustment > 0 ? 'added' : 'removed'})`,
+            message: `Stock adjusted by ${adj} (${adj > 0 ? 'added' : 'removed'})`,
             data: {
                 previousQuantity: currentQuantity,
-                newQuantity,
-                adjustment,
+                newQuantity: roundedQuantity,
+                adjustment: adj,
                 item: updated
             }
         });
@@ -428,9 +413,6 @@ router.patch('/:id/stock', requireRole(...WRITE_ROLES), invalidateAfterWrite, as
     }
 });
 
-// =============================================
-// DELETE /api/inventory/:id
-// =============================================
 router.delete('/:id', requireRole(...WRITE_ROLES), invalidateAfterWrite, async (req, res) => {
     try {
         const { id } = req.params;

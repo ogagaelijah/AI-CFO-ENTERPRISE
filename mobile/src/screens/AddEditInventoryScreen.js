@@ -1,5 +1,5 @@
 // mobile/src/screens/AddEditInventoryScreen.js
-// v2.2.0-prod — Allows decimals in pack multipliers and quantities.
+// v2.3.0-prod — Allows Item Name editing and decimals.
 
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Platform, KeyboardAvoidingView } from 'react-native';
@@ -73,7 +73,7 @@ export const AddEditInventoryScreen = ({ navigation, route }) => {
           itemName: itemName.trim(),
           costPrice: parseFloat(costPrice),
           sellingPrice: parseFloat(sellingPrice),
-          reorderLevel: parseInt(reorderLevel),
+          reorderLevel: parseFloat(reorderLevel),
           baseUnit: baseUnit.trim(),
           packs: validPacks
         });
@@ -85,7 +85,7 @@ export const AddEditInventoryScreen = ({ navigation, route }) => {
           quantity: parseFloat(quantity),
           costPrice: parseFloat(costPrice),
           sellingPrice: parseFloat(sellingPrice),
-          reorderLevel: parseInt(reorderLevel),
+          reorderLevel: parseFloat(reorderLevel),
           baseUnit: baseUnit.trim(),
           packs: validPacks
         });
