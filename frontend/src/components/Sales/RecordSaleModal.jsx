@@ -1,6 +1,5 @@
 // frontend/src/components/Sales/RecordSaleModal.jsx
-// v3.1.0-prod — Fixes pack selection logic (4 arguments), ensures full inventory fetch,
-// and renders clickable Pack buttons.
+// v3.2.0-prod — Allows decimals in quantity inputs (only 3 lines changed).
 
 import { useState, useEffect } from 'react';
 import { X, Trash2, AlertTriangle } from 'lucide-react';
@@ -400,7 +399,8 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
                     value={item.quantity}
                     onChange={(e) => updateItem(index, 'quantity', e.target.value)}
                     className="col-span-2 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-center mt-0.5"
-                    min="1"
+                    min="0"
+                    step="any"
                     placeholder="0"
                   />
                   <input
@@ -409,7 +409,7 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
                     onChange={(e) => updateItem(index, 'costPrice', e.target.value)}
                     className={`col-span-2 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-center mt-0.5 ${(!formData.skipInventory && inventoryItem) ? 'bg-gray-100 dark:bg-slate-800' : 'bg-white dark:bg-slate-700'}`}
                     min="0"
-                    step="0.01"
+                    step="any"
                     placeholder="0.00"
                     readOnly={!formData.skipInventory && !!inventoryItem}
                   />
@@ -419,7 +419,7 @@ const RecordSaleModal = ({ isOpen, onClose, user, setConfirmData, setError }) =>
                     onChange={(e) => updateItem(index, 'sellingPrice', e.target.value)}
                     className="col-span-2 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-center mt-0.5 font-medium"
                     min="0"
-                    step="0.01"
+                    step="any"
                     placeholder="0.00"
                   />
                   <div className="col-span-1 text-center text-sm font-bold text-blue-600 dark:text-blue-400 mt-2">

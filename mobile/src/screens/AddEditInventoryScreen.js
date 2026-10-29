@@ -1,5 +1,5 @@
 // mobile/src/screens/AddEditInventoryScreen.js
-// v2.1.0-prod — Fixes Save button hidden behind keyboard/off-screen bug.
+// v2.2.0-prod — Allows decimals in pack multipliers and quantities.
 
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Platform, KeyboardAvoidingView } from 'react-native';
@@ -134,7 +134,7 @@ export const AddEditInventoryScreen = ({ navigation, route }) => {
       <ScrollView 
         style={[styles.container, { backgroundColor: theme.background }]} 
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingBottom: 80 }} // ★ Ensures space for the Save button
+        contentContainerStyle={{ paddingBottom: 80 }}
       >
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()}>

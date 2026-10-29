@@ -1,6 +1,5 @@
 // frontend/src/components/Inventory/EditItemModal.jsx
-// v3.1.0-prod — Prominent "Add Pack" button (dashed full-width) so it's
-//               impossible to miss. Preserves all existing logic.
+// v3.2.0-prod — Allows decimals in pack multipliers.
 
 import { useState, useEffect } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
@@ -128,11 +127,11 @@ const EditItemModal = ({ isOpen, item, onClose, onSubmit }) => {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Cost Price / {formData.baseUnit}</label>
-              <input type="number" name="costPrice" value={formData.costPrice} onChange={handleChange} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:text-white dark:border-gray-600" min="0" step="0.01" />
+              <input type="number" name="costPrice" value={formData.costPrice} onChange={handleChange} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:text-white dark:border-gray-600" min="0" step="any" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Selling Price / {formData.baseUnit}</label>
-              <input type="number" name="sellingPrice" value={formData.sellingPrice} onChange={handleChange} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:text-white dark:border-gray-600" min="0" step="0.01" />
+              <input type="number" name="sellingPrice" value={formData.sellingPrice} onChange={handleChange} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:text-white dark:border-gray-600" min="0" step="any" />
             </div>
           </div>
 
@@ -162,6 +161,7 @@ const EditItemModal = ({ isOpen, item, onClose, onSubmit }) => {
                     value={pack.multiplier || ''}
                     onChange={(e) => handlePackChange(index, 'multiplier', e.target.value)}
                     className="w-full px-2 py-1.5 text-sm border rounded dark:bg-slate-800 dark:border-slate-600 dark:text-white"
+                    step="any" // ★ ALLOWS DECIMALS
                   />
                 </div>
                 <div className="w-24">
@@ -171,6 +171,7 @@ const EditItemModal = ({ isOpen, item, onClose, onSubmit }) => {
                     value={pack.sellingPrice || pack.selling_price || ''}
                     onChange={(e) => handlePackChange(index, 'sellingPrice', e.target.value)}
                     className="w-full px-2 py-1.5 text-sm border rounded dark:bg-slate-800 dark:border-slate-600 dark:text-white"
+                    step="any"
                   />
                 </div>
                 <button type="button" onClick={() => handleRemovePack(index)} className="p-1.5 text-red-500 hover:bg-red-50 rounded mt-0.5">
@@ -179,7 +180,6 @@ const EditItemModal = ({ isOpen, item, onClose, onSubmit }) => {
               </div>
             ))}
 
-            {/* ★ PROMINENT ADD PACK BUTTON */}
             <button
               type="button"
               onClick={handleAddPack}
@@ -191,7 +191,7 @@ const EditItemModal = ({ isOpen, item, onClose, onSubmit }) => {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Reorder Level</label>
-            <input type="number" name="reorderLevel" value={formData.reorderLevel} onChange={handleChange} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:text-white dark:border-gray-600" min="0" />
+            <input type="number" name="reorderLevel" value={formData.reorderLevel} onChange={handleChange} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:text-white dark:border-gray-600" min="0" step="any" />
           </div>
 
           {profit > 0 && (
