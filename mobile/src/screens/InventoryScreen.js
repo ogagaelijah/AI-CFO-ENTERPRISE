@@ -1,5 +1,5 @@
 // mobile/src/screens/InventoryScreen.js
-// v2.0.0-prod — Adds pack pills to item cards.
+// v2.1.0-prod — Fixes pagination totals (displays DB total) and Next/Prev buttons.
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, RefreshControl, FlatList, TextInput, TouchableOpacity } from 'react-native';
@@ -17,6 +17,7 @@ export const InventoryScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [summaryData, setSummaryData] = useState(null);
+  
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
@@ -27,11 +28,14 @@ export const InventoryScreen = ({ navigation }) => {
     setLoading(true);
     try {
       const res = await api.get(`/inventory?page=${pageNum}&limit=${currentLimit}`);
+      
+      // Extract items and pagination
       const fetchedItems = res.data?.data?.items || res.data?.data || res.data || [];
       const pagination = res.data?.data?.pagination;
 
       setInventory(Array.isArray(fetchedItems) ? fetchedItems : []);
       
+      // ★ FIX: Set total pages and total items correctly from backend
       if (pagination) {
         setTotalPages(pagination.totalPages || 1);
         setTotalItems(pagination.total || fetchedItems.length);
@@ -40,6 +44,7 @@ export const InventoryScreen = ({ navigation }) => {
         setTotalItems(fetchedItems.length);
       }
 
+      // Fetch dashboard summary for the stat cards
       try {
         const dashRes = await api.get(`/dashboard/summary?_t=${Date.now()}`);
         if (dashRes.data?.success && dashRes.data?.data?.kpis?.inventory) {
@@ -56,6 +61,7 @@ export const InventoryScreen = ({ navigation }) => {
     }
   };
 
+  // ★ FIX: Re-fetch when page or limit changes
   useEffect(() => { 
     const unsubscribe = navigation.addListener('focus', () => {
       fetchInventory(page, limit);
@@ -68,11 +74,20 @@ export const InventoryScreen = ({ navigation }) => {
   const handleLimitChange = (newLimit) => {
     if (newLimit === limit) return;
     setLimit(newLimit);
-    setPage(1);
+    setPage(1); // Reset to page 1
   };
 
-  const handleNextPage = () => { if (page < totalPages) setPage(prev => prev + 1); };
-  const handlePrevPage = () => { if (page > 1) setPage(prev => prev - 1); };
+  const handleNextPage = () => { 
+    if (page < totalPages) {
+      setPage(prev => prev + 1); 
+    }
+  };
+  
+  const handlePrevPage = () => { 
+    if (page > 1) {
+      setPage(prev => prev - 1); 
+    }
+  };
 
   const filteredInventory = useMemo(() => {
     if (!searchQuery.trim()) return inventory;
@@ -86,9 +101,11 @@ export const InventoryScreen = ({ navigation }) => {
         <Ionicons name="chevron-back" size={20} color={theme.primary} />
         <Text style={{ color: theme.primary, fontWeight: 'bold' }}>Prev</Text>
       </TouchableOpacity>
+      
       <Text style={{ fontSize: 13, color: theme.textMuted, fontWeight: '600' }}>
         Page {page} of {totalPages} ({totalItems} total)
       </Text>
+      
       <TouchableOpacity onPress={handleNextPage} disabled={page >= totalPages} style={{ flexDirection: 'row', alignItems: 'center', padding: 8, opacity: page >= totalPages ? 0.3 : 1 }}>
         <Text style={{ color: theme.primary, fontWeight: 'bold' }}>Next</Text>
         <Ionicons name="chevron-forward" size={20} color={theme.primary} />
@@ -100,14 +117,11 @@ export const InventoryScreen = ({ navigation }) => {
     return <View style={[styles.center, { backgroundColor: theme.background }]}><ActivityIndicator size="large" color={theme.primary} /></View>;
   }
 
-  const fallbackTotalValue = inventory.reduce((sum, item) => sum + (Number(item.quantity) * Number(item.selling_price)), 0);
-  const fallbackTotalQty = inventory.reduce((sum, item) => sum + Number(item.quantity), 0);
-  const fallbackTotalProfit = inventory.reduce((sum, item) => sum + (Number(item.quantity) * (Number(item.selling_price) - Number(item.cost_price))), 0);
-
+  // ★ FIX: Use the totalItems from pagination for the cards, not the current array length
   const displayTotalItems = summaryData?.total_items !== undefined ? summaryData.total_items : totalItems;
-  const displayTotalQty = summaryData?.total_quantity !== undefined ? summaryData.total_quantity : fallbackTotalQty;
-  const displayTotalValue = summaryData?.total !== undefined ? summaryData.total : fallbackTotalValue;
-  const displayProfit = summaryData?.total_profit !== undefined ? summaryData.total_profit : fallbackTotalProfit;
+  const displayTotalQty = summaryData?.total_quantity !== undefined ? summaryData.total_quantity : inventory.reduce((sum, item) => sum + Number(item.quantity), 0);
+  const displayTotalValue = summaryData?.total !== undefined ? summaryData.total : inventory.reduce((sum, item) => sum + (Number(item.quantity) * Number(item.selling_price)), 0);
+  const displayProfit = summaryData?.total_profit !== undefined ? summaryData.total_profit : inventory.reduce((sum, item) => sum + (Number(item.quantity) * (Number(item.selling_price) - Number(item.cost_price))), 0);
   const displayLowStockCount = summaryData?.lowStock !== undefined ? summaryData.lowStock : 0;
   const displayLowStockItems = summaryData?.lowStockItems || [];
 
@@ -243,7 +257,6 @@ export const InventoryScreen = ({ navigation }) => {
                   {item.quantity} {item.base_unit || 'Pieces'} @ ₦{Number(item.selling_price).toLocaleString()}
                 </Text>
                 
-                {/* ★ NEW: Pack price pills */}
                 {packs.length > 0 && (
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
                     {packs.slice(0, 3).map((p, idx) => (

@@ -1,6 +1,5 @@
 // mobile/src/utils/shareReceipt.js
-// v1.3.0-prod — Fixes WhatsApp text wrapping. Ensures prices stay on the same line.
-//              Makes "Thank you" bold.
+// v1.4.0-prod — Uses pack names (Carton, Half) instead of unit multipliers for customer receipts.
 
 import { Share, Alert } from 'react-native';
 
@@ -17,23 +16,23 @@ const buildItemLine = (item) => {
   const qty = Number(item.quantity) || 0;
   const sell = Number(item.sellingPrice ?? item.unitPrice ?? 0);
   const total = qty * sell;
-  const multiplier = Number(item.unitMultiplier) || 1;
   
-  // Format: Item Name (Qty x) ....... Price
-  let name = item.name;
-  if (multiplier > 1) {
-    name += ` (${item.soldUnit || `${multiplier} units`})`;
+  // Use the pack name provided by the app (e.g., "Carton", "Half Carton", "Roll")
+  let displayName = item.name;
+  if (item.soldUnit && item.soldUnit !== 'Piece') {
+    displayName = `${qty} ${item.soldUnit} of ${item.name}`;
+  } else {
+    displayName = `${qty} ${item.name}`;
   }
   
   // Truncate name if too long to keep alignment
-  if (name.length > 22) name = name.substring(0, 19) + '...';
+  if (displayName.length > 22) displayName = displayName.substring(0, 19) + '...';
   
-  // Align columns using spaces (adjusted widths for mobile)
-  const leftCol = `${name}`.padEnd(20, ' '); // Shorter width
-  const qtyCol = `${qty}x`.padStart(4, ' ');
+  // Align columns using spaces
+  const leftCol = `${displayName}`.padEnd(22, ' '); 
   const totalCol = formatMoney(total).padStart(11, ' ');
   
-  return `${leftCol}${qtyCol}${totalCol}`;
+  return `${leftCol}${totalCol}`;
 };
 
 export const buildReceiptText = (sale, options = {}) => {
