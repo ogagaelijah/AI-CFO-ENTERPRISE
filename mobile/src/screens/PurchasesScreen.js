@@ -1,4 +1,7 @@
-import React, { useState, useEffect } from 'react';
+// mobile/src/screens/PurchasesScreen.js
+// v2.0.0-prod — Removes misleading "Total Outstanding to Suppliers" card.
+
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../services/api';
@@ -8,36 +11,13 @@ import { useAuth } from '../context/AuthContext';
 export const PurchasesScreen = ({ navigation }) => {
   const { theme } = useTheme();
   const { isReadOnly } = useAuth();
-  const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [summary, setSummary] = useState({ total_amount: 0, total_outstanding: 0 });
 
   // Form State
   const [supplierName, setSupplierName] = useState('');
   const [paymentStatus, setPaymentStatus] = useState('PAID');
   const [amountPaid, setAmountPaid] = useState('');
   const [items, setItems] = useState([{ name: '', quantity: '', unitCost: '' }]);
-
-  const fetchPurchases = async () => {
-    try {
-      const res = await api.get('/purchases');
-      if (res.data?.success) {
-        setSummary(res.data.data.summary || { total_amount: 0, total_outstanding: 0 });
-      }
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!isReadOnly) {
-      fetchPurchases();
-    } else {
-      setLoading(false);
-    }
-  }, [isReadOnly]);
 
   const handleItemChange = (index, field, value) => {
     const newItems = [...items];
@@ -87,9 +67,6 @@ export const PurchasesScreen = ({ navigation }) => {
     }
   };
 
-  if (loading) return <View style={[styles.center, { backgroundColor: theme.background }]}><ActivityIndicator size="large" color={theme.primary} /></View>;
-
-  // ─── SUBSCRIPTION EXPIRED BLOCK ───
   if (isReadOnly) {
     return (
       <View style={[styles.center, { backgroundColor: theme.background, padding: 24 }]}>
@@ -130,11 +107,6 @@ export const PurchasesScreen = ({ navigation }) => {
       </View>
 
       <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled">
-        <View style={[styles.summaryCard, { backgroundColor: theme.warning }]}>
-          <Text style={{ color: 'rgba(0,0,0,0.6)', fontSize: 14, fontWeight: 'bold', marginBottom: 4 }}>Total Outstanding to Suppliers</Text>
-          <Text style={{ color: '#000', fontSize: 28, fontWeight: 'bold' }}>₦{Number(summary.total_outstanding || 0).toLocaleString()}</Text>
-        </View>
-
         <View style={[styles.card, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
           <Text style={[styles.label, { color: theme.textMuted }]}>Supplier Name *</Text>
           <TextInput style={[styles.input, { backgroundColor: theme.inputBg, color: theme.text, borderColor: theme.border }]} placeholder="e.g. Milo Distributor" placeholderTextColor={theme.textMuted} value={supplierName} onChangeText={setSupplierName} />
@@ -206,7 +178,6 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, marginTop: 20 },
   title: { fontSize: 20, fontWeight: 'bold' },
-  summaryCard: { padding: 20, borderRadius: 16, marginBottom: 20 },
   card: { padding: 20, borderRadius: 16, borderWidth: 1 },
   label: { fontSize: 13, fontWeight: '600', marginBottom: 8 },
   input: { padding: 14, borderRadius: 8, borderWidth: 1, marginBottom: 8 },
