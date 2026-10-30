@@ -1,5 +1,5 @@
 // mobile/src/utils/shareReceipt.js
-// v1.4.0-prod — Uses pack names (Carton, Half) instead of unit multipliers for customer receipts.
+// v1.4.1-prod — Fixes pack name rendering on shared receipts.
 
 import { Share, Alert } from 'react-native';
 
@@ -17,16 +17,17 @@ const buildItemLine = (item) => {
   const sell = Number(item.sellingPrice ?? item.unitPrice ?? 0);
   const total = qty * sell;
   
-  // Use the pack name provided by the app (e.g., "Carton", "Half Carton", "Roll")
   let displayName = item.name;
-  if (item.soldUnit && item.soldUnit !== 'Piece') {
+  
+  // If a pack name exists and isn't the default, show "0.5 Half of Milo"
+  if (item.soldUnit && item.soldUnit !== 'Piece' && item.soldUnit !== 'None') {
     displayName = `${qty} ${item.soldUnit} of ${item.name}`;
   } else {
     displayName = `${qty} ${item.name}`;
   }
   
   // Truncate name if too long to keep alignment
-  if (displayName.length > 22) displayName = displayName.substring(0, 19) + '...';
+  if (displayName.length > 20) displayName = displayName.substring(0, 17) + '...';
   
   // Align columns using spaces
   const leftCol = `${displayName}`.padEnd(22, ' '); 

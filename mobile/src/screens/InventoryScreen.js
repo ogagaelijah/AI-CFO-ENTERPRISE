@@ -1,5 +1,5 @@
 // mobile/src/screens/InventoryScreen.js
-// v2.1.0-prod — Fixes pagination totals (displays DB total) and Next/Prev buttons.
+// v2.2.0-prod — Fixes totals calculation (uses backend summary), instant pagination, and limit changes.
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, RefreshControl, FlatList, TextInput, TouchableOpacity } from 'react-native';
@@ -29,13 +29,11 @@ export const InventoryScreen = ({ navigation }) => {
     try {
       const res = await api.get(`/inventory?page=${pageNum}&limit=${currentLimit}`);
       
-      // Extract items and pagination
       const fetchedItems = res.data?.data?.items || res.data?.data || res.data || [];
       const pagination = res.data?.data?.pagination;
 
       setInventory(Array.isArray(fetchedItems) ? fetchedItems : []);
       
-      // ★ FIX: Set total pages and total items correctly from backend
       if (pagination) {
         setTotalPages(pagination.totalPages || 1);
         setTotalItems(pagination.total || fetchedItems.length);
@@ -44,7 +42,7 @@ export const InventoryScreen = ({ navigation }) => {
         setTotalItems(fetchedItems.length);
       }
 
-      // Fetch dashboard summary for the stat cards
+      // ★ FIX: Fetch the summary stats from the backend
       try {
         const dashRes = await api.get(`/dashboard/summary?_t=${Date.now()}`);
         if (dashRes.data?.success && dashRes.data?.data?.kpis?.inventory) {
@@ -61,8 +59,10 @@ export const InventoryScreen = ({ navigation }) => {
     }
   };
 
-  // ★ FIX: Re-fetch when page or limit changes
+  // ★ FIX: Fetch instantly when page, limit, or focus changes
   useEffect(() => { 
+    fetchInventory(page, limit);
+    
     const unsubscribe = navigation.addListener('focus', () => {
       fetchInventory(page, limit);
     });
@@ -74,7 +74,7 @@ export const InventoryScreen = ({ navigation }) => {
   const handleLimitChange = (newLimit) => {
     if (newLimit === limit) return;
     setLimit(newLimit);
-    setPage(1); // Reset to page 1
+    setPage(1); 
   };
 
   const handleNextPage = () => { 
@@ -117,7 +117,7 @@ export const InventoryScreen = ({ navigation }) => {
     return <View style={[styles.center, { backgroundColor: theme.background }]}><ActivityIndicator size="large" color={theme.primary} /></View>;
   }
 
-  // ★ FIX: Use the totalItems from pagination for the cards, not the current array length
+  // ★ FIX: Use the totalItems from backend summary, NOT the local inventory array length
   const displayTotalItems = summaryData?.total_items !== undefined ? summaryData.total_items : totalItems;
   const displayTotalQty = summaryData?.total_quantity !== undefined ? summaryData.total_quantity : inventory.reduce((sum, item) => sum + Number(item.quantity), 0);
   const displayTotalValue = summaryData?.total !== undefined ? summaryData.total : inventory.reduce((sum, item) => sum + (Number(item.quantity) * Number(item.selling_price)), 0);
