@@ -1,7 +1,11 @@
 // mobile/src/screens/InventoryScreen.js
-// v2.2.0-prod — Fixes totals calculation (uses backend summary), instant pagination, and limit changes.
+// v2.5.0-prod — Summary cards + low-stock banner now come from ONE source:
+// GET /inventory/summary (live SQL aggregate over the whole business, uncached).
+// Dashboard call removed. Pagination read from the real response shape
+// (res.data.pagination), working Next/Prev with page clamping, server-side search,
+// per-view cache so revisiting a page/size is instant, stale-response protection.
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, RefreshControl, FlatList, TextInput, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../services/api';
@@ -9,103 +13,245 @@ import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 
 const PAGE_SIZES = [10, 25, 50, 75, 100];
+const SEARCH_DEBOUNCE_MS = 400;
+const CACHE_MAX_ENTRIES = 40;
+
+// ───────────── Helpers ─────────────
+const pickNum = (obj, keys) => {
+  for (const k of keys) {
+    if (obj && obj[k] !== undefined && obj[k] !== null && obj[k] !== '' && !isNaN(Number(obj[k]))) return Number(obj[k]);
+  }
+  return undefined;
+};
+
+const fmt = (n) => (n === undefined || n === null ? '…' : Number(n).toLocaleString());
+
+// Backend shape: { success, data: [items], summary, pagination: { page, limit, total, totalPages, hasNext, hasPrev } }
+const extractList = (resData) => {
+  const raw = resData?.data;
+  if (Array.isArray(raw)) return raw;
+  if (Array.isArray(raw?.items)) return raw.items;
+  if (Array.isArray(resData)) return resData;
+  return [];
+};
+
+const readPagination = (resData, requestedLimit, listLength) => {
+  const p = resData?.pagination || resData?.data?.pagination || null;
+  const total = pickNum(p, ['total', 'totalItems', 'total_items', 'count']);
+  const effectiveLimit = pickNum(p, ['limit', 'perPage', 'per_page', 'pageSize']) || requestedLimit || 10;
+  let totalPages = pickNum(p, ['totalPages', 'total_pages', 'pages', 'pageCount']);
+  if (totalPages === undefined && total !== undefined) totalPages = Math.ceil(total / effectiveLimit);
+  return {
+    total: total !== undefined ? total : listLength,
+    totalPages: Math.max(1, totalPages || 1),
+  };
+};
+
+// Normalises the /inventory/summary payload
+const normalizeSummary = (s) => {
+  if (!s) return null;
+  return {
+    items: pickNum(s, ['total_items', 'totalItems', 'count']),
+    qty: pickNum(s, ['total_quantity', 'totalQuantity', 'total_qty']),
+    value: pickNum(s, ['total_selling_value', 'totalSellingValue', 'total_value', 'totalValue']),
+    profit: pickNum(s, ['total_profit', 'potential_profit', 'totalProfit']),
+  };
+};
+
+const isComplete = (n) => !!n && [n.items, n.qty, n.value, n.profit].every(v => v !== undefined);
 
 export const InventoryScreen = ({ navigation }) => {
   const { theme } = useTheme();
   const { isReadOnly } = useAuth();
   const [inventory, setInventory] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [summaryData, setSummaryData] = useState(null);
-  
+
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
 
-  const fetchInventory = async (pageNum = 1, currentLimit = limit) => {
-    setLoading(true);
+  // Refs so the focus listener always sees the latest values
+  const pageRef = useRef(1);
+  const limitRef = useRef(10);
+  const searchRef = useRef('');
+  const reqIdRef = useRef(0);
+  const cacheRef = useRef(new Map());
+  pageRef.current = page;
+  limitRef.current = limit;
+  searchRef.current = debouncedSearch;
+
+  // ───────────── Global summary (never depends on page / limit / search) ─────────────
+  const fetchSummary = async () => {
+    let invSummary = null;
     try {
-      const res = await api.get(`/inventory?page=${pageNum}&limit=${currentLimit}`);
-      
-      const fetchedItems = res.data?.data?.items || res.data?.data || res.data || [];
-      const pagination = res.data?.data?.pagination;
+      const r = await api.get(`/inventory/summary?_t=${Date.now()}`);
+      invSummary = r.data?.data || null;
+    } catch (e) {
+      console.log('Could not load /inventory/summary', e.message);
+    }
 
-      setInventory(Array.isArray(fetchedItems) ? fetchedItems : []);
-      
-      if (pagination) {
-        setTotalPages(pagination.totalPages || 1);
-        setTotalItems(pagination.total || fetchedItems.length);
-      } else {
-        setTotalPages(1);
-        setTotalItems(fetchedItems.length);
-      }
+    const fromInventory = normalizeSummary(invSummary);
+    if (isComplete(fromInventory)) {
+      setSummaryData({
+        ...fromInventory,
+        lowStock: pickNum(invSummary, ['low_stock_count', 'lowStockCount']) || 0,
+        lowStockItems: Array.isArray(invSummary.lowStockItems) ? invSummary.lowStockItems : [],
+      });
+      return;
+    }
 
-      // ★ FIX: Fetch the summary stats from the backend
-      try {
-        const dashRes = await api.get(`/dashboard/summary?_t=${Date.now()}`);
-        if (dashRes.data?.success && dashRes.data?.data?.kpis?.inventory) {
-          setSummaryData(dashRes.data.data.kpis.inventory);
-        }
-      } catch (dashErr) {
-        console.log("Could not load inventory summary stats", dashErr.message);
-      }
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+    console.log('Inventory summary incomplete, keys received:', invSummary ? Object.keys(invSummary) : null);
+
+    // Backup: sum across ALL pages (never just the current page, never filtered by search)
+    try {
+      let p = 1, tp = 1, items = 0, qty = 0, value = 0, profit = 0;
+      const low = [];
+      do {
+        const r = await api.get(`/inventory?page=${p}&limit=100`);
+        const arr = extractList(r.data);
+        arr.forEach(i => {
+          const q = Number(i.quantity) || 0;
+          const sp = Number(i.selling_price) || 0;
+          const cp = Number(i.cost_price) || 0;
+          const rl = i.reorder_level !== undefined && i.reorder_level !== null ? Number(i.reorder_level) : 5;
+          items += 1;
+          qty += q;
+          value += q * sp;
+          profit += q * (sp - cp);
+          if (q <= rl) low.push({ id: i.id, item_name: i.item_name, quantity: q });
+        });
+        tp = readPagination(r.data, 100, arr.length).totalPages;
+        p++;
+      } while (p <= tp && p <= 50);
+
+      low.sort((a, b) => a.quantity - b.quantity);
+      setSummaryData({ items, qty, value, profit, lowStock: low.length, lowStockItems: low.slice(0, 20) });
+    } catch (e) {
+      console.log('Fallback summary failed', e.message);
     }
   };
 
-  // ★ FIX: Fetch instantly when page, limit, or focus changes
-  useEffect(() => { 
-    fetchInventory(page, limit);
-    
+  // ───────────── Paginated + searched list ─────────────
+  const applyList = (entry) => {
+    setInventory(entry.list);
+    setTotalPages(entry.totalPages);
+    setTotalItems(entry.total);
+  };
+
+  const fetchInventory = async (pageNum = 1, currentLimit = 10, query = '') => {
+    const reqId = ++reqIdRef.current;
+    setLoading(true);
+    try {
+      let url = `/inventory?page=${pageNum}&limit=${currentLimit}`;
+      if (query) url += `&search=${encodeURIComponent(query)}`;
+
+      const res = await api.get(url);
+      if (reqId !== reqIdRef.current) return; // a newer request replaced this one
+
+      const list = extractList(res.data);
+      const pg = readPagination(res.data, currentLimit, list.length);
+      const entry = { list, total: pg.total, totalPages: pg.totalPages };
+
+      // Remember this view so coming back to it is instant
+      const cache = cacheRef.current;
+      if (cache.size >= CACHE_MAX_ENTRIES) cache.clear();
+      cache.set(`${pageNum}|${currentLimit}|${query}`, entry);
+
+      applyList(entry);
+
+      // If we are beyond the last page (e.g. items were deleted), jump back to the last real page
+      if (pageNum > pg.totalPages) {
+        setPage(pg.totalPages);
+      }
+    } catch (error) {
+      if (reqId !== reqIdRef.current) return;
+      console.error(error);
+    } finally {
+      if (reqId === reqIdRef.current) {
+        setLoading(false);
+        setInitialLoading(false);
+        setRefreshing(false);
+      }
+    }
+  };
+
+  // Debounce the search box, and jump back to page 1 when the term changes
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const q = searchQuery.trim();
+      if (q !== debouncedSearch) {
+        setDebouncedSearch(q);
+        setPage(1);
+      }
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [searchQuery, debouncedSearch]);
+
+  // Page / limit / search changes only refetch the list (summary is untouched).
+  // If we've seen this exact view before, show it immediately and refresh quietly behind it.
+  useEffect(() => {
+    const cached = cacheRef.current.get(`${page}|${limit}|${debouncedSearch}`);
+    if (cached) applyList(cached);
+    fetchInventory(page, limit, debouncedSearch);
+  }, [page, limit, debouncedSearch]);
+
+  // Summary loads on mount and whenever the screen regains focus (e.g. after add/edit)
+  useEffect(() => {
+    fetchSummary();
     const unsubscribe = navigation.addListener('focus', () => {
-      fetchInventory(page, limit);
+      cacheRef.current.clear(); // data may have changed while we were away
+      fetchInventory(pageRef.current, limitRef.current, searchRef.current);
+      fetchSummary();
     });
     return unsubscribe;
-  }, [navigation, page, limit]);
+  }, [navigation]);
 
-  const onRefresh = () => { setRefreshing(true); fetchInventory(page, limit); };
+  const onRefresh = () => {
+    setRefreshing(true);
+    cacheRef.current.clear();
+    fetchInventory(page, limit, debouncedSearch);
+    fetchSummary();
+  };
 
   const handleLimitChange = (newLimit) => {
     if (newLimit === limit) return;
     setLimit(newLimit);
-    setPage(1); 
+    setPage(1);
   };
 
-  const handleNextPage = () => { 
-    if (page < totalPages) {
-      setPage(prev => prev + 1); 
-    }
-  };
-  
-  const handlePrevPage = () => { 
-    if (page > 1) {
-      setPage(prev => prev - 1); 
-    }
+  const handleNextPage = () => {
+    setPage(prev => (prev < totalPages ? prev + 1 : prev));
   };
 
+  const handlePrevPage = () => {
+    setPage(prev => (prev > 1 ? prev - 1 : prev));
+  };
+
+  // Safety net: filters the visible page by name instantly while the server search is on its way
+  // (and keeps working if the backend ever ignores `search`).
   const filteredInventory = useMemo(() => {
     if (!searchQuery.trim()) return inventory;
-    const lowerQuery = searchQuery.toLowerCase();
+    const lowerQuery = searchQuery.trim().toLowerCase();
     return inventory.filter(item => item.item_name?.toLowerCase().includes(lowerQuery));
   }, [inventory, searchQuery]);
 
   const renderPaginationControls = () => (
     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 16, borderTopWidth: 1, borderTopColor: theme.border, marginTop: 8 }}>
-      <TouchableOpacity onPress={handlePrevPage} disabled={page === 1} style={{ flexDirection: 'row', alignItems: 'center', padding: 8, opacity: page === 1 ? 0.3 : 1 }}>
+      <TouchableOpacity onPress={handlePrevPage} disabled={page <= 1} style={{ flexDirection: 'row', alignItems: 'center', padding: 8, opacity: page <= 1 ? 0.3 : 1 }}>
         <Ionicons name="chevron-back" size={20} color={theme.primary} />
         <Text style={{ color: theme.primary, fontWeight: 'bold' }}>Prev</Text>
       </TouchableOpacity>
-      
+
       <Text style={{ fontSize: 13, color: theme.textMuted, fontWeight: '600' }}>
-        Page {page} of {totalPages} ({totalItems} total)
+        Page {page} of {totalPages} ({totalItems} {debouncedSearch ? 'found' : 'total'})
       </Text>
-      
+
       <TouchableOpacity onPress={handleNextPage} disabled={page >= totalPages} style={{ flexDirection: 'row', alignItems: 'center', padding: 8, opacity: page >= totalPages ? 0.3 : 1 }}>
         <Text style={{ color: theme.primary, fontWeight: 'bold' }}>Next</Text>
         <Ionicons name="chevron-forward" size={20} color={theme.primary} />
@@ -113,15 +259,16 @@ export const InventoryScreen = ({ navigation }) => {
     </View>
   );
 
-  if (loading && inventory.length === 0) {
+  // Full-screen spinner only on the very first load, so the search box never unmounts while typing
+  if (initialLoading) {
     return <View style={[styles.center, { backgroundColor: theme.background }]}><ActivityIndicator size="large" color={theme.primary} /></View>;
   }
 
-  // ★ FIX: Use the totalItems from backend summary, NOT the local inventory array length
-  const displayTotalItems = summaryData?.total_items !== undefined ? summaryData.total_items : totalItems;
-  const displayTotalQty = summaryData?.total_quantity !== undefined ? summaryData.total_quantity : inventory.reduce((sum, item) => sum + Number(item.quantity), 0);
-  const displayTotalValue = summaryData?.total !== undefined ? summaryData.total : inventory.reduce((sum, item) => sum + (Number(item.quantity) * Number(item.selling_price)), 0);
-  const displayProfit = summaryData?.total_profit !== undefined ? summaryData.total_profit : inventory.reduce((sum, item) => sum + (Number(item.quantity) * (Number(item.selling_price) - Number(item.cost_price))), 0);
+  // Summary cards always come from the global summary, never from the current page
+  const displayTotalItems = summaryData ? summaryData.items : '…';
+  const displayTotalQty = summaryData ? summaryData.qty : '…';
+  const displayTotalValue = summaryData ? summaryData.value : undefined;
+  const displayProfit = summaryData ? summaryData.profit : undefined;
   const displayLowStockCount = summaryData?.lowStock !== undefined ? summaryData.lowStock : 0;
   const displayLowStockItems = summaryData?.lowStockItems || [];
 
@@ -137,10 +284,12 @@ export const InventoryScreen = ({ navigation }) => {
           <Ionicons name="search" size={20} color={theme.textMuted} />
           <TextInput
             style={{ flex: 1, paddingVertical: 10, paddingHorizontal: 8, color: theme.text }}
-            placeholder="Search inventory..."
+            placeholder="Search all inventory..."
             placeholderTextColor={theme.textMuted}
             value={searchQuery}
             onChangeText={setSearchQuery}
+            autoCorrect={false}
+            returnKeyType="search"
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery('')}>
@@ -154,6 +303,7 @@ export const InventoryScreen = ({ navigation }) => {
         style={{ flex: 1, paddingHorizontal: 16 }}
         data={filteredInventory}
         keyExtractor={(item) => String(item.id)}
+        keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
         ListFooterComponent={renderPaginationControls}
         contentContainerStyle={{ paddingBottom: 100 }}
@@ -204,7 +354,7 @@ export const InventoryScreen = ({ navigation }) => {
                   <Ionicons name="cash-outline" size={18} color="#10b981" />
                 </View>
                 <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#10b981', marginTop: 8 }} numberOfLines={1} adjustsFontSizeToFit>
-                  ₦{Number(displayTotalValue).toLocaleString()}
+                  ₦{fmt(displayTotalValue)}
                 </Text>
               </View>
 
@@ -214,13 +364,18 @@ export const InventoryScreen = ({ navigation }) => {
                   <Ionicons name="trending-up" size={18} color="#d8b4fe" />
                 </View>
                 <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#d8b4fe', marginTop: 8 }} numberOfLines={1} adjustsFontSizeToFit>
-                  ₦{Number(displayProfit).toLocaleString()}
+                  ₦{fmt(displayProfit)}
                 </Text>
               </View>
             </View>
 
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <Text style={[styles.sectionTitle, { color: theme.text, marginTop: 0 }]}>All Items</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={[styles.sectionTitle, { color: theme.text, marginTop: 0 }]}>
+                  {debouncedSearch ? 'Search Results' : 'All Items'}
+                </Text>
+                {loading && <ActivityIndicator size="small" color={theme.primary} />}
+              </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Text style={{ fontSize: 12, color: theme.textMuted }}>Show:</Text>
                 {PAGE_SIZES.map(size => (
@@ -238,15 +393,15 @@ export const InventoryScreen = ({ navigation }) => {
         }
         ListEmptyComponent={
           <Text style={{ textAlign: 'center', marginTop: 20, color: theme.textMuted }}>
-            {searchQuery ? 'No items match your search.' : 'No items in inventory'}
+            {loading ? 'Loading...' : searchQuery ? 'No items match your search.' : 'No items in inventory'}
           </Text>
         }
         renderItem={({ item }) => {
           const itemValue = Number(item.quantity) * Number(item.selling_price);
           const packs = item.packs || [];
-          
+
           return (
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[styles.invCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
               onPress={() => navigation.navigate('AddEditInventory', { item })}
               activeOpacity={0.7}
@@ -256,7 +411,7 @@ export const InventoryScreen = ({ navigation }) => {
                 <Text style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>
                   {item.quantity} {item.base_unit || 'Pieces'} @ ₦{Number(item.selling_price).toLocaleString()}
                 </Text>
-                
+
                 {packs.length > 0 && (
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
                     {packs.slice(0, 3).map((p, idx) => (
@@ -287,7 +442,7 @@ export const InventoryScreen = ({ navigation }) => {
       />
 
       {!isReadOnly && (
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[styles.fab, { backgroundColor: theme.primary }]}
           onPress={() => navigation.navigate('AddEditInventory')}
         >
