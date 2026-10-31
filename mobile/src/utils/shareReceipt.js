@@ -1,5 +1,5 @@
 // mobile/src/utils/shareReceipt.js
-// v1.4.1-prod — Fixes pack name rendering on shared receipts.
+// v1.5.0-prod — Formats pack names (0.25 Qtr) and keeps math accurate.
 
 import { Share, Alert } from 'react-native';
 
@@ -18,19 +18,41 @@ const buildItemLine = (item) => {
   const total = qty * sell;
   
   let displayName = item.name;
-  
-  // If a pack name exists and isn't the default, show "0.5 Half of Milo"
+  let isPack = false;
+  let fractionLabel = '';
+
   if (item.soldUnit && item.soldUnit !== 'Piece' && item.soldUnit !== 'None') {
-    displayName = `${qty} ${item.soldUnit} of ${item.name}`;
-  } else {
-    displayName = `${qty} ${item.name}`;
+    const unitLower = item.soldUnit.toLowerCase();
+    isPack = true;
+    
+    if (unitLower.includes('quarter') || unitLower.includes('qtr')) {
+      fractionLabel = '(0.25) Qtr';
+    } else if (unitLower.includes('half')) {
+      fractionLabel = '(0.5) Half';
+    } else if (unitLower.includes('carton') || unitLower.includes('ctn') || unitLower.includes('full')) {
+      fractionLabel = '(1) Ctn';
+    } else if (unitLower.includes('bag')) {
+      fractionLabel = 'Bag';
+    } else if (unitLower.includes('kg')) {
+      fractionLabel = 'Kg';
+    } else if (unitLower.includes('litre')) {
+      fractionLabel = 'Ltr';
+    } else {
+      fractionLabel = item.soldUnit;
+    }
   }
-  
+
+  // Format: "Milo Hanging (0.25) Qtr"
+  let finalLabel = displayName;
+  if (isPack) {
+    finalLabel = `${displayName} ${fractionLabel}`;
+  }
+
   // Truncate name if too long to keep alignment
-  if (displayName.length > 20) displayName = displayName.substring(0, 17) + '...';
-  
+  if (finalLabel.length > 22) finalLabel = finalLabel.substring(0, 19) + '...';
+
   // Align columns using spaces
-  const leftCol = `${displayName}`.padEnd(22, ' '); 
+  const leftCol = `${finalLabel}`.padEnd(22, ' '); 
   const totalCol = formatMoney(total).padStart(11, ' ');
   
   return `${leftCol}${totalCol}`;

@@ -1,5 +1,5 @@
 // frontend/src/utils/saleReceipt.js
-// v1.3.0-prod — Shows pack info (Carton 20 units) in receipt/PDF.
+// v1.6.0-prod — Formats item names with fractions (0.25 Qtr) based on pack type.
 
 import jsPDF from 'jspdf';
 
@@ -29,14 +29,38 @@ const resolveLineItems = (sale) => {
   const items = sale?.items || [];
   return items.map((item) => {
     const qty = Number(item.quantity) || 0;
-    const multiplier = Number(item.unitMultiplier) || 1;
     const sell = Number(item.sellingPrice ?? item.unitPrice ?? 0);
     const total = Number(item.total) || qty * sell;
+    
+    let displayName = item.name || '—';
+    let isPack = false;
+    let fractionLabel = '';
+
+    if (item.soldUnit && item.soldUnit !== 'Piece' && item.soldUnit !== 'None') {
+      const unitLower = item.soldUnit.toLowerCase();
+      isPack = true;
+      
+      if (unitLower.includes('quarter') || unitLower.includes('qtr')) {
+        fractionLabel = '(0.25) Qtr';
+      } else if (unitLower.includes('half')) {
+        fractionLabel = '(0.5) Half';
+      } else if (unitLower.includes('carton') || unitLower.includes('ctn') || unitLower.includes('full')) {
+        fractionLabel = '(1) Ctn';
+      } else if (unitLower.includes('bag')) {
+        fractionLabel = 'Bag';
+      } else if (unitLower.includes('kg')) {
+        fractionLabel = 'Kg';
+      } else if (unitLower.includes('litre')) {
+        fractionLabel = 'Ltr';
+      } else {
+        fractionLabel = item.soldUnit;
+      }
+    }
+
     return {
-      name: item.name || '—',
+      name: displayName,
+      label: isPack ? `${displayName} ${fractionLabel}` : displayName,
       quantity: qty,
-      unitMultiplier: multiplier,
-      soldUnit: item.soldUnit || (multiplier > 1 ? `${multiplier} units` : 'Piece'),
       sellingPrice: sell,
       total,
     };
@@ -48,13 +72,6 @@ const computeTotals = (sale, items) => {
   const paid = Number(sale?.amount_paid) || 0;
   const balance = Number(sale?.balance_remaining) || Math.max(0, total - paid);
   return { total, paid, balance };
-};
-
-const buildItemLabel = (item) => {
-  if (item.unitMultiplier > 1) {
-    return `${item.name} (${item.soldUnit}, ${item.unitMultiplier} units each)`;
-  }
-  return item.name;
 };
 
 // ── Browser print ───────────────────────────────────────────────────
@@ -158,7 +175,7 @@ export const printSaleReceipt = (sale, options = {}) => {
             <tbody>
               ${items.map((i) => `
                 <tr>
-                  <td>${escapeHtml(buildItemLabel(i))}</td>
+                  <td>${escapeHtml(i.label)}</td>
                   <td class="right">${i.quantity}</td>
                   <td class="right">${currency}${i.sellingPrice.toLocaleString()}</td>
                   <td class="right">${currency}${i.total.toLocaleString()}</td>
@@ -317,8 +334,7 @@ export const downloadSaleReceiptPDF = (sale, options = {}) => {
   resetSpacing();
   for (const it of items) {
     if (y > 250) { doc.addPage(); y = 20; }
-    const label = buildItemLabel(it);
-    const itemText = doc.splitTextToSize(label, colX.qty - colX.item - 10);
+    const itemText = doc.splitTextToSize(it.label, colX.qty - colX.item - 10);
     doc.text(itemText, colX.item, y);
     doc.text(String(it.quantity), colX.qty, y, { align: 'right' });
     doc.text(money(it.sellingPrice), colX.price, y, { align: 'right' });
@@ -384,6 +400,7 @@ export const downloadSaleReceiptPDF = (sale, options = {}) => {
   doc.save(filename);
 };
 
+// ── helpers ────────────────────────────────────────────────────────
 function escapeHtml(str) {
   if (str === null || str === undefined) return '';
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
