@@ -43,8 +43,8 @@ const DailyReport = ({ data, formatCurrency, formatPercentage }) => {
     ? safeInventory.lowStockItems
     : [];
 
-  const safeDebtors = debtors || { count: 0, totalAmount: 0, top3: [] };
-  const safeCreditors = creditors || { count: 0, totalAmount: 0, top3: [] };
+  const safeDebtors = debtors || { count: 0, totalAmount: 0, top5: [] };
+  const safeCreditors = creditors || { count: 0, totalAmount: 0, top5: [] };
 
   const safeTopCustomers = Array.isArray(topCustomers) ? topCustomers : [];
   const safeTopProducts = Array.isArray(topProducts) ? topProducts : [];
@@ -148,7 +148,7 @@ const DailyReport = ({ data, formatCurrency, formatPercentage }) => {
           </div>
         </div>
 
-        {/* Sales & Inventory */}
+        {/* Sales & Inventory (★ ADDED SALES COUNT HERE) */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">Sales Count</p>
@@ -164,7 +164,7 @@ const DailyReport = ({ data, formatCurrency, formatPercentage }) => {
           </div>
           <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">Inventory Value</p>
-            <p className="text-xl font-bold text-amber-600 dark:text-amber-400">
+            <p className="text-xl font-bold text-amber-600 dark:text-amber-400 truncate">
               {formatCurrency(safeInventory.totalValue)}
             </p>
           </div>
@@ -204,14 +204,14 @@ const DailyReport = ({ data, formatCurrency, formatPercentage }) => {
             <ul className="text-sm text-yellow-700 dark:text-yellow-400 list-disc list-inside">
               {lowStockItems.map((item, idx) => (
                 <li key={idx}>
-                  {item.name} (Qty: {item.quantity})
+                  {item.name || item.item_name} (Qty: {item.quantity})
                 </li>
               ))}
             </ul>
           </div>
         )}
 
-        {/* Debtors */}
+        {/* Debtors (★ UPDATED TO TOP 5) */}
         {(safeDebtors.count > 0 || safeDebtors.totalAmount > 0) && (
           <div className="mt-6">
             <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -231,9 +231,9 @@ const DailyReport = ({ data, formatCurrency, formatPercentage }) => {
                 </p>
               </div>
             </div>
-            {safeDebtors.top3?.length > 0 && (
+            {safeDebtors.top5?.length > 0 && (
               <div className="space-y-1">
-                {safeDebtors.top3.map((d, idx) => (
+                {safeDebtors.top5.map((d, idx) => (
                   <div key={idx} className="flex justify-between text-sm border-b border-gray-100 dark:border-gray-700 py-1">
                     <span className="text-gray-600 dark:text-gray-400">{d.name}</span>
                     <span className="font-medium text-gray-900 dark:text-white">
@@ -246,7 +246,7 @@ const DailyReport = ({ data, formatCurrency, formatPercentage }) => {
           </div>
         )}
 
-        {/* Creditors */}
+        {/* Creditors (★ UPDATED TO TOP 5) */}
         {(safeCreditors.count > 0 || safeCreditors.totalAmount > 0) && (
           <div className="mt-4">
             <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -266,9 +266,9 @@ const DailyReport = ({ data, formatCurrency, formatPercentage }) => {
                 </p>
               </div>
             </div>
-            {safeCreditors.top3?.length > 0 && (
+            {safeCreditors.top5?.length > 0 && (
               <div className="space-y-1">
-                {safeCreditors.top3.map((c, idx) => (
+                {safeCreditors.top5.map((c, idx) => (
                   <div key={idx} className="flex justify-between text-sm border-b border-gray-100 dark:border-gray-700 py-1">
                     <span className="text-gray-600 dark:text-gray-400">{c.name}</span>
                     <span className="font-medium text-gray-900 dark:text-white">
@@ -281,7 +281,7 @@ const DailyReport = ({ data, formatCurrency, formatPercentage }) => {
           </div>
         )}
 
-        {/* ===== TOP 5 CUSTOMERS (moved here) ===== */}
+        {/* ===== TOP 5 CUSTOMERS ===== */}
         {safeTopCustomers.length > 0 && (
           <div className="mt-6">
             <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
@@ -294,13 +294,13 @@ const DailyReport = ({ data, formatCurrency, formatPercentage }) => {
                 <div className="col-span-3 text-right">Revenue</div>
                 <div className="col-span-3 text-right">Sales</div>
               </div>
-              {safeTopCustomers.map((customer) => (
+              {safeTopCustomers.slice(0, 5).map((customer, idx) => (
                 <div
-                  key={customer.rank || customer.name}
+                  key={customer.rank || customer.name || idx}
                   className="grid grid-cols-12 gap-2 px-3 py-2.5 text-sm border-b border-gray-100 dark:border-gray-700 last:border-0"
                 >
                   <div className="col-span-1 font-medium text-gray-500 dark:text-gray-400">
-                    {customer.rank}
+                    {idx + 1}
                   </div>
                   <div className="col-span-5 font-medium text-gray-900 dark:text-white truncate">
                     {customer.name}
@@ -317,7 +317,7 @@ const DailyReport = ({ data, formatCurrency, formatPercentage }) => {
           </div>
         )}
 
-        {/* ===== TOP 5 PRODUCTS (moved here) ===== */}
+        {/* ===== TOP 5 PRODUCTS ===== */}
         {safeTopProducts.length > 0 && (
           <div className="mt-6">
             <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
@@ -331,13 +331,13 @@ const DailyReport = ({ data, formatCurrency, formatPercentage }) => {
                 <div className="col-span-3 text-right">Revenue</div>
                 <div className="col-span-2 text-right">Sales</div>
               </div>
-              {safeTopProducts.map((product) => (
+              {safeTopProducts.slice(0, 5).map((product, idx) => (
                 <div
-                  key={product.rank || product.name}
+                  key={product.rank || product.name || idx}
                   className="grid grid-cols-12 gap-2 px-3 py-2.5 text-sm border-b border-gray-100 dark:border-gray-700 last:border-0"
                 >
                   <div className="col-span-1 font-medium text-gray-500 dark:text-gray-400">
-                    {product.rank}
+                    {idx + 1}
                   </div>
                   <div className="col-span-4 font-medium text-gray-900 dark:text-white truncate">
                     {product.name}

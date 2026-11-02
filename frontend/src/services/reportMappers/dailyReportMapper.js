@@ -15,8 +15,8 @@ export const mapDailyReport = (backendData) => {
     alerts,
     debtors,
     creditors,
-    topCustomers,   // ← added
-    topProducts,    // ← added
+    topCustomers,
+    topProducts,
   } = backendData;
 
   return {
@@ -60,15 +60,14 @@ export const mapDailyReport = (backendData) => {
     debtors: {
       count: toNumber(debtors?.count),
       totalAmount: toNumber(debtors?.totalAmount),
-      top3: Array.isArray(debtors?.top3) ? debtors.top3 : [],
+      top5: Array.isArray(debtors?.top5) ? debtors.top5 : [],
     },
     creditors: {
       count: toNumber(creditors?.count),
       totalAmount: toNumber(creditors?.totalAmount),
-      top3: Array.isArray(creditors?.top3) ? creditors.top3 : [],
+      top5: Array.isArray(creditors?.top5) ? creditors.top5 : [],
     },
 
-    // ===== NEW: Pass through Top 5 =====
     topCustomers: Array.isArray(topCustomers) ? topCustomers : [],
     topProducts: Array.isArray(topProducts) ? topProducts : [],
   };
@@ -106,12 +105,12 @@ const getEmptyDailyReport = () => ({
   debtors: {
     count: 0,
     totalAmount: 0,
-    top3: [],
+    top5: [],
   },
   creditors: {
     count: 0,
     totalAmount: 0,
-    top3: [],
+    top5: [],
   },
   topCustomers: [],
   topProducts: [],

@@ -1,5 +1,6 @@
 // src/interfaces/http/routes/dashboardRoutes.js
-// v2.9.3-prod — Restores Promise.allSettled for critical KPIs (prevents ₦0).
+// v2.9.4-prod — Fixes inventoryTotal to pull Cost Value (harmonizes with Inventory & Reports).
+//               Restores Promise.allSettled for critical KPIs (prevents ₦0).
 //               Keeps lowStockItems normalizer for web/mobile parity.
 
 'use strict';
@@ -369,10 +370,12 @@ async function fetchDashboardData({ userId, businessId, role }) {
   const todayProfit = Number(today.netProfit ?? 0);
   const todayNetMargin = Number(today.netMargin ?? 0);
 
+  // ★ FIXED: Harmony with Inventory/Reports. Pull Cost Value explicitly.
   const inventoryTotal = Number(
-    inventorySummaryData.totalValue ?? inventorySummaryData.total_value ??
-    inventorySummaryData.total_selling_value ??
-    metrics.inventory ?? 0
+    inventorySummaryData.total_cost_value ??  // Primary column from Repo
+    inventorySummaryData.totalCostValue ??    // CamelCase fallback
+    inventorySummaryData.totalValue ??        // Generic fallback
+    metrics.inventory ?? 0                    // Last resort
   );
 
   const lowStockCount = Number(
@@ -542,7 +545,7 @@ async function fetchDashboardData({ userId, businessId, role }) {
       businessId,
       generatedAt: new Date().toISOString(),
       source: 'cashflow+daily+analytics+risk+repos+projects+invoices+cashinout+students',
-      version: '2.9.3',
+      version: '2.9.4',
     },
   };
 }
