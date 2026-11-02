@@ -223,7 +223,7 @@ class DailyReportService {
         const debtorsData = {
             count: debtorSummary.active_count || 0,
             totalAmount: debtorSummary.total_outstanding || 0,
-            top3: activeDebtors.slice(0, 3).map(d => ({
+            top5: activeDebtors.slice(0, 5).map(d => ({
                 name: d.customer_name || 'Unknown',
                 amount: d.balance_remaining || 0,
             })),
@@ -232,7 +232,7 @@ class DailyReportService {
         const creditorsData = {
             count: creditorSummary.active_count || 0,
             totalAmount: creditorSummary.total_outstanding || 0,
-            top3: activeCreditors.slice(0, 3).map(c => ({
+            top5: activeCreditors.slice(0, 5).map(c => ({
                 name: c.supplier_name || 'Unknown',
                 amount: c.balance_remaining || 0,
             })),
