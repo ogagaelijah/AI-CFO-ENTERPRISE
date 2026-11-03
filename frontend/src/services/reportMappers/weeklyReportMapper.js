@@ -21,6 +21,7 @@ export const mapWeeklyReport = (backendData) => {
     inventory = {},
     debtors = {},
     creditors = {},
+    salesCount, // ★ NEW: Extracting from backend
   } = backendData;
 
   return {
@@ -34,6 +35,7 @@ export const mapWeeklyReport = (backendData) => {
     expenses: toNumber(expenses),
     netProfit: toNumber(netProfit),
     netMargin: toNumber(netMargin),
+    salesCount: toNumber(salesCount), // ★ NEW: Passing to UI
     weekOverWeek: {
       revenueChange: toNumber(weekOverWeek.revenueChange),
       profitChange: toNumber(weekOverWeek.profitChange),
@@ -66,6 +68,7 @@ const getEmptyWeeklyReport = () => ({
   expenses: 0,
   netProfit: 0,
   netMargin: 0,
+  salesCount: 0, // ★ NEW: Added for fallback
   weekOverWeek: {
     revenueChange: 0,
     profitChange: 0,

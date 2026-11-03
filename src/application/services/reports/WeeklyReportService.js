@@ -1,6 +1,5 @@
 // src/application/services/reports/WeeklyReportService.js
-// v2.2.0-prod — Revenue + other income come from RevenueCalculator.
-//               Removed separate income fetches. Business-scoped. No silent swallows.
+// v2.2.3-prod — Uses direct DB count for salesCount to fix zero-count bug.
 
 const RevenueCalculator = require('./calculators/RevenueCalculator');
 const CogsCalculator = require('./calculators/CogsCalculator');
@@ -13,11 +12,6 @@ const ComparisonCalculator = require('./calculators/ComparisonCalculator');
 
 /**
  * Weekly Report Service
- *
- * - Product Sales = sales.salesRevenue (operating top-line)
- * - Total Revenue (Combined) = salesRevenue + otherRevenue
- * - Gross Profit = Product Sales - COGS
- * - Net Profit = Gross Profit - Operating Expenses + Other Income
  */
 class WeeklyReportService {
     constructor({
@@ -95,7 +89,7 @@ class WeeklyReportService {
         const month = date.getMonth();
         const day = date.getDate();
         const dayOfWeek = date.getDay();
-        const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Monday start
+        const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
         return new Date(year, month, day - diff, 0, 0, 0, 0);
     }
 
@@ -129,7 +123,14 @@ class WeeklyReportService {
             this.cogsCalculator.calculate({ userId, businessId, startDate: currentStartStr, endDate: currentEndStr }),
         ]);
 
-        // Operating expenses only. Failures propagate.
+        // ★ NEW: Fetch the exact count directly from the repository
+        const currentSalesCount = await this.saleRepository.countByDateRange(businessId, currentStartStr, currentEndStr);
+        
+        // ★ DEBUG LOGS
+        console.log('🔍 DEBUG: currentStartStr:', currentStartStr);
+        console.log('🔍 DEBUG: currentEndStr:', currentEndStr);
+        console.log('🔍 DEBUG: currentSalesCount:', currentSalesCount);
+
         const currentExpenses = this._safeArray(
             await this.expenseRepository.findByDateRange(businessId, currentStartStr, currentEndStr)
         );
@@ -139,12 +140,8 @@ class WeeklyReportService {
         const currentTotalOtherIncome = this._safeNumber(currentRevenue.otherRevenue);
         const currentTotalCogs = this._safeNumber(currentCogs.totalCogs);
 
-        // SSOT Calculation Matrix Injection
         await this.profitCalculator.calculate({
-            userId,
-            businessId,
-            startDate: currentStartStr,
-            endDate: currentEndStr,
+            userId, businessId, startDate: currentStartStr, endDate: currentEndStr,
             revenueData: { totalRevenue: currentPureRevenue },
             cogsData: { totalCogs: currentTotalCogs },
             expenseData: { total: currentTotalExpenses },
@@ -161,7 +158,6 @@ class WeeklyReportService {
         // =============================================
         // DEBTORS & CREDITORS DATA
         // =============================================
-
         const activeDebtors = await this.debtorRepository.findActive(userId, businessId);
         const debtorSummary = await this.debtorRepository.getSummary(userId, businessId);
 
@@ -204,10 +200,7 @@ class WeeklyReportService {
         const prevTotalCogs = this._safeNumber(prevCogs.totalCogs);
 
         await this.profitCalculator.calculate({
-            userId,
-            businessId,
-            startDate: prevStartStr,
-            endDate: prevEndStr,
+            userId, businessId, startDate: prevStartStr, endDate: prevEndStr,
             revenueData: { totalRevenue: prevPureRevenue },
             cogsData: { totalCogs: prevTotalCogs },
             expenseData: { total: prevTotalExpenses },
@@ -269,7 +262,6 @@ class WeeklyReportService {
         const grossMargin = currentPureRevenue > 0 ? (currentGrossProfit / currentPureRevenue) * 100 : 0;
         const netMargin = currentCombinedRevenue > 0 ? (currentNetProfit / currentCombinedRevenue) * 100 : 0;
 
-        // Week over Week (WoW) Analytics Engine Calculations
         const revenueChange = prevCombinedRevenue > 0
             ? ((currentCombinedRevenue - prevCombinedRevenue) / prevCombinedRevenue) * 100
             : 0;
@@ -278,16 +270,9 @@ class WeeklyReportService {
             ? ((currentNetProfit - prevNetProfit) / Math.abs(prevNetProfit)) * 100
             : 0;
 
-        // =============================================
-        // 5. DEFENSIVE ANOMALY RISK DISCOVERY RULES
-        // =============================================
         const keyRisks = [];
-        if (currentCombinedRevenue === 0) {
-            keyRisks.push('No revenue recorded this week');
-        }
-        if (currentNetProfit < 0) {
-            keyRisks.push('Business operates at a net loss this week');
-        }
+        if (currentCombinedRevenue === 0) keyRisks.push('No revenue recorded this week');
+        if (currentNetProfit < 0) keyRisks.push('Business operates at a net loss this week');
         if (this._safeNumber(currentAr.totalOutstanding) > currentCombinedRevenue * 0.5 && currentCombinedRevenue > 0) {
             keyRisks.push('High accounts receivable risk relative to recent sales velocity');
         }
@@ -302,6 +287,8 @@ class WeeklyReportService {
             expenses: currentTotalExpenses,
             netProfit: currentNetProfit,
             netMargin: this._round2(netMargin),
+            // ★ FIXED: Using the direct DB count
+            salesCount: currentSalesCount, 
             weekOverWeek: {
                 revenueChange: this._round2(revenueChange),
                 profitChange: this._round2(profitChange),
