@@ -1,5 +1,5 @@
 // src/application/services/reports/WeeklyReportService.js
-// v2.2.3-prod — Uses direct DB count for salesCount to fix zero-count bug.
+// v2.2.4-prod — Fixes debtor/creditor repository signatures (businessId only).
 
 const RevenueCalculator = require('./calculators/RevenueCalculator');
 const CogsCalculator = require('./calculators/CogsCalculator');
@@ -123,13 +123,7 @@ class WeeklyReportService {
             this.cogsCalculator.calculate({ userId, businessId, startDate: currentStartStr, endDate: currentEndStr }),
         ]);
 
-        // ★ NEW: Fetch the exact count directly from the repository
         const currentSalesCount = await this.saleRepository.countByDateRange(businessId, currentStartStr, currentEndStr);
-        
-        // ★ DEBUG LOGS
-        console.log('🔍 DEBUG: currentStartStr:', currentStartStr);
-        console.log('🔍 DEBUG: currentEndStr:', currentEndStr);
-        console.log('🔍 DEBUG: currentSalesCount:', currentSalesCount);
 
         const currentExpenses = this._safeArray(
             await this.expenseRepository.findByDateRange(businessId, currentStartStr, currentEndStr)
@@ -158,11 +152,12 @@ class WeeklyReportService {
         // =============================================
         // DEBTORS & CREDITORS DATA
         // =============================================
-        const activeDebtors = await this.debtorRepository.findActive(userId, businessId);
-        const debtorSummary = await this.debtorRepository.getSummary(userId, businessId);
+        // ★ FIXED: Removed userId from the repository calls (signature expects only businessId)
+        const activeDebtors = await this.debtorRepository.findActive(businessId);
+        const debtorSummary = await this.debtorRepository.getSummary(businessId);
 
-        const activeCreditors = await this.creditorRepository.findActive(userId, businessId);
-        const creditorSummary = await this.creditorRepository.getSummary(userId, businessId);
+        const activeCreditors = await this.creditorRepository.findActive(businessId);
+        const creditorSummary = await this.creditorRepository.getSummary(businessId);
 
         const debtorsData = {
             count: debtorSummary.active_count || 0,
@@ -287,7 +282,6 @@ class WeeklyReportService {
             expenses: currentTotalExpenses,
             netProfit: currentNetProfit,
             netMargin: this._round2(netMargin),
-            // ★ FIXED: Using the direct DB count
             salesCount: currentSalesCount, 
             weekOverWeek: {
                 revenueChange: this._round2(revenueChange),
