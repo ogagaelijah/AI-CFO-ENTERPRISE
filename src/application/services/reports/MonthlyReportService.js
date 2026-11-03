@@ -1,6 +1,5 @@
 // src/application/services/reports/MonthlyReportService.js
-// v2.2.1-prod — Revenue + other income come from RevenueCalculator.
-//               Removed separate income fetches. Business-scoped. No silent swallows.
+// v2.2.2-prod — Fixes debtor/creditor repository signatures (businessId only).
 
 const RevenueCalculator = require('./calculators/RevenueCalculator');
 const CogsCalculator = require('./calculators/CogsCalculator');
@@ -184,12 +183,12 @@ class MonthlyReportService {
         // =============================================
         // DEBTORS & CREDITORS DATA
         // =============================================
+        // ★ FIXED: Removed userId from the repository calls (signature expects only businessId)
+        const activeDebtors = await this.debtorRepository.findActive(businessId);
+        const debtorSummary = await this.debtorRepository.getSummary(businessId);
 
-        const activeDebtors = await this.debtorRepository.findActive(userId, businessId);
-        const debtorSummary = await this.debtorRepository.getSummary(userId, businessId);
-
-        const activeCreditors = await this.creditorRepository.findActive(userId, businessId);
-        const creditorSummary = await this.creditorRepository.getSummary(userId, businessId);
+        const activeCreditors = await this.creditorRepository.findActive(businessId);
+        const creditorSummary = await this.creditorRepository.getSummary(businessId);
 
         const debtorsData = {
             count: debtorSummary.active_count || 0,
@@ -484,7 +483,7 @@ class MonthlyReportService {
             expenses: currentTotalExpenses,
             netProfit: this._round2(netProfit),
             netMargin: this._round2(netMargin),
-            salesCount: currentSales.length, // ★ ADDED HERE
+            salesCount: currentSales.length,
 
             executiveSummary: {
                 totalRevenue: currentCombinedRevenue,
