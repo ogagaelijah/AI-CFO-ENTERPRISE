@@ -1,5 +1,5 @@
 // mobile/App.js
-// v2.1.0-prod — Notification deep linking (tap push → navigate to correct screen).
+// v2.2.1-prod — Adds SafeAreaProvider for react-native-safe-area-context.
 
 import React, { useEffect, useRef } from 'react';
 import { NavigationContainer, DefaultTheme, DarkTheme, createNavigationContainerRef } from '@react-navigation/native';
@@ -7,6 +7,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { OfflineProvider } from './src/context/OfflineContext';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
@@ -31,6 +32,8 @@ import { PurchasesScreen } from './src/screens/PurchasesScreen';
 import { PurchasesHistoryScreen } from './src/screens/PurchasesHistoryScreen';
 import { CreditorsScreen } from './src/screens/CreditorsScreen';
 import { AddCreditorScreen } from './src/screens/AddCreditorScreen';
+import ReportsMenuScreen from './src/screens/ReportsMenuScreen';
+import ReportDetailScreen from './src/screens/ReportDetailScreen';
 import { ActivityIndicator, View } from 'react-native';
 
 const Stack = createNativeStackNavigator();
@@ -87,7 +90,6 @@ function AppNavigator() {
       const data = response.notification.request.content.data;
       console.log('Notification tapped, payload:', data);
       
-      // ★ Deep linking — navigate to correct screen based on payload
       if (navigationRef.isReady()) {
         try {
           if (data?.screen === 'History') {
@@ -98,6 +100,12 @@ function AppNavigator() {
             navigationRef.navigate('Main', { screen: 'Inventory' });
           } else if (data?.screen === 'Notifications') {
             navigationRef.navigate('Notifications');
+          } else if (data?.screen === 'ReportDetail') {
+            navigationRef.navigate('ReportDetail', {
+              reportType: data.reportType,
+              reportLabel: data.reportLabel,
+              initialDate: data.date,
+            });
           } else {
             navigationRef.navigate('Main', { screen: 'Home' });
           }
@@ -140,6 +148,10 @@ function AppNavigator() {
               <Stack.Screen name="PurchasesHistory" component={PurchasesHistoryScreen} />
               <Stack.Screen name="Creditors" component={CreditorsScreen} />
               <Stack.Screen name="AddCreditor" component={AddCreditorScreen} options={{ presentation: 'modal' }} />
+              
+              {/* Reports Hub */}
+              <Stack.Screen name="ReportsMenu" component={ReportsMenuScreen} options={{ headerShown: true, title: 'Reports Hub' }} />
+              <Stack.Screen name="ReportDetail" component={ReportDetailScreen} options={({ route }) => ({ headerShown: true, title: route.params?.reportLabel || 'Report' })} />
             </React.Fragment>
           )
         ) : (
@@ -157,14 +169,16 @@ function AppNavigator() {
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <OfflineProvider>
-        <AuthProvider>
-          <NotificationProvider>
-            <AppNavigator />
-          </NotificationProvider>
-        </AuthProvider>
-      </OfflineProvider>
-    </ThemeProvider>
+    <SafeAreaProvider>
+      <ThemeProvider>
+        <OfflineProvider>
+          <AuthProvider>
+            <NotificationProvider>
+              <AppNavigator />
+            </NotificationProvider>
+          </AuthProvider>
+        </OfflineProvider>
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 }

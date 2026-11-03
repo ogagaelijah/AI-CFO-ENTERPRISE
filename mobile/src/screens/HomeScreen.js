@@ -1,3 +1,4 @@
+// mobile/src/screens/HomeScreen.js
 import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, RefreshControl } from 'react-native';
 import { useAuth } from '../context/AuthContext';
@@ -80,6 +81,7 @@ export default function HomeScreen({ navigation }) {
   
   const rawLowStockItems = Array.isArray(kpis.inventory?.lowStockItems) ? kpis.inventory.lowStockItems : [];
   const lowStockItems = rawLowStockItems
+    .filter(Boolean)
     .map(item => ({
       id: item.id,
       item_name: item.item_name || item.name || 'Unknown',
@@ -91,6 +93,7 @@ export default function HomeScreen({ navigation }) {
   const displayName = user?.businessName || user?.business_name || user?.fullName || 'User';
   const isCashier = user?.role === 'CASHIER';
   const canRecordFinance = user?.role === 'OWNER' || user?.role === 'ADMIN' || user?.role === 'MANAGER';
+  const canViewReports = user?.role === 'OWNER' || user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.role === 'ACCOUNTANT';
 
   return (
     <ScrollView 
@@ -318,54 +321,73 @@ export default function HomeScreen({ navigation }) {
       )}
 
       {/* ─── BUSINESS MANAGEMENT (HIDDEN IF EXPIRED) ─── */}
-      {canRecordFinance && !isReadOnly && (
+      {(canRecordFinance || canViewReports) && !isReadOnly && (
         <>
           <Text style={[styles.sectionTitle, { color: theme.text, marginTop: 8 }]}>Business Management</Text>
           
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 24 }}>
-            <TouchableOpacity 
-              style={[styles.actionPill, { backgroundColor: theme.cardBg }]} 
-              onPress={() => navigation.navigate('Expenses')}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.actionIcon, { backgroundColor: theme.danger + '20' }]}>
-                <Ionicons name="trending-down" size={20} color={theme.danger} />
-              </View>
-              <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600', marginTop: 8, textAlign: 'center' }} numberOfLines={1}>Record Expense</Text>
-            </TouchableOpacity>
+            
+            {/* View Reports Button (Only shows for Owner/Admin/Manager/Accountant) */}
+            {canViewReports && (
+              <TouchableOpacity 
+                style={[styles.actionPill, { backgroundColor: theme.cardBg }]} 
+                onPress={() => navigation.navigate('ReportsMenu')}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.actionIcon, { backgroundColor: theme.primary + '20' }]}>
+                  <Ionicons name="bar-chart" size={20} color={theme.primary} />
+                </View>
+                <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600', marginTop: 8, textAlign: 'center' }} numberOfLines={1}>View Reports</Text>
+              </TouchableOpacity>
+            )}
 
-            <TouchableOpacity 
-              style={[styles.actionPill, { backgroundColor: theme.cardBg }]} 
-              onPress={() => navigation.navigate('Purchases')}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.actionIcon, { backgroundColor: theme.warning + '20' }]}>
-                <Ionicons name="cart" size={20} color={theme.warning} />
-              </View>
-              <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600', marginTop: 8, textAlign: 'center' }} numberOfLines={1}>Record Purchase</Text>
-            </TouchableOpacity>
+            {canRecordFinance && (
+              <>
+                <TouchableOpacity 
+                  style={[styles.actionPill, { backgroundColor: theme.cardBg }]} 
+                  onPress={() => navigation.navigate('Expenses')}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.actionIcon, { backgroundColor: theme.danger + '20' }]}>
+                    <Ionicons name="trending-down" size={20} color={theme.danger} />
+                  </View>
+                  <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600', marginTop: 8, textAlign: 'center' }} numberOfLines={1}>Record Expense</Text>
+                </TouchableOpacity>
 
-            <TouchableOpacity 
-              style={[styles.actionPill, { backgroundColor: theme.cardBg }]} 
-              onPress={() => navigation.navigate('PurchasesHistory')}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.actionIcon, { backgroundColor: theme.primary + '20' }]}>
-                <Ionicons name="time" size={20} color={theme.primary} />
-              </View>
-              <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600', marginTop: 8, textAlign: 'center' }} numberOfLines={1}>Purchase History</Text>
-            </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.actionPill, { backgroundColor: theme.cardBg }]} 
+                  onPress={() => navigation.navigate('Purchases')}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.actionIcon, { backgroundColor: theme.warning + '20' }]}>
+                    <Ionicons name="cart" size={20} color={theme.warning} />
+                  </View>
+                  <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600', marginTop: 8, textAlign: 'center' }} numberOfLines={1}>Record Purchase</Text>
+                </TouchableOpacity>
 
-            <TouchableOpacity 
-              style={[styles.actionPill, { backgroundColor: theme.cardBg }]} 
-              onPress={() => navigation.navigate('Creditors')}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.actionIcon, { backgroundColor: theme.danger + '20' }]}>
-                <Ionicons name="person" size={20} color={theme.danger} />
-              </View>
-              <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600', marginTop: 8, textAlign: 'center' }} numberOfLines={1}>Creditors</Text>
-            </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.actionPill, { backgroundColor: theme.cardBg }]} 
+                  onPress={() => navigation.navigate('PurchasesHistory')}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.actionIcon, { backgroundColor: theme.primary + '20' }]}>
+                    <Ionicons name="time" size={20} color={theme.primary} />
+                  </View>
+                  <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600', marginTop: 8, textAlign: 'center' }} numberOfLines={1}>Purchase History</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={[styles.actionPill, { backgroundColor: theme.cardBg }]} 
+                  onPress={() => navigation.navigate('Creditors')}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.actionIcon, { backgroundColor: theme.danger + '20' }]}>
+                    <Ionicons name="person" size={20} color={theme.danger} />
+                  </View>
+                  <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600', marginTop: 8, textAlign: 'center' }} numberOfLines={1}>Creditors</Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         </>
       )}
