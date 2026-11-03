@@ -1,18 +1,14 @@
 // src/application/services/reports/YearlyReportService.js
-// v2.2.2-prod — Fixes debtor/creditor repository signatures (businessId only).
+// v2.3.0-prod — Removes internal AR/AP and Risk calculations to enforce SSOT.
+//               Data is sourced directly from repositories.
 
 const RevenueCalculator = require('./calculators/RevenueCalculator');
 const CogsCalculator = require('./calculators/CogsCalculator');
 const ProfitCalculator = require('./calculators/ProfitCalculator');
 const CashCalculator = require('./calculators/CashCalculator');
-const ARCalculator = require('./calculators/ARCalculator');
-const APCalculator = require('./calculators/APCalculator');
 const InventoryCalculator = require('./calculators/InventoryCalculator');
 const ComparisonCalculator = require('./calculators/ComparisonCalculator');
 
-/**
- * Yearly Report Service - Strategic annual perspective
- */
 class YearlyReportService {
     constructor({
         saleRepository,
@@ -27,8 +23,6 @@ class YearlyReportService {
         cogsCalculator = null,
         profitCalculator = null,
         cashCalculator = null,
-        arCalculator = null,
-        apCalculator = null,
         inventoryCalculator = null,
         comparisonCalculator = null,
     }) {
@@ -52,8 +46,6 @@ class YearlyReportService {
             incomeRepository: this.incomeRepository,
         });
         this.cashCalculator = cashCalculator || new CashCalculator({ paymentRepository: this.paymentRepository });
-        this.arCalculator = arCalculator || new ARCalculator({ debtorRepository: this.debtorRepository });
-        this.apCalculator = apCalculator || new APCalculator({ creditorRepository: this.creditorRepository });
         this.inventoryCalculator = inventoryCalculator || new InventoryCalculator({ inventoryRepository: this.inventoryRepository });
         this.comparisonCalculator = comparisonCalculator || new ComparisonCalculator();
     }
@@ -74,12 +66,7 @@ class YearlyReportService {
     _parseDate(dateStr) {
         if (!dateStr) return new Date();
         const parts = dateStr.split('T')[0].split('-');
-        return new Date(
-            parseInt(parts[0]),
-            parseInt(parts[1]) - 1,
-            parseInt(parts[2]),
-            0, 0, 0, 0
-        );
+        return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 0, 0, 0, 0);
     }
 
     _formatDateStr(date) {
@@ -108,17 +95,11 @@ class YearlyReportService {
         // =============================================
 
         const currentRevenue = await this.revenueCalculator.calculate({
-            userId,
-            businessId,
-            startDate: currentStartStr,
-            endDate: currentEndStr,
+            userId, businessId, startDate: currentStartStr, endDate: currentEndStr,
         });
 
         const currentCogs = await this.cogsCalculator.calculate({
-            userId,
-            businessId,
-            startDate: currentStartStr,
-            endDate: currentEndStr,
+            userId, businessId, startDate: currentStartStr, endDate: currentEndStr,
         });
 
         const currentExpensesList = this._safeArray(
@@ -131,27 +112,22 @@ class YearlyReportService {
         const currentCombinedRevenue = currentPureSales + currentOtherIncome;
 
         const currentProfit = await this.profitCalculator.calculate({
-            userId,
-            businessId,
-            startDate: currentStartStr,
-            endDate: currentEndStr,
+            userId, businessId, startDate: currentStartStr, endDate: currentEndStr,
             revenueData: { totalRevenue: currentPureSales },
             cogsData: { totalCogs: currentCogs.totalCogs },
             expenseData: { total: currentTotalExpenses },
             incomeData: { total: currentOtherIncome },
         });
 
-        const [currentCash, currentAr, currentAp, currentInventory] = await Promise.all([
+        const [currentCash, currentInventory] = await Promise.all([
             this.cashCalculator.calculate({ userId, businessId, startDate: currentStartStr, endDate: currentEndStr }),
-            this.arCalculator.calculate({ userId, businessId, asAtDate: currentEndStr }),
-            this.apCalculator.calculate({ userId, businessId, asAtDate: currentEndStr }),
             this.inventoryCalculator.calculate({ userId, businessId, includeDetails: false, lowStockThreshold: 5 }),
         ]);
 
         // =============================================
         // DEBTORS & CREDITORS DATA
         // =============================================
-        // ★ FIXED: Removed userId from the repository calls (signature expects only businessId)
+
         const activeDebtors = await this.debtorRepository.findActive(businessId);
         const debtorSummary = await this.debtorRepository.getSummary(businessId);
 
@@ -207,21 +183,15 @@ class YearlyReportService {
             .slice(0, 5);
 
         // =============================================
-        // PREVIOUS YEAR DATA (for YoY comparison)
+        // PREVIOUS YEAR DATA
         // =============================================
 
         const prevRevenue = await this.revenueCalculator.calculate({
-            userId,
-            businessId,
-            startDate: prevStartStr,
-            endDate: prevEndStr,
+            userId, businessId, startDate: prevStartStr, endDate: prevEndStr,
         });
 
         const prevCogs = await this.cogsCalculator.calculate({
-            userId,
-            businessId,
-            startDate: prevStartStr,
-            endDate: prevEndStr,
+            userId, businessId, startDate: prevStartStr, endDate: prevEndStr,
         });
 
         const prevExpensesList = this._safeArray(
@@ -234,10 +204,7 @@ class YearlyReportService {
         const prevCombinedRevenue = prevPureSales + prevOtherIncome;
 
         const prevProfit = await this.profitCalculator.calculate({
-            userId,
-            businessId,
-            startDate: prevStartStr,
-            endDate: prevEndStr,
+            userId, businessId, startDate: prevStartStr, endDate: prevEndStr,
             revenueData: { totalRevenue: prevPureSales },
             cogsData: { totalCogs: prevCogs.totalCogs },
             expenseData: { total: prevTotalExpenses },
@@ -266,14 +233,10 @@ class YearlyReportService {
 
         if (hasPriorYearData) {
             const revenueComparison = this.comparisonCalculator.compareValues(
-                currentCombinedRevenue,
-                prevCombinedRevenue,
-                'Revenue'
+                currentCombinedRevenue, prevCombinedRevenue, 'Revenue'
             );
             const profitComparison = this.comparisonCalculator.compareValues(
-                currentProfit.netProfit || 0,
-                prevProfit.netProfit || 0,
-                'Net Profit'
+                currentProfit.netProfit || 0, prevProfit.netProfit || 0, 'Net Profit'
             );
 
             revenueChange = revenueComparison.percentageChange || 0;
@@ -281,115 +244,6 @@ class YearlyReportService {
             profitChange = profitComparison.percentageChange || 0;
             profitAbsoluteChange = profitComparison.absoluteChange || 0;
         }
-
-        // =============================================
-        // STRATEGIC INSIGHTS
-        // =============================================
-
-        const strategicInsights = [];
-
-        if (hasPriorYearData && revenueChange > 5) {
-            strategicInsights.push(`Revenue grew ${revenueChange.toFixed(1)}% year-over-year, indicating healthy business growth and market demand. This momentum should be sustained through continued customer acquisition and retention strategies.`);
-        } else if (hasPriorYearData && revenueChange > 0 && revenueChange <= 5) {
-            strategicInsights.push(`Revenue grew ${revenueChange.toFixed(1)}% year-over-year. While positive, the growth rate suggests opportunity for accelerated expansion through targeted marketing and sales initiatives.`);
-        } else if (hasPriorYearData && revenueChange < 0) {
-            strategicInsights.push(`Revenue declined ${Math.abs(revenueChange).toFixed(1)}% year-over-year. This trend requires strategic review of market positioning, competitive landscape, and sales effectiveness.`);
-        } else if (!hasPriorYearData) {
-            strategicInsights.push(`This is the first year of tracked data for ${year}. Establishing baseline performance metrics will enable meaningful year-over-year comparisons in future periods.`);
-        }
-
-        if (netProfit > 0 && netMargin > 20) {
-            strategicInsights.push(`Net profit margin of ${this._round2(netMargin)}% demonstrates strong operational efficiency and healthy profitability. Consider reinvesting in growth initiatives to maximize returns.`);
-        } else if (netProfit > 0 && netMargin > 10) {
-            strategicInsights.push(`Net profit margin of ${this._round2(netMargin)}% indicates solid profitability. Focus on optimizing costs to improve margins and increase shareholder value.`);
-        } else if (netProfit > 0 && netMargin <= 10) {
-            strategicInsights.push(`Net profit margin of ${this._round2(netMargin)}% is thin. Strategic focus on cost optimization and revenue growth is recommended to strengthen profitability.`);
-        } else if (netProfit < 0) {
-            strategicInsights.push(`The business is currently unprofitable with a net loss of ₦${Math.abs(netProfit).toLocaleString()}. Strategic restructuring, expense reduction, and revenue enhancement initiatives are critical.`);
-        }
-
-        if (currentInventory.lowStockCount > 0) {
-            strategicInsights.push(`${currentInventory.lowStockCount} inventory items are below reorder level. Implementing optimized inventory management practices will improve operational efficiency and customer satisfaction.`);
-        }
-
-        if (currentAr.overdueAmount > 0) {
-            strategicInsights.push(`Overdue receivables of ₦${currentAr.overdueAmount.toLocaleString()} represent tied-up working capital. Strengthening collections processes will improve cash flow and financial flexibility.`);
-        }
-
-        if (currentTotalExpenses > currentCombinedRevenue * 0.4 && currentCombinedRevenue > 0) {
-            strategicInsights.push(`Operating expenses represent ${this._round2((currentTotalExpenses / currentCombinedRevenue) * 100)}% of revenue. Strategic cost optimization could significantly improve profitability.`);
-        }
-
-        // =============================================
-        // MAJOR RISKS
-        // =============================================
-
-        const majorRisks = [];
-
-        if (hasPriorYearData && revenueChange < -5) {
-            majorRisks.push(`Revenue declined ${Math.abs(revenueChange).toFixed(1)}% year-over-year. This sustained decline may indicate market share erosion, competitive pressure, or changing customer preferences requiring strategic intervention.`);
-        }
-
-        if (netProfit < 0) {
-            majorRisks.push(`The business is operating at a net loss of ₦${Math.abs(netProfit).toLocaleString()}. Without corrective action, this trajectory may threaten business sustainability and operational continuity.`);
-        }
-
-        if (currentAr.overdueAmount > 0) {
-            majorRisks.push(`Significant overdue receivables of ₦${currentAr.overdueAmount.toLocaleString()} pose a liquidity risk. These funds represent tied-up capital that could otherwise support business operations and growth.`);
-        }
-
-        if (currentInventory.lowStockCount > 0) {
-            majorRisks.push(`${currentInventory.lowStockCount} inventory items below reorder level present a potential revenue risk. Stockouts may result in lost sales, customer dissatisfaction, and competitive disadvantage.`);
-        }
-
-        if (netMargin > 0 && netMargin < 5) {
-            majorRisks.push(`Net margin of ${this._round2(netMargin)}% is below sustainable thresholds. Profitability erosion may limit future investment capacity and business resilience.`);
-        }
-
-        if (currentTotalExpenses > currentCombinedRevenue * 0.6 && currentCombinedRevenue > 0) {
-            majorRisks.push(`Operating expenses (${this._round2((currentTotalExpenses / currentCombinedRevenue) * 100)}% of revenue) are elevated. Expense management is critical to maintaining profitability and operational sustainability.`);
-        }
-
-        // =============================================
-        // MAJOR OPPORTUNITIES
-        // =============================================
-
-        const majorOpportunities = [];
-
-        if (hasPriorYearData && revenueChange > 0) {
-            majorOpportunities.push(`Revenue growth of ${revenueChange.toFixed(1)}% indicates positive market demand. Leverage this momentum through expanded marketing, product development, and customer acquisition strategies.`);
-        }
-
-        if (!hasPriorYearData) {
-            majorOpportunities.push(`As this is the first year of tracked data, establish robust reporting and analytics to enable data-driven decision-making and performance optimization going forward.`);
-        }
-
-        if (netProfit > 0 && netMargin > 15) {
-            majorOpportunities.push(`Strong net margin of ${this._round2(netMargin)}% provides financial capacity for strategic investments in growth, innovation, and market expansion.`);
-        }
-
-        if (currentInventory.lowStockCount === 0 && currentInventory.totalItems > 0) {
-            majorOpportunities.push(`Inventory levels are well-maintained with no low-stock items. This operational efficiency positions the business well for consistent customer satisfaction and revenue generation.`);
-        }
-
-        if (currentAr.overdueAmount === 0 && currentAr.totalOutstanding > 0) {
-            majorOpportunities.push(`All receivables are current with no overdue amounts. This disciplined collections approach strengthens cash flow and financial stability.`);
-        }
-
-        if (currentSales.length > 0) {
-            const avgTransactionValue = currentCombinedRevenue / currentSales.length;
-            if (avgTransactionValue > 10000) {
-                majorOpportunities.push(`High average transaction value of ₦${Math.round(avgTransactionValue).toLocaleString()} suggests strong customer purchasing power. Focus on upselling and cross-selling to maximize revenue per customer.`);
-            }
-        }
-
-        if (netProfit > 0) {
-            majorOpportunities.push(`Sustained profitability provides a foundation for strategic growth. Consider reinvesting profits into areas with highest growth potential and operational improvement.`);
-        }
-
-        // =============================================
-        // RETURN REPORT
-        // =============================================
 
         return {
             year,
@@ -433,9 +287,6 @@ class YearlyReportService {
                 totalValue: currentInventory.totalCostValue || 0,
                 lowStockCount: currentInventory.lowStockCount || 0,
             },
-            majorRisks,
-            majorOpportunities,
-            strategicInsights,
             topProducts,
             topCustomers,
             debtors: debtorsData,

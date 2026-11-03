@@ -1,23 +1,14 @@
 // src/application/services/reports/MonthlyReportService.js
-// v2.2.2-prod — Fixes debtor/creditor repository signatures (businessId only).
+// v2.3.0-prod — Removes internal AR/AP and Risk calculations to enforce SSOT.
+//               Data is sourced directly from repositories.
 
 const RevenueCalculator = require('./calculators/RevenueCalculator');
 const CogsCalculator = require('./calculators/CogsCalculator');
 const ProfitCalculator = require('./calculators/ProfitCalculator');
 const CashCalculator = require('./calculators/CashCalculator');
-const ARCalculator = require('./calculators/ARCalculator');
-const APCalculator = require('./calculators/APCalculator');
 const InventoryCalculator = require('./calculators/InventoryCalculator');
 const ComparisonCalculator = require('./calculators/ComparisonCalculator');
 
-/**
- * Monthly Report Service - Management analysis report
- *
- * - Product Sales = sales.salesRevenue (operating top-line)
- * - Total Revenue (Combined) = salesRevenue + otherRevenue
- * - Gross Profit = Product Sales - COGS
- * - Net Profit = Gross Profit - Operating Expenses + Other Income
- */
 class MonthlyReportService {
     constructor({
         saleRepository,
@@ -32,8 +23,6 @@ class MonthlyReportService {
         cogsCalculator = null,
         profitCalculator = null,
         cashCalculator = null,
-        arCalculator = null,
-        apCalculator = null,
         inventoryCalculator = null,
         comparisonCalculator = null,
     }) {
@@ -50,33 +39,14 @@ class MonthlyReportService {
             saleRepository: this.saleRepository,
             incomeRepository: this.incomeRepository,
         });
-
-        this.cogsCalculator = cogsCalculator || new CogsCalculator({
-            saleRepository: this.saleRepository,
-        });
-
+        this.cogsCalculator = cogsCalculator || new CogsCalculator({ saleRepository: this.saleRepository });
         this.profitCalculator = profitCalculator || new ProfitCalculator({
             saleRepository: this.saleRepository,
             expenseRepository: this.expenseRepository,
             incomeRepository: this.incomeRepository,
         });
-
-        this.cashCalculator = cashCalculator || new CashCalculator({
-            paymentRepository: this.paymentRepository,
-        });
-
-        this.arCalculator = arCalculator || new ARCalculator({
-            debtorRepository: this.debtorRepository,
-        });
-
-        this.apCalculator = apCalculator || new APCalculator({
-            creditorRepository: this.creditorRepository,
-        });
-
-        this.inventoryCalculator = inventoryCalculator || new InventoryCalculator({
-            inventoryRepository: this.inventoryRepository,
-        });
-
+        this.cashCalculator = cashCalculator || new CashCalculator({ paymentRepository: this.paymentRepository });
+        this.inventoryCalculator = inventoryCalculator || new InventoryCalculator({ inventoryRepository: this.inventoryRepository });
         this.comparisonCalculator = comparisonCalculator || new ComparisonCalculator();
     }
 
@@ -96,12 +66,7 @@ class MonthlyReportService {
     _parseDate(dateStr) {
         if (!dateStr) return new Date();
         const parts = dateStr.split('T')[0].split('-');
-        return new Date(
-            parseInt(parts[0]),
-            parseInt(parts[1]) - 1,
-            parseInt(parts[2]),
-            0, 0, 0, 0
-        );
+        return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 0, 0, 0, 0);
     }
 
     _formatDateStr(date) {
@@ -139,20 +104,13 @@ class MonthlyReportService {
         // =============================================
 
         const currentRevenue = await this.revenueCalculator.calculate({
-            userId,
-            businessId,
-            startDate: monthStartStr,
-            endDate: monthEndStr,
+            userId, businessId, startDate: monthStartStr, endDate: monthEndStr,
         });
 
         const currentCogs = await this.cogsCalculator.calculate({
-            userId,
-            businessId,
-            startDate: monthStartStr,
-            endDate: monthEndStr,
+            userId, businessId, startDate: monthStartStr, endDate: monthEndStr,
         });
 
-        // Operating expenses only. Failures propagate.
         const currentExpensesList = this._safeArray(
             await this.expenseRepository.findByDateRange(businessId, monthStartStr, monthEndStr)
         );
@@ -163,27 +121,22 @@ class MonthlyReportService {
         const currentCombinedRevenue = currentPureSales + currentOtherIncome;
 
         const currentProfit = await this.profitCalculator.calculate({
-            userId,
-            businessId,
-            startDate: monthStartStr,
-            endDate: monthEndStr,
+            userId, businessId, startDate: monthStartStr, endDate: monthEndStr,
             revenueData: { totalRevenue: currentPureSales },
             cogsData: { totalCogs: currentCogs.totalCogs },
             expenseData: { total: currentTotalExpenses },
             incomeData: { total: currentOtherIncome },
         });
 
-        const [currentCash, currentAr, currentAp, currentInventory] = await Promise.all([
+        const [currentCash, currentInventory] = await Promise.all([
             this.cashCalculator.calculate({ userId, businessId, startDate: monthStartStr, endDate: monthEndStr }),
-            this.arCalculator.calculate({ userId, businessId, asAtDate: monthEndStr }),
-            this.apCalculator.calculate({ userId, businessId, asAtDate: monthEndStr }),
             this.inventoryCalculator.calculate({ userId, businessId, includeDetails: false, lowStockThreshold: 5 }),
         ]);
 
         // =============================================
         // DEBTORS & CREDITORS DATA
         // =============================================
-        // ★ FIXED: Removed userId from the repository calls (signature expects only businessId)
+
         const activeDebtors = await this.debtorRepository.findActive(businessId);
         const debtorSummary = await this.debtorRepository.getSummary(businessId);
 
@@ -213,17 +166,11 @@ class MonthlyReportService {
         // =============================================
 
         const prevRevenue = await this.revenueCalculator.calculate({
-            userId,
-            businessId,
-            startDate: prevMonthStartStr,
-            endDate: prevMonthEndStr,
+            userId, businessId, startDate: prevMonthStartStr, endDate: prevMonthEndStr,
         });
 
         const prevCogs = await this.cogsCalculator.calculate({
-            userId,
-            businessId,
-            startDate: prevMonthStartStr,
-            endDate: prevMonthEndStr,
+            userId, businessId, startDate: prevMonthStartStr, endDate: prevMonthEndStr,
         });
 
         const prevExpensesList = this._safeArray(
@@ -236,10 +183,7 @@ class MonthlyReportService {
         const prevCombinedRevenue = prevPureSales + prevOtherIncome;
 
         const prevProfit = await this.profitCalculator.calculate({
-            userId,
-            businessId,
-            startDate: prevMonthStartStr,
-            endDate: prevMonthEndStr,
+            userId, businessId, startDate: prevMonthStartStr, endDate: prevMonthEndStr,
             revenueData: { totalRevenue: prevPureSales },
             cogsData: { totalCogs: prevCogs.totalCogs },
             expenseData: { total: prevTotalExpenses },
@@ -251,17 +195,11 @@ class MonthlyReportService {
         // =============================================
 
         const ytdRevenue = await this.revenueCalculator.calculate({
-            userId,
-            businessId,
-            startDate: ytdStartStr,
-            endDate: monthEndStr,
+            userId, businessId, startDate: ytdStartStr, endDate: monthEndStr,
         });
 
         const ytdCogs = await this.cogsCalculator.calculate({
-            userId,
-            businessId,
-            startDate: ytdStartStr,
-            endDate: monthEndStr,
+            userId, businessId, startDate: ytdStartStr, endDate: monthEndStr,
         });
 
         const ytdExpensesList = this._safeArray(
@@ -274,10 +212,7 @@ class MonthlyReportService {
         const ytdCombinedRevenue = ytdPureSales + ytdOtherIncome;
 
         const ytdProfit = await this.profitCalculator.calculate({
-            userId,
-            businessId,
-            startDate: ytdStartStr,
-            endDate: monthEndStr,
+            userId, businessId, startDate: ytdStartStr, endDate: monthEndStr,
             revenueData: { totalRevenue: ytdPureSales },
             cogsData: { totalCogs: ytdCogs.totalCogs },
             expenseData: { total: ytdTotalExpenses },
@@ -285,19 +220,15 @@ class MonthlyReportService {
         });
 
         // =============================================
-        // COMPARISONS (using combined revenue)
+        // COMPARISONS
         // =============================================
 
         const revenueComparison = this.comparisonCalculator.compareValues(
-            currentCombinedRevenue,
-            prevCombinedRevenue,
-            'Revenue'
+            currentCombinedRevenue, prevCombinedRevenue, 'Revenue'
         );
 
         const profitComparison = this.comparisonCalculator.compareValues(
-            currentProfit.netProfit || 0,
-            prevProfit.netProfit || 0,
-            'Net Profit'
+            currentProfit.netProfit || 0, prevProfit.netProfit || 0, 'Net Profit'
         );
 
         // =============================================
@@ -339,7 +270,6 @@ class MonthlyReportService {
             .sort((a, b) => b.amount - a.amount)
             .slice(0, 5);
 
-        // Top Expenses
         const expenseDrivers = {};
         for (const expense of currentExpensesList) {
             const key = expense.category || 'Other';
@@ -351,124 +281,6 @@ class MonthlyReportService {
             .map(([category, amount]) => ({ category, amount }))
             .sort((a, b) => b.amount - a.amount)
             .slice(0, 5);
-
-        // =============================================
-        // PROFESSIONAL RISKS
-        // =============================================
-
-        const risks = [];
-
-        if (currentAr.overdueAmount > 0) {
-            risks.push({
-                type: 'High Risk',
-                description: `Overdue receivables of ₦${currentAr.overdueAmount.toLocaleString()} represent a significant cash-flow constraint. Recommend immediate collection action to preserve working capital.`,
-            });
-        }
-
-        if (currentInventory.lowStockCount > 0) {
-            risks.push({
-                type: 'Medium Risk',
-                description: `${currentInventory.lowStockCount} inventory items are below reorder threshold. This may lead to stockouts, lost sales, and customer dissatisfaction. Review replenishment schedules.`,
-            });
-        }
-
-        if (revenueComparison.percentageChange !== null && revenueComparison.percentageChange < -10) {
-            risks.push({
-                type: 'High Risk',
-                description: `Revenue declined ${Math.abs(revenueComparison.percentageChange).toFixed(1)}% month-over-month. This trend requires immediate investigation into market conditions, pricing strategy, and competitive positioning.`,
-            });
-        }
-
-        if (netProfit < 0) {
-            risks.push({
-                type: 'High Risk',
-                description: `The business is operating at a net loss of ₦${Math.abs(netProfit).toLocaleString()}. Without corrective action, this trend may erode cash reserves and threaten operational sustainability.`,
-            });
-        }
-
-        if (currentTotalExpenses > currentCombinedRevenue * 0.5 && currentCombinedRevenue > 0) {
-            risks.push({
-                type: 'Medium Risk',
-                description: `Operating expenses (${this._round2((currentTotalExpenses / currentCombinedRevenue) * 100)}% of revenue) are high relative to revenue. Review non-essential spending and identify cost-saving opportunities.`,
-            });
-        }
-
-        if (currentAr.totalOutstanding > currentCombinedRevenue * 0.3 && currentCombinedRevenue > 0) {
-            risks.push({
-                type: 'Medium Risk',
-                description: `Accounts receivable (${this._round2((currentAr.totalOutstanding / currentCombinedRevenue) * 100)}% of revenue) are elevated. Consider tightening credit terms or accelerating collection efforts.`,
-            });
-        }
-
-        // =============================================
-        // AI INSIGHTS
-        // =============================================
-
-        const insights = [];
-
-        if (revenueComparison.percentageChange !== null) {
-            if (revenueComparison.percentageChange > 0) {
-                insights.push(`Revenue grew ${revenueComparison.percentageChange.toFixed(1)}% month-over-month. This positive momentum should be sustained through targeted marketing and customer retention initiatives.`);
-            } else if (revenueComparison.percentageChange < 0) {
-                insights.push(`Revenue declined ${Math.abs(revenueComparison.percentageChange).toFixed(1)}% month-over-month. Analyze customer churn, sales effectiveness, and market trends to identify the root cause.`);
-            }
-        }
-
-        if (netProfit > 0 && netMargin > 15) {
-            insights.push(`The business demonstrates healthy profitability with a net margin of ${this._round2(netMargin)}%. Continue monitoring expense growth to protect this position.`);
-        } else if (netProfit > 0 && netMargin > 5) {
-            insights.push(`The business maintains positive profitability with a net margin of ${this._round2(netMargin)}%. Focus on margin improvement through cost optimization and value-based pricing.`);
-        } else if (netProfit > 0 && netMargin <= 5) {
-            insights.push(`Net margin of ${this._round2(netMargin)}% is thin. Review pricing, supplier costs, and operational efficiency to strengthen profitability.`);
-        } else if (netProfit < 0) {
-            insights.push(`The business is currently unprofitable. Immediate focus should be on expense reduction, revenue generation, and cash preservation.`);
-        }
-
-        if (currentInventory.lowStockCount > 0) {
-            insights.push(`${currentInventory.lowStockCount} items are below reorder level. Prioritize replenishment to maintain customer satisfaction and avoid stockout-related revenue loss.`);
-        }
-
-        if (currentAr.overdueAmount > 0) {
-            insights.push(`Overdue receivables of ₦${currentAr.overdueAmount.toLocaleString()} represent tied-up capital. Accelerating collections could improve liquidity without additional borrowing.`);
-        }
-
-        // =============================================
-        // RECOMMENDATIONS
-        // =============================================
-
-        const recommendations = [];
-
-        if (revenueComparison.percentageChange !== null && revenueComparison.percentageChange < 0) {
-            recommendations.push('Conduct a comprehensive revenue review. Analyze sales channels, customer segments, and product performance to identify growth opportunities and reverse the decline.');
-        }
-
-        if (currentAr.overdueAmount > 0) {
-            recommendations.push('Implement a structured collections process. Contact overdue customers, offer payment plans where appropriate, and consider tightening credit policies to prevent future accumulation.');
-        }
-
-        if (currentInventory.lowStockCount > 0) {
-            recommendations.push('Prioritize replenishment of low-stock items. Review reorder levels and supplier lead times to maintain optimal inventory levels and prevent customer dissatisfaction.');
-        }
-
-        if (netMargin < 10 && netProfit > 0) {
-            recommendations.push('Review all expense categories for optimization opportunities. Identify non-essential spending, negotiate supplier contracts, and consider automation to reduce operational costs.');
-        }
-
-        if (netProfit < 0) {
-            recommendations.push('Immediate cost rationalization is required. Review fixed and variable expenses, delay non-critical capital expenditures, and focus on cash preservation while exploring revenue-enhancing strategies.');
-        }
-
-        if (currentAr.totalOutstanding > currentCombinedRevenue * 0.3 && currentCombinedRevenue > 0) {
-            recommendations.push('Review customer credit terms and payment behaviour. Consider discounts for early payment and stricter enforcement of payment deadlines to improve cash flow.');
-        }
-
-        if (currentTotalExpenses > currentCombinedRevenue * 0.6 && currentCombinedRevenue > 0) {
-            recommendations.push('Expense ratio is elevated. Conduct a line-by-line expense review to identify cost-saving opportunities without compromising operational effectiveness.');
-        }
-
-        // =============================================
-        // RETURN REPORT
-        // =============================================
 
         return {
             month: monthName,
@@ -531,9 +343,6 @@ class MonthlyReportService {
                 lowStockCount: currentInventory.lowStockCount || 0,
                 lowStockItems: currentInventory.lowStockItems || [],
             },
-            risks,
-            aiInsights: insights,
-            recommendations,
             topProducts,
             topCustomers,
             topExpenses,
