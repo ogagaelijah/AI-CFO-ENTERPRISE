@@ -27,6 +27,7 @@ export const mapMonthlyReport = (backendData) => {
     inventory,
     debtors,
     creditors,
+    salesCount, // ★ NEW: Extracting from backend
   } = backendData;
 
   return {
@@ -36,6 +37,7 @@ export const mapMonthlyReport = (backendData) => {
       start: period?.start || today(),
       end: period?.end || today(),
     },
+    salesCount: toNumber(salesCount), // ★ NEW: Passing to UI
     executiveSummary: {
       totalRevenue: revenue || executiveSummary?.totalRevenue || 0,
       grossProfit: grossProfit || executiveSummary?.grossProfit || 0,
@@ -82,6 +84,7 @@ const getEmptyMonthlyReport = () => ({
   month: new Date().toLocaleString('default', { month: 'long' }),
   year: new Date().getFullYear(),
   period: { start: today(), end: today() },
+  salesCount: 0, // ★ NEW: Added for fallback
   executiveSummary: {
     totalRevenue: 0,
     grossProfit: 0,

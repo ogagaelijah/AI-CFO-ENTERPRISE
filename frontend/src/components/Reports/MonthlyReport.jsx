@@ -23,6 +23,7 @@ const MonthlyReport = ({ data, formatCurrency, formatPercentage }) => {
     inventory,
     debtors,
     creditors,
+    salesCount, // ★ NEW: Extracting salesCount
   } = data;
 
   const safeExecutive = executiveSummary || { 
@@ -168,8 +169,14 @@ const MonthlyReport = ({ data, formatCurrency, formatPercentage }) => {
           </div>
         </div>
 
-        {/* Inventory */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
+        {/* Inventory & Sales */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4">
+          <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-3">
+            <p className="text-xs text-gray-500 dark:text-gray-400">Sales Count</p>
+            <p className="text-xl font-bold text-purple-600 dark:text-purple-400">
+              {salesCount || 0}
+            </p>
+          </div>
           <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">Total Inventory Items</p>
             <p className="text-xl font-bold text-indigo-600 dark:text-indigo-400">
@@ -192,7 +199,7 @@ const MonthlyReport = ({ data, formatCurrency, formatPercentage }) => {
           )}
         </div>
 
-        {/* Debtors */}
+        {/* Debtors & Creditors */}
         {(safeDebtors.count > 0 || safeDebtors.totalAmount > 0) && (
           <div className="mt-4">
             <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">📋 Debtors</h4>
@@ -219,7 +226,6 @@ const MonthlyReport = ({ data, formatCurrency, formatPercentage }) => {
           </div>
         )}
 
-        {/* Creditors */}
         {(safeCreditors.count > 0 || safeCreditors.totalAmount > 0) && (
           <div className="mt-4">
             <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">📋 Creditors</h4>
@@ -246,7 +252,7 @@ const MonthlyReport = ({ data, formatCurrency, formatPercentage }) => {
           </div>
         )}
 
-        {/* ===== TOP 5 CUSTOMERS ===== */}
+        {/* Top 5 Customers */}
         {safeTopCustomers.length > 0 && (
           <div className="mt-6">
             <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">🏆 Top 5 Customers</h4>
@@ -266,7 +272,7 @@ const MonthlyReport = ({ data, formatCurrency, formatPercentage }) => {
           </div>
         )}
 
-        {/* ===== TOP 5 PRODUCTS ===== */}
+        {/* Top 5 Products */}
         {safeTopProducts.length > 0 && (
           <div className="mt-6">
             <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">📦 Top 5 Products</h4>

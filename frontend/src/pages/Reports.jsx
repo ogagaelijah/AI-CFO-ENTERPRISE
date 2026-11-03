@@ -1,5 +1,5 @@
 // frontend/src/pages/Reports.jsx
-// v1.3.2-prod — Adds pagination state for Inventory Movement report.
+// v1.3.3-prod — Fixes date picker re-rendering issue. Fetch only occurs on Generate or Report change.
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -87,12 +87,18 @@ const Reports = () => {
   const today = new Date().toISOString().split('T')[0];
   const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
 
+  // UI States (what the inputs show)
   const [period, setPeriod] = useState({
     startDate: firstDayOfMonth,
     endDate: today,
   });
   const [date, setDate] = useState(today);
   const [balanceSheetDate, setBalanceSheetDate] = useState(today);
+
+  // ★ NEW: Active States (what is actually sent to the API)
+  const [activePeriod, setActivePeriod] = useState({ startDate: firstDayOfMonth, endDate: today });
+  const [activeDate, setActiveDate] = useState(today);
+  const [activeBalanceSheetDate, setActiveBalanceSheetDate] = useState(today);
 
   const getCurrentReport = () => {
     return REPORT_TYPES.find((r) => r.id === activeReport) || REPORT_TYPES[0];
@@ -106,40 +112,40 @@ const Reports = () => {
       const report = getCurrentReport();
       let response;
 
+      // ★ NEW: Using the "active" states for the API calls
       switch (report.id) {
         case 'executive':
-          response = await reportApi.getExecutive(period.startDate, period.endDate);
+          response = await reportApi.getExecutive(activePeriod.startDate, activePeriod.endDate);
           break;
         case 'pl':
-          response = await reportApi.getPL(period.startDate, period.endDate);
+          response = await reportApi.getPL(activePeriod.startDate, activePeriod.endDate);
           break;
         case 'cashflow':
-          response = await reportApi.getCashFlow(period.startDate, period.endDate);
+          response = await reportApi.getCashFlow(activePeriod.startDate, activePeriod.endDate);
           break;
         case 'balance-sheet':
-          response = await reportApi.getBalanceSheet(balanceSheetDate);
+          response = await reportApi.getBalanceSheet(activeBalanceSheetDate);
           break;
         case 'inventory-valuation':
-          response = await reportApi.getInventoryValuation(balanceSheetDate);
+          response = await reportApi.getInventoryValuation(activeBalanceSheetDate);
           break;
         case 'inventory-movement':
-          // ★ Uses movementPage state
-          response = await reportApi.getInventoryMovement(period.startDate, period.endDate, movementPage, 50);
+          response = await reportApi.getInventoryMovement(activePeriod.startDate, activePeriod.endDate, movementPage, 50);
           break;
         case 'daily':
-          response = await reportApi.getDaily(date);
+          response = await reportApi.getDaily(activeDate);
           break;
         case 'weekly':
-          response = await reportApi.getWeekly(date);
+          response = await reportApi.getWeekly(activeDate);
           break;
         case 'monthly':
-          response = await reportApi.getMonthly(date);
+          response = await reportApi.getMonthly(activeDate);
           break;
         case 'yearly':
-          response = await reportApi.getYearly(date);
+          response = await reportApi.getYearly(activeDate);
           break;
         default:
-          response = await reportApi.getExecutive(period.startDate, period.endDate);
+          response = await reportApi.getExecutive(activePeriod.startDate, activePeriod.endDate);
       }
 
       const rawData = extractReportPayload(response);
@@ -165,11 +171,12 @@ const Reports = () => {
     } finally {
       setLoading(false);
     }
-  }, [activeReport, period, date, balanceSheetDate, movementPage]); // ★ Added movementPage
+  }, [activeReport, activePeriod, activeDate, activeBalanceSheetDate, movementPage]);
 
+  // ★ NEW: Fetch when the "active" states change or when switching reports
   useEffect(() => {
     fetchReport();
-  }, [fetchReport]);
+  }, [activeReport, activePeriod, activeDate, activeBalanceSheetDate, movementPage]);
 
   const handleReportChange = (reportId) => {
     setActiveReport(reportId);
@@ -177,8 +184,16 @@ const Reports = () => {
     setRawReportData(null);
     setError('');
     if (reportId === 'inventory-movement') {
-      setMovementPage(1); // Reset page when switching to movement
+      setMovementPage(1);
     }
+  };
+
+  // ★ NEW: Triggered ONLY by the Generate button
+  const handleGenerate = () => {
+    setActivePeriod(period);
+    setActiveDate(date);
+    setActiveBalanceSheetDate(balanceSheetDate);
+    setMovementPage(1);
   };
 
   const handleExportPDF = async () => {
@@ -363,7 +378,7 @@ const Reports = () => {
           )}
 
           <button
-            onClick={() => { setMovementPage(1); fetchReport(); }}
+            onClick={handleGenerate}
             className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg transition"
           >
             Generate
@@ -376,7 +391,6 @@ const Reports = () => {
           data={reportData} 
           formatCurrency={formatCurrency} 
           formatPercentage={formatPercentage}
-          // ★ Pass pagination props ONLY to the movement report
           {...(activeReport === 'inventory-movement' && {
             onPageChange: setMovementPage,
             currentPage: movementPage

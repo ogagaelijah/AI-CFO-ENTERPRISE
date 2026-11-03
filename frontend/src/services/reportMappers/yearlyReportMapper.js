@@ -21,6 +21,7 @@ export const mapYearlyReport = (backendData) => {
     topCustomers,
     debtors,
     creditors,
+    salesCount, // ★ NEW: Extracting from backend
   } = backendData;
 
   // Safely extract YoY data
@@ -32,6 +33,7 @@ export const mapYearlyReport = (backendData) => {
       start: period?.start || today(),
       end: period?.end || today(),
     },
+    salesCount: toNumber(salesCount), // ★ NEW: Passing to UI
     executiveSummary: {
       totalRevenue: executiveSummary?.totalRevenue || 0,
       netProfit: executiveSummary?.netProfit || 0,
@@ -81,6 +83,7 @@ export const mapYearlyReport = (backendData) => {
 const getEmptyYearlyReport = () => ({
   year: new Date().getFullYear(),
   period: { start: today(), end: today() },
+  salesCount: 0, // ★ NEW: Added for fallback
   executiveSummary: {
     totalRevenue: 0,
     netProfit: 0,

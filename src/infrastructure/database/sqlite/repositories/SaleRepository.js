@@ -1,4 +1,5 @@
 // src/infrastructure/database/sqlite/repositories/SaleRepository.js
+// v3.4.0-prod — Adds countByDateRange for accurate report sales counts.
 // v3.3.0-prod — Adds pagination support: findByBusinessIdPaginated + countByBusinessId.
 // v3.2.0-prod — Postgres async. Added nextSaleNumber(businessId) for per-business numbering.
 
@@ -134,6 +135,18 @@ class SaleRepository extends BaseRepository {
             [businessId, startDate, endDate]
         );
         return result.rows.map(row => this._hydrate(row));
+    }
+
+    // ★ NEW: Fast count without fetching rows
+    async countByDateRange(businessId, startDate, endDate) {
+        const result = await this._query(
+            `SELECT COUNT(*)::int AS count FROM sales
+             WHERE business_id = $1
+               AND DATE(sale_date) >= DATE($2)
+               AND DATE(sale_date) <= DATE($3)`,
+            [businessId, startDate, endDate]
+        );
+        return result.rows[0]?.count || 0;
     }
 
     async findByCustomerId(businessId, customerId) {

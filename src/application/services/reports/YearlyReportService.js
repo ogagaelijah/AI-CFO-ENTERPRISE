@@ -1,6 +1,5 @@
 // src/application/services/reports/YearlyReportService.js
-// v2.2.0-prod — Revenue + other income come from RevenueCalculator.
-//               Removed separate income fetches. Business-scoped. No silent swallows.
+// v2.2.1-prod — Adds salesCount to return payload.
 
 const RevenueCalculator = require('./calculators/RevenueCalculator');
 const CogsCalculator = require('./calculators/CogsCalculator');
@@ -427,6 +426,7 @@ class YearlyReportService {
             expenses: currentTotalExpenses,
             netProfit: this._round2(netProfit),
             netMargin: this._round2(netMargin),
+            salesCount: currentSales.length, // ★ ADDED HERE
 
             executiveSummary: {
                 totalRevenue: currentCombinedRevenue,

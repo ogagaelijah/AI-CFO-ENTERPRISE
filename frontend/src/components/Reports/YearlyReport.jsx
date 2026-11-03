@@ -24,6 +24,7 @@ const YearlyReport = ({ data, formatCurrency, formatPercentage }) => {
     topCustomers = [],
     debtors,
     creditors,
+    salesCount, // ★ NEW: Extracting salesCount
   } = data;
 
   const safeExecutive = executiveSummary || { 
@@ -161,8 +162,14 @@ const YearlyReport = ({ data, formatCurrency, formatPercentage }) => {
           </div>
         </div>
 
-        {/* Inventory */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
+        {/* Inventory & Sales */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4">
+          <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-3">
+            <p className="text-xs text-gray-500 dark:text-gray-400">Sales Count</p>
+            <p className="text-xl font-bold text-purple-600 dark:text-purple-400">
+              {salesCount || 0}
+            </p>
+          </div>
           <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">Total Inventory Items</p>
             <p className="text-xl font-bold text-indigo-600 dark:text-indigo-400">
@@ -185,7 +192,7 @@ const YearlyReport = ({ data, formatCurrency, formatPercentage }) => {
           )}
         </div>
 
-        {/* Debtors */}
+        {/* Debtors & Creditors */}
         {(safeDebtors.count > 0 || safeDebtors.totalAmount > 0) && (
           <div className="mt-4">
             <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">📋 Debtors</h4>
@@ -199,10 +206,19 @@ const YearlyReport = ({ data, formatCurrency, formatPercentage }) => {
                 <p className="text-xl font-bold text-rose-600 dark:text-rose-400">{formatCurrency(safeDebtors.totalAmount)}</p>
               </div>
             </div>
+            {safeDebtors.top3?.length > 0 && (
+              <div className="space-y-1">
+                {safeDebtors.top3.map((d, idx) => (
+                  <div key={idx} className="flex justify-between text-sm border-b border-gray-100 dark:border-gray-700 py-1">
+                    <span className="text-gray-600 dark:text-gray-400">{d.name}</span>
+                    <span className="font-medium text-gray-900 dark:text-white">{formatCurrency(d.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
-        {/* Creditors */}
         {(safeCreditors.count > 0 || safeCreditors.totalAmount > 0) && (
           <div className="mt-4">
             <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">📋 Creditors</h4>
@@ -216,10 +232,20 @@ const YearlyReport = ({ data, formatCurrency, formatPercentage }) => {
                 <p className="text-xl font-bold text-orange-600 dark:text-orange-400">{formatCurrency(safeCreditors.totalAmount)}</p>
               </div>
             </div>
+            {safeCreditors.top3?.length > 0 && (
+              <div className="space-y-1">
+                {safeCreditors.top3.map((c, idx) => (
+                  <div key={idx} className="flex justify-between text-sm border-b border-gray-100 dark:border-gray-700 py-1">
+                    <span className="text-gray-600 dark:text-gray-400">{c.name}</span>
+                    <span className="font-medium text-gray-900 dark:text-white">{formatCurrency(c.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
-        {/* ===== TOP 5 CUSTOMERS ===== */}
+        {/* Top 5 Customers */}
         {safeTopCustomers.length > 0 && (
           <div className="mt-6">
             <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">🏆 Top 5 Customers</h4>
@@ -239,7 +265,7 @@ const YearlyReport = ({ data, formatCurrency, formatPercentage }) => {
           </div>
         )}
 
-        {/* ===== TOP 5 PRODUCTS ===== */}
+        {/* Top 5 Products */}
         {safeTopProducts.length > 0 && (
           <div className="mt-6">
             <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">📦 Top 5 Products</h4>
