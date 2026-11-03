@@ -1,5 +1,5 @@
 // src/application/services/reports/YearlyReportService.js
-// v2.2.1-prod — Adds salesCount to return payload.
+// v2.2.2-prod — Fixes debtor/creditor repository signatures (businessId only).
 
 const RevenueCalculator = require('./calculators/RevenueCalculator');
 const CogsCalculator = require('./calculators/CogsCalculator');
@@ -12,11 +12,6 @@ const ComparisonCalculator = require('./calculators/ComparisonCalculator');
 
 /**
  * Yearly Report Service - Strategic annual perspective
- *
- * - Product Sales = sales.salesRevenue (operating top-line)
- * - Total Revenue (Combined) = salesRevenue + otherRevenue
- * - Gross Profit = Product Sales - COGS
- * - Net Profit = Gross Profit - Operating Expenses + Other Income
  */
 class YearlyReportService {
     constructor({
@@ -50,33 +45,16 @@ class YearlyReportService {
             saleRepository: this.saleRepository,
             incomeRepository: this.incomeRepository,
         });
-
-        this.cogsCalculator = cogsCalculator || new CogsCalculator({
-            saleRepository: this.saleRepository,
-        });
-
+        this.cogsCalculator = cogsCalculator || new CogsCalculator({ saleRepository: this.saleRepository });
         this.profitCalculator = profitCalculator || new ProfitCalculator({
             saleRepository: this.saleRepository,
             expenseRepository: this.expenseRepository,
             incomeRepository: this.incomeRepository,
         });
-
-        this.cashCalculator = cashCalculator || new CashCalculator({
-            paymentRepository: this.paymentRepository,
-        });
-
-        this.arCalculator = arCalculator || new ARCalculator({
-            debtorRepository: this.debtorRepository,
-        });
-
-        this.apCalculator = apCalculator || new APCalculator({
-            creditorRepository: this.creditorRepository,
-        });
-
-        this.inventoryCalculator = inventoryCalculator || new InventoryCalculator({
-            inventoryRepository: this.inventoryRepository,
-        });
-
+        this.cashCalculator = cashCalculator || new CashCalculator({ paymentRepository: this.paymentRepository });
+        this.arCalculator = arCalculator || new ARCalculator({ debtorRepository: this.debtorRepository });
+        this.apCalculator = apCalculator || new APCalculator({ creditorRepository: this.creditorRepository });
+        this.inventoryCalculator = inventoryCalculator || new InventoryCalculator({ inventoryRepository: this.inventoryRepository });
         this.comparisonCalculator = comparisonCalculator || new ComparisonCalculator();
     }
 
@@ -143,7 +121,6 @@ class YearlyReportService {
             endDate: currentEndStr,
         });
 
-        // Operating expenses only. Failures propagate.
         const currentExpensesList = this._safeArray(
             await this.expenseRepository.findByDateRange(businessId, currentStartStr, currentEndStr)
         );
@@ -174,12 +151,12 @@ class YearlyReportService {
         // =============================================
         // DEBTORS & CREDITORS DATA
         // =============================================
+        // ★ FIXED: Removed userId from the repository calls (signature expects only businessId)
+        const activeDebtors = await this.debtorRepository.findActive(businessId);
+        const debtorSummary = await this.debtorRepository.getSummary(businessId);
 
-        const activeDebtors = await this.debtorRepository.findActive(userId, businessId);
-        const debtorSummary = await this.debtorRepository.getSummary(userId, businessId);
-
-        const activeCreditors = await this.creditorRepository.findActive(userId, businessId);
-        const creditorSummary = await this.creditorRepository.getSummary(userId, businessId);
+        const activeCreditors = await this.creditorRepository.findActive(businessId);
+        const creditorSummary = await this.creditorRepository.getSummary(businessId);
 
         const debtorsData = {
             count: debtorSummary.active_count || 0,
@@ -426,7 +403,7 @@ class YearlyReportService {
             expenses: currentTotalExpenses,
             netProfit: this._round2(netProfit),
             netMargin: this._round2(netMargin),
-            salesCount: currentSales.length, // ★ ADDED HERE
+            salesCount: currentSales.length,
 
             executiveSummary: {
                 totalRevenue: currentCombinedRevenue,
