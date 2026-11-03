@@ -1,5 +1,5 @@
 // src/interfaces/http/server.js
-// v2.20.0-prod — Starts the daily overdue notification cron at 7:00 AM Africa/Lagos.
+// v2.21.0-prod — Starts the daily overdue notification cron and the morning daily report cron at 7:00 AM Africa/Lagos.
 
 const { initSentry, Sentry } = require('../../shared/utils/sentry');
 initSentry();
@@ -235,13 +235,22 @@ const server = app.listen(PORT, () => {
     logger.info('paystack retry sweep: disabled by env');
   }
 
-  // ★ NEW: Start the overdue notification cron (7:00 AM Africa/Lagos)
+  // ★ Overdue notification cron (7:00 AM Africa/Lagos)
   try {
     const { startOverdueNotificationCron } = require('../../jobs/overdueNotificationJob');
     startOverdueNotificationCron();
     logger.info('overdue notifications: cron scheduled for 07:00 AM Africa/Lagos');
   } catch (err) {
     logger.error({ err: err.message }, 'overdue notifications: failed to schedule cron');
+  }
+
+  // ★ NEW: Morning Daily Report cron (7:00 AM Africa/Lagos)
+  try {
+    const { startDailyReportCron } = require('../../jobs/dailyReportNotificationJob');
+    startDailyReportCron();
+    logger.info('morning daily report: cron scheduled for 07:00 AM Africa/Lagos');
+  } catch (err) {
+    logger.error({ err: err.message }, 'morning daily report: failed to schedule cron');
   }
 });
 
