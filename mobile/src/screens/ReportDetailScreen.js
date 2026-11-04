@@ -11,6 +11,10 @@ import DailyReportView from '../components/reports/DailyReportView';
 import WeeklyReportView from '../components/reports/WeeklyReportView';
 import MonthlyReportView from '../components/reports/MonthlyReportView';
 import YearlyReportView from '../components/reports/YearlyReportView';
+import ProfitLossReportView from '../components/reports/ProfitLossReportView';
+import CashFlowReportView from '../components/reports/CashFlowReportView';
+import BalanceSheetReportView from '../components/reports/BalanceSheetReportView';
+import ExecutiveReportView from '../components/reports/ExecutiveReportView';
 
 const formatCurrency = (n) => `₦${Math.round(Number(n) || 0).toLocaleString()}`;
 const formatNumber = (n) => Math.round(Number(n) || 0).toLocaleString();
@@ -66,9 +70,6 @@ export default function ReportDetailScreen({ route, navigation }) {
       }
 
       const res = await api.get(endpoint, { params });
-      
-      // ★ DEBUG LOG ADDED HERE
-      console.log('🔍 MOBILE WEEKLY API:', JSON.stringify(res.data, null, 2));
 
       if (res.data?.success) setData(res.data.data);
       else if (res.data?.status === 'SUCCESS') setData(res.data.data);
@@ -89,10 +90,16 @@ export default function ReportDetailScreen({ route, navigation }) {
       message += `📅 ${formatDate(startDate)}${isRangeReport || isInventoryMovement ? ` to ${formatDate(endDate)}` : ''}\n\n`;
       
       if (reportType === 'PL') {
-        message += `Revenue: ${formatCurrency(data.revenue?.totalRevenue || data.revenue)}\n`;
-        message += `Net Profit: ${formatCurrency(data.netProfit?.amount || data.netProfit)}\n`;
+        message += `Revenue: ${formatCurrency(data.revenue?.totalRevenue)}\n`;
+        message += `Net Profit: ${formatCurrency(data.netProfit?.amount)}\n`;
       } else if (reportType === 'CASHFLOW') {
         message += `Closing Cash: ${formatCurrency(data.closingCash)}\n`;
+      } else if (reportType === 'BALANCE_SHEET') {
+        message += `Total Assets: ${formatCurrency(data.assets?.totalAssets)}\n`;
+        message += `Total Equity: ${formatCurrency(data.equity?.totalEquity)}\n`;
+      } else if (reportType === 'EXECUTIVE') {
+        message += `Revenue: ${formatCurrency(data.businessOverview?.revenue)}\n`;
+        message += `Net Profit: ${formatCurrency(data.businessOverview?.netProfit)}\n`;
       } else if (['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'].includes(reportType)) {
         const rev = data.today?.revenue || data.revenue || data.executiveSummary?.totalRevenue;
         const profit = data.today?.netProfit || data.netProfit || data.executiveSummary?.netProfit;
@@ -171,6 +178,11 @@ export default function ReportDetailScreen({ route, navigation }) {
             {reportType === 'WEEKLY' && <WeeklyReportView data={data} theme={theme} />}
             {reportType === 'MONTHLY' && <MonthlyReportView data={data} theme={theme} />}
             {reportType === 'YEARLY' && <YearlyReportView data={data} theme={theme} />}
+            
+            {reportType === 'PL' && <ProfitLossReportView data={data} theme={theme} />}
+            {reportType === 'CASHFLOW' && <CashFlowReportView data={data} theme={theme} />}
+            {reportType === 'BALANCE_SHEET' && <BalanceSheetReportView data={data} theme={theme} />}
+            {reportType === 'EXECUTIVE' && <ExecutiveReportView data={data} theme={theme} />}
 
             {reportType === 'INVENTORY' && (
               <View style={[styles.card, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
@@ -222,9 +234,15 @@ export default function ReportDetailScreen({ route, navigation }) {
                           <Text style={{ color: theme.textMuted, fontSize: 10, fontWeight: 'bold', marginBottom: 8, letterSpacing: 0.5 }}>MOVEMENT LEDGER</Text>
                           {item.movements.map((m, idx) => (
                             <View key={idx} style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4, borderTopWidth: idx > 0 ? 1 : 0, borderTopColor: theme.border, paddingTop: idx > 0 ? 6 : 0 }}>
-                              <View>
+                              <View style={{ flex: 1 }}>
                                 <Text style={{ color: m.movementType.includes('IN') ? theme.success : theme.danger, fontSize: 11, fontWeight: 'bold' }}>{m.movementType}</Text>
                                 <Text style={{ color: theme.textMuted, fontSize: 11 }}>Qty: {formatNumber(m.quantity)} (Before: {formatNumber(m.quantityBefore)} → After: {formatNumber(m.quantityAfter)})</Text>
+                                {/* ★ NEW: Display the reference type and reason to match the web */}
+                                {m.referenceType && (
+                                  <Text style={{ color: theme.textMuted, fontSize: 10, marginTop: 2 }}>
+                                    {m.referenceType} {m.referenceId ? `#${m.referenceId}` : ''} • {m.reason || 'No reason provided'}
+                                  </Text>
+                                )}
                               </View>
                               <Text style={{ color: theme.textMuted, fontSize: 11 }}>{formatCurrency(m.totalCost)}</Text>
                             </View>
@@ -234,48 +252,6 @@ export default function ReportDetailScreen({ route, navigation }) {
                     </View>
                   ))
                 ) : <Text style={{ color: theme.textMuted, textAlign: 'center' }}>No movement details available.</Text>}
-              </View>
-            )}
-
-            {['PL', 'CASHFLOW', 'BALANCE_SHEET', 'EXECUTIVE'].includes(reportType) && (
-              <View style={[styles.card, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
-                <Text style={[styles.cardTitle, { color: theme.text }]}>{reportLabel}</Text>
-                
-                {reportType === 'PL' && (
-                  <>
-                    <View style={styles.row}><Text style={{ color: theme.textMuted }}>Total Revenue</Text><Text style={{ color: theme.text, fontWeight: 'bold' }}>{formatCurrency(data.revenue?.totalRevenue || data.revenue)}</Text></View>
-                    <View style={styles.row}><Text style={{ color: theme.textMuted }}>Gross Profit</Text><Text style={{ color: theme.success, fontWeight: 'bold' }}>{formatCurrency(data.grossProfit?.amount || data.grossProfit)}</Text></View>
-                    <View style={[styles.divider, { backgroundColor: theme.border }]} />
-                    <View style={styles.row}><Text style={{ color: theme.text, fontWeight: 'bold' }}>Net Profit</Text><Text style={{ color: (data.netProfit?.amount || data.netProfit) >= 0 ? theme.success : theme.danger, fontWeight: 'bold', fontSize: 18 }}>{formatCurrency(data.netProfit?.amount || data.netProfit)}</Text></View>
-                  </>
-                )}
-                
-                {reportType === 'CASHFLOW' && (
-                  <>
-                    <View style={styles.row}><Text style={{ color: theme.textMuted }}>Operating Cash In</Text><Text style={{ color: theme.success, fontWeight: 'bold' }}>{formatCurrency(data.operatingActivities?.cashIn?.total)}</Text></View>
-                    <View style={styles.row}><Text style={{ color: theme.textMuted }}>Operating Cash Out</Text><Text style={{ color: theme.danger, fontWeight: 'bold' }}>{formatCurrency(data.operatingActivities?.cashOut?.total)}</Text></View>
-                    <View style={[styles.divider, { backgroundColor: theme.border }]} />
-                    <View style={styles.row}><Text style={{ color: theme.text, fontWeight: 'bold' }}>Closing Cash</Text><Text style={{ color: theme.primary, fontWeight: 'bold', fontSize: 18 }}>{formatCurrency(data.closingCash)}</Text></View>
-                  </>
-                )}
-
-                {reportType === 'BALANCE_SHEET' && (
-                  <>
-                    <View style={styles.row}><Text style={{ color: theme.textMuted }}>Total Assets</Text><Text style={{ color: theme.text, fontWeight: 'bold' }}>{formatCurrency(data.assets?.totalAssets)}</Text></View>
-                    <View style={styles.row}><Text style={{ color: theme.textMuted }}>Total Liabilities</Text><Text style={{ color: theme.danger, fontWeight: 'bold' }}>{formatCurrency(data.liabilities?.totalLiabilities)}</Text></View>
-                    <View style={[styles.divider, { backgroundColor: theme.border }]} />
-                    <View style={styles.row}><Text style={{ color: theme.text, fontWeight: 'bold' }}>Total Equity</Text><Text style={{ color: theme.success, fontWeight: 'bold', fontSize: 18 }}>{formatCurrency(data.equity?.totalEquity)}</Text></View>
-                  </>
-                )}
-
-                {reportType === 'EXECUTIVE' && (
-                  <>
-                    <View style={styles.row}><Text style={{ color: theme.textMuted }}>Revenue</Text><Text style={{ color: theme.text, fontWeight: 'bold' }}>{formatCurrency(data.businessOverview?.revenue || data.executiveSummary?.revenue)}</Text></View>
-                    <View style={styles.row}><Text style={{ color: theme.textMuted }}>Gross Profit</Text><Text style={{ color: theme.success, fontWeight: 'bold' }}>{formatCurrency(data.executiveSummary?.grossProfit || data.profitability?.grossProfit)}</Text></View>
-                    <View style={[styles.divider, { backgroundColor: theme.border }]} />
-                    <View style={styles.row}><Text style={{ color: theme.text, fontWeight: 'bold' }}>Net Profit</Text><Text style={{ color: (data.businessOverview?.netProfit || data.executiveSummary?.netProfit) >= 0 ? theme.success : theme.danger, fontWeight: 'bold', fontSize: 18 }}>{formatCurrency(data.businessOverview?.netProfit || data.executiveSummary?.netProfit)}</Text></View>
-                  </>
-                )}
               </View>
             )}
             
