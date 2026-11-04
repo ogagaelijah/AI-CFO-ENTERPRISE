@@ -38,7 +38,8 @@ class APCalculator {
     async calculate({ userId, businessId, asAtDate = null, includeDetails = false, includeAging = false }) {
         let creditors = [];
         try {
-            const result = await this.creditorRepository.findByUserId(userId);
+            // ★ FIXED: Query by businessId to enforce SSOT and match the Dashboard
+            const result = await this.creditorRepository.findActive(businessId);
             creditors = this._safeArray(result);
         } catch (error) {
             console.warn('⚠️ APCalculator: Could not fetch creditors:', error.message);

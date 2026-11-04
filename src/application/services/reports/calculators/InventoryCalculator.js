@@ -38,7 +38,8 @@ class InventoryCalculator {
     async calculate({ userId, businessId, includeDetails = false, lowStockThreshold = 5 }) {
         let items = [];
         try {
-            const result = await this.inventoryRepository.findByUserId(userId);
+            // ★ FIXED: Query by businessId to enforce SSOT
+            const result = await this.inventoryRepository.findByBusinessId(businessId);
             items = this._safeArray(result);
         } catch (error) {
             console.warn('⚠️ InventoryCalculator: Could not fetch inventory:', error.message);
@@ -118,7 +119,7 @@ class InventoryCalculator {
             totalSellingValue: Number(totalSellingValue.toFixed(2)),
             totalPotentialProfit: Number(totalPotentialProfit.toFixed(2)),
             lowStockCount,
-            lowStockItems,                 // ← now always returned
+            lowStockItems,
             outOfStockCount,
             averageCostPerItem: totalQuantity > 0 ? Number((totalCostValue / totalQuantity).toFixed(2)) : 0,
             averageSellingPrice: totalQuantity > 0 ? Number((totalSellingValue / totalQuantity).toFixed(2)) : 0,
