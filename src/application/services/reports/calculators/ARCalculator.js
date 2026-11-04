@@ -38,7 +38,8 @@ class ARCalculator {
     async calculate({ userId, businessId, asAtDate = null, includeDetails = false, includeAging = false }) {
         let debtors = [];
         try {
-            const result = await this.debtorRepository.findByUserId(userId);
+            // ★ FIXED: Query by businessId to enforce SSOT and match the Dashboard
+            const result = await this.debtorRepository.findActive(businessId);
             debtors = this._safeArray(result);
         } catch (error) {
             console.warn('⚠️ ARCalculator: Could not fetch debtors:', error.message);

@@ -74,6 +74,15 @@ class BalanceSheetService {
         const difference = totalAssets - (totalLiabilities + totalEquity);
         const isBalanced = Math.abs(difference) < 0.01;
 
+        // ★ NEW: Generate AI Insights
+        const { insights, managementAttention } = this._generateInsights({
+            totalAssets,
+            inventory,
+            accountsReceivable,
+            accountsPayable,
+            isBalanced
+        });
+
         return {
             asAtDate: dateStr, // Match test expectation
             assets: {
@@ -101,6 +110,9 @@ class BalanceSheetService {
                 difference: Number(difference.toFixed(2)),
                 isBalanced,
             },
+            // ★ NEW: Include the generated AI data in the response
+            aiInsights: insights,
+            managementAttention,
         };
     }
 
@@ -113,6 +125,34 @@ class BalanceSheetService {
             totalEquity: full.equity.totalEquity,
             isBalanced: full.control.isBalanced,
         };
+    }
+
+    // ★ NEW: Generates the insights for the UI
+    _generateInsights({ totalAssets, inventory, accountsReceivable, accountsPayable, isBalanced }) {
+        const insights = [];
+        let managementAttention = null;
+
+        if (totalAssets > 0) {
+            const inventoryPercent = ((inventory / totalAssets) * 100).toFixed(1);
+            if (inventory > 0) {
+                insights.push(`Inventory represents ${inventoryPercent}% of total assets.`);
+            }
+            if (accountsReceivable > 0) {
+                insights.push(`₦${accountsReceivable.toLocaleString()} is currently tied up in receivables.`);
+            }
+            if (accountsPayable > 0) {
+                insights.push(`Supplier obligations total ₦${accountsPayable.toLocaleString()}.`);
+            }
+            if (isBalanced) {
+                insights.push(`Overall financial position is balanced.`);
+            }
+
+            if (accountsReceivable > 0 || inventory > 0) {
+                managementAttention = "Monitor receivable collection and inventory turnover.";
+            }
+        }
+
+        return { insights, managementAttention };
     }
 }
 
