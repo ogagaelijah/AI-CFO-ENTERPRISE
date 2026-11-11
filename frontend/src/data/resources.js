@@ -1,4 +1,5 @@
 // frontend/src/data/resources.js
+// v1.5.0 — Updated titles to point to channel hubs (Blog, Guides, Video Library).
 // v1.2.0 — Adds first guide (Google Docs, P&L). First blog post already live.
 //           PLACEHOLDER_MODE = false — hides "Subscribe on YouTube" footer.
 // v1.1.0 — First real content added: Substack blog post.
@@ -9,38 +10,33 @@
 //   2. Fill in `url` (opens in new tab), `thumbnail` (image URL),
 //      and optionally `duration` for videos
 //   3. Set PLACEHOLDER_MODE = false once 2+ real items exist
-//
-// Blog: Substack (aicfotechnologies.substack.com)
-// Videos: YouTube (@CFOTECHNOLOGIES) — when ready
-// Guides: Google Docs (/preview URLs)
 
 export const PLACEHOLDER_MODE = false;
 
 export const RESOURCES = [
   {
     type: 'blog',
-    title: 'How to Track Debtors Without Losing Your Mind',
-    description: 'A practical system for Nigerian SME owners who are tired of chasing customers for money they already earned.',
-    url: 'https://aicfotechnologies.substack.com/p/how-to-track-debtors-without-losing',
+    title: 'AI CFO Blog',
+    description: 'Practical financial advice, systems, and tips for African SME owners. Read all our latest articles on Substack.',
+    url: 'https://aicfotechnologies.substack.com',
     thumbnail: null,
     date: '2026-10-13',
   },
   {
     type: 'guide',
-    title: 'Reading Your P&L in 5 Minutes',
-    description: 'A plain-English guide to the Profit & Loss statement — the 5 lines that matter, a worked example, and the 3 questions to ask every month.',
-    url: 'https://docs.google.com/document/d/1Xn4dfMwaaestLsFFLuXc2mmokAzeja0t4SqJwCgRFN8/preview',
+    title: 'AI CFO Guides',
+    description: 'Plain-English guides to Profit & Loss, Cash Flow, and more. Explore our full collection of documents.',
+    url: 'https://drive.google.com/drive/folders/1_R-gkThoTaWf16h7i0SY27P9Dz6vbrtI?ths=true',
     thumbnail: null,
     date: '2026-10-13',
   },
   {
     type: 'video',
-    title: 'Getting started with AI CFO Enterprise',
-    description: 'A 3-minute walkthrough of setting up your business and recording your first transaction.',
+    title: 'AI CFO Video Library',
+    description: 'Explore our full collection of tutorials, walkthroughs, and tips to get the most out of AI CFO Enterprise.',
     url: 'https://youtube.com/@CFOTECHNOLOGIES',
     thumbnail: null,
-    duration: '3:24',
+    duration: 'Channel',
     date: '2026-10-15',
-    isPlaceholder: true,
   },
 ];
