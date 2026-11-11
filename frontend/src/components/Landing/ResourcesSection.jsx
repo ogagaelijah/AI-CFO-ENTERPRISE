@@ -1,9 +1,8 @@
 // frontend/src/components/Landing/ResourcesSection.jsx
-// v1.0.0 — Videos + Blog + Guides. Filter tabs, responsive grid, placeholder mode.
-//           Mounts between FAQ and Footer on the landing page.
+// v1.4.0 — Handles Hub links for Blog, Guides, and YouTube Library.
 
 import { useState } from 'react';
-import { Play, FileText, BookOpen, Clock, ExternalLink } from 'lucide-react';
+import { Play, FileText, BookOpen, ExternalLink } from 'lucide-react';
 import { RESOURCES, PLACEHOLDER_MODE } from '../../data/resources';
 
 const FILTERS = [
@@ -18,6 +17,14 @@ const TYPE_META = {
   blog: { label: 'Blog', Icon: FileText, badgeClass: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' },
   guide: { label: 'Guide', Icon: BookOpen, badgeClass: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
 };
+
+// ─── CONFIGURATION: UPDATE YOUR CHANNEL LINKS HERE ───
+const CHANNEL_LINKS = {
+  video: 'https://youtube.com/@CFOTECHNOLOGIES',      
+  blog: 'https://aicfotechnologies.substack.com',     
+  guide: 'https://drive.google.com/drive/folders/1_R-gkThoTaWf16h7i0SY27P9Dz6vbrtI?ths=true',          
+};
+// ─────────────────────────────────────────────────────
 
 const formatDate = (iso) => {
   if (!iso) return '';
@@ -35,12 +42,20 @@ const formatDate = (iso) => {
 function ResourceCard({ resource }) {
   const meta = TYPE_META[resource.type] || TYPE_META.blog;
   const { Icon } = meta;
-  const isClickable = !resource.isPlaceholder && resource.url && resource.url !== '#';
+  
+  const targetUrl = CHANNEL_LINKS[resource.type];
+  const isClickable = targetUrl && targetUrl !== '#';
 
   const Wrapper = isClickable ? 'a' : 'div';
   const wrapperProps = isClickable
-    ? { href: resource.url, target: '_blank', rel: 'noopener noreferrer' }
+    ? { href: targetUrl, target: '_blank', rel: 'noopener noreferrer' }
     : {};
+
+  const getLinkText = () => {
+    if (resource.type === 'video') return 'Visit Video Library';
+    if (resource.type === 'guide') return 'Explore Guides';
+    return 'Visit Blog';
+  };
 
   return (
     <Wrapper
@@ -49,7 +64,6 @@ function ResourceCard({ resource }) {
         isClickable ? 'hover:shadow-lg hover:-translate-y-0.5 cursor-pointer' : 'opacity-90'
       }`}
     >
-      {/* Thumbnail / placeholder */}
       <div className="relative w-full aspect-video bg-primary-100 dark:bg-slate-700 flex items-center justify-center overflow-hidden">
         {resource.thumbnail ? (
           <img
@@ -75,7 +89,6 @@ function ResourceCard({ resource }) {
         )}
       </div>
 
-      {/* Body */}
       <div className="flex flex-col flex-1 p-5">
         <div className="flex items-center gap-2 mb-3">
           <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold rounded ${meta.badgeClass}`}>
@@ -97,7 +110,7 @@ function ResourceCard({ resource }) {
 
         {isClickable && (
           <div className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary-600 dark:text-gold-400 group-hover:gap-2 transition-all">
-            {resource.type === 'video' ? 'Watch' : 'Read'}
+            {getLinkText()}
             <ExternalLink className="w-3.5 h-3.5" />
           </div>
         )}
@@ -116,7 +129,6 @@ export default function ResourcesSection() {
   return (
     <section id="resources" className="py-20 px-4 bg-white dark:bg-slate-800 transition-colors duration-300">
       <div className="max-w-6xl mx-auto">
-        {/* Header */}
         <div className="text-center mb-10">
           <h2 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-3">
             Resources
@@ -126,7 +138,6 @@ export default function ResourcesSection() {
           </p>
         </div>
 
-        {/* Filters */}
         <div className="flex justify-center mb-10">
           <div className="inline-flex items-center gap-1 bg-gray-100 dark:bg-slate-900 rounded-full p-1">
             {FILTERS.map((f) => {
@@ -152,7 +163,6 @@ export default function ResourcesSection() {
           </div>
         </div>
 
-        {/* Grid */}
         {visible.length === 0 ? (
           <p className="text-center text-gray-500 dark:text-gray-400 py-12">
             Nothing here yet — check back soon.
@@ -165,7 +175,6 @@ export default function ResourcesSection() {
           </div>
         )}
 
-        {/* Footer note */}
         {PLACEHOLDER_MODE && (
           <div className="mt-10 text-center">
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
