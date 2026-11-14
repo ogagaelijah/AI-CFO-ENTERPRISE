@@ -1,4 +1,5 @@
 // src/infrastructure/database/sqlite/repositories/BusinessRepository.js
+// v1.2.0-prod — Adds updateReferredBy for Partner Referral tracking.
 // v1.1.0-prod — Adds count() and getIndustryDistribution() for Platform Admin.
 
 const BaseRepository = require('./BaseRepository');
@@ -121,6 +122,17 @@ class BusinessRepository extends BaseRepository {
             [userId]
         );
         return result.rows[0].count;
+    }
+
+    // ★ NEW: Method to attach a referral code during registration
+    async updateReferredBy(businessId, partnerId) {
+        const result = await this._query(
+            `UPDATE businesses 
+             SET referred_by_partner_id = $1, updated_at = NOW()
+             WHERE id = $2`,
+            [partnerId, businessId]
+        );
+        return result.rowCount > 0;
     }
 
     // ★ NEW: Platform Admin Methods

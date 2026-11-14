@@ -1,4 +1,5 @@
 // src/interfaces/http/routes/subscriptionRoutes.js
+// v2.3.0-prod — Adds PUT /auto-renew endpoint.
 // v2.2.1-prod — Team members inherit business subscription status.
 
 const express = require('express');
@@ -136,6 +137,7 @@ router.get('/current', async (req, res) => {
             },
             subscriptionPlanId: subscription.planId,
             billingCycle: subscription.billingCycle,
+            autoRenew: subscription.autoRenew, // ★ NEW
             status,
             isActive: !isReadOnly,
             isTrial,
@@ -185,6 +187,44 @@ router.post('/cancel', requireRole('OWNER'), async (req, res) => {
         return res.status(classifyError(error)).json({
             success: false,
             message: error.message || 'Failed to cancel subscription',
+        });
+    }
+});
+
+// ─────────────────────────────────────────────
+// PUT /api/subscription/auto-renew — OWNER only ★ NEW
+// ─────────────────────────────────────────────
+router.put('/auto-renew', requireRole('OWNER'), async (req, res) => {
+    try {
+        const { autoRenew } = req.body;
+        
+        if (typeof autoRenew !== 'boolean') {
+            return res.status(400).json({ success: false, message: 'autoRenew must be a boolean' });
+        }
+
+        const businesses = await businessRepo.findByUserId(req.user.id);
+        const business = businesses?.[0] || null;
+
+        if (!business) {
+            return res.status(400).json({ success: false, message: 'Business not found' });
+        }
+
+        const sub = await subscriptionRepo.findActiveByBusinessId(business.id);
+        if (!sub) {
+            return res.status(404).json({ success: false, message: 'No active subscription found' });
+        }
+
+        await subscriptionRepo.toggleAutoRenew(sub.id, autoRenew);
+        
+        return res.json({ 
+            success: true, 
+            message: `Auto-renew turned ${autoRenew ? 'ON' : 'OFF'}` 
+        });
+    } catch (error) {
+        console.error('❌ Toggle auto-renew error:', error.message);
+        return res.status(classifyError(error)).json({
+            success: false,
+            message: error.message || 'Failed to toggle auto-renew',
         });
     }
 });

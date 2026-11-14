@@ -1,16 +1,18 @@
 // frontend/src/pages/Settings.jsx
-// v1.2.0-prod — Adds Security tab with 2FA support.
+// v1.4.0-prod — Adds Partner Program tab.
+// v1.3.0-prod — Updates SubscriptionTab to handle its own API calls.
 
 import { useState, useEffect } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
-import { User, Building2, CreditCard, LogOut, Menu, X, Moon, Sun, Users, Shield } from 'lucide-react'; // ★ Added Shield
+import { User, Building2, CreditCard, LogOut, Menu, X, Moon, Sun, Users, Shield, HandCoins } from 'lucide-react'; // ★ Added HandCoins
 import { Link } from 'react-router-dom';
 import ProfileTab from './settings/ProfileTab';
 import BusinessTab from './settings/BusinessTab';
 import SubscriptionTab from './settings/SubscriptionTab';
 import TeamTab from './settings/TeamTab';
-import SecurityTab from './settings/SecurityTab'; // ★ NEW
+import SecurityTab from './settings/SecurityTab';
+import PartnerTab from './settings/PartnerTab'; // ★ NEW
 import { NAV_ITEMS } from './settings/SettingsSidebar';
 import PageHeader from '../components/common/PageHeader';
 
@@ -22,7 +24,6 @@ const Settings = () => {
   const [loading, setLoading] = useState(true);
   const [profileData, setProfileData] = useState({ fullName: '', email: '', phone: '' });
   const [businessData, setBusinessData] = useState({ name: '', industry: '' });
-  const [subscription, setSubscription] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -39,12 +40,6 @@ const Settings = () => {
       name: user?.businessName || 'My Business',
       industry: user?.industry || 'Retail / Wholesale',
     });
-    setSubscription({
-      plan: 'Free',
-      status: 'Active',
-      price: 0,
-      features: ['Sales Tracking', 'Inventory Management', 'Debtors & Creditors', 'Daily Reports'],
-    });
     setLoading(false);
   };
 
@@ -60,9 +55,10 @@ const Settings = () => {
   const tabs = [
     { id: 'profile', label: 'Profile', icon: User },
     { id: 'business', label: 'Business', icon: Building2 },
-    { id: 'security', label: 'Security', icon: Shield }, // ★ NEW
+    { id: 'security', label: 'Security', icon: Shield },
     { id: 'subscription', label: 'Subscription', icon: CreditCard },
     ...(canManageTeam ? [{ id: 'team', label: 'Team', icon: Users }] : []),
+    { id: 'partner', label: 'Partner Program', icon: HandCoins }, // ★ NEW
   ];
 
   return (
@@ -202,9 +198,10 @@ const Settings = () => {
             <>
               {activeTab === 'profile' && <ProfileTab profileData={profileData} setProfileData={setProfileData} />}
               {activeTab === 'business' && <BusinessTab businessData={businessData} setBusinessData={setBusinessData} industries={['Retail / Wholesale', 'Manufacturing', 'Construction', 'Healthcare', 'Consultancy', 'Real Estate', 'Education', 'Logistics']} />}
-              {activeTab === 'security' && <SecurityTab />} {/* ★ NEW */}
-              {activeTab === 'subscription' && <SubscriptionTab subscription={subscription} />}
+              {activeTab === 'security' && <SecurityTab />}
+              {activeTab === 'subscription' && <SubscriptionTab />}
               {activeTab === 'team' && canManageTeam && <TeamTab />}
+              {activeTab === 'partner' && <PartnerTab />} {/* ★ NEW */}
             </>
           )}
         </main>

@@ -1,5 +1,5 @@
 // src/interfaces/http/routes/authRoutes.js
-// v5.7.0-prod — Handles Platform Staff login (no business) without crashing.
+// v5.8.0-prod — Adds Platform Staff login and Referral tracking.
 
 const express = require('express');
 const router = express.Router();
@@ -11,6 +11,8 @@ const UserRepository = require('../../../infrastructure/database/sqlite/reposito
 const BusinessRepository = require('../../../infrastructure/database/sqlite/repositories/BusinessRepository');
 const BusinessMemberRepository = require('../../../infrastructure/database/sqlite/repositories/BusinessMemberRepository');
 const SubscriptionRepository = require('../../../infrastructure/database/sqlite/repositories/SubscriptionRepository');
+const PartnerRepository = require('../../../infrastructure/database/sqlite/repositories/PartnerRepository'); // ★ NEW
+const ReferralRepository = require('../../../infrastructure/database/sqlite/repositories/ReferralRepository'); // ★ NEW
 const SecurityEventService = require('../../../infrastructure/services/security/SecurityEventService');
 const { withTransaction } = require('../../../infrastructure/database/sqlite/connection');
 const plans = require('../../../config/plans');
@@ -38,6 +40,8 @@ const userRepo = new UserRepository();
 const businessRepo = new BusinessRepository();
 const memberRepo = new BusinessMemberRepository();
 const subscriptionRepo = new SubscriptionRepository();
+const partnerRepo = new PartnerRepository(); // ★ NEW
+const referralRepo = new ReferralRepository(); // ★ NEW
 const securityEvents = new SecurityEventService();
 
 const loginUseCase = new LoginUseCase(userRepo, memberRepo, businessRepo);
@@ -114,7 +118,7 @@ const authenticateToken = (req, res, next) => {
 // ─────────────────────────────────────────────
 router.post('/register', registerLimiter, async (req, res) => {
   try {
-    const { fullName, email, phone, password, businessName, industry } = req.body;
+    const { fullName, email, phone, password, businessName, industry, ref } = req.body; // ★ ADDED ref
     if (!fullName || !email || !password || !businessName || !industry) return res.status(400).json({ success: false, message: 'Missing required fields' });
 
     const pwError = validatePassword(password);
@@ -136,6 +140,13 @@ router.post('/register', registerLimiter, async (req, res) => {
       return res.status(409).json({ success: false, code: 'PHONE_TAKEN', message: 'This phone number is already registered.' });
     }
 
+    // ★ NEW: Check Referral Code
+    let partnerId = null;
+    if (ref) {
+      const partner = await partnerRepo.findByCode(ref);
+      if (partner) partnerId = partner.id;
+    }
+
     const passwordHash = await bcrypt.hash(password, 10);
     const uniqueTelegramId = `web_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
     const rawVerifyToken = crypto.randomBytes(32).toString('hex');
@@ -145,6 +156,13 @@ router.post('/register', registerLimiter, async (req, res) => {
     const { user, business, trialPlanId, trialPlan, trialDays, trialEndDate } = await withTransaction(async () => {
       const u = await userRepo.create({ telegramId: uniqueTelegramId, email, phoneNumber: normalizedPhone, fullName, passwordHash, emailVerified: false, phoneVerified: false, emailVerificationToken: hashedVerifyToken, emailVerificationExpiry: verifyExpiry, passwordChangedAt: new Date().toISOString() });
       const b = await businessRepo.create({ userId: u.id, name: businessName, industry });
+      
+      // ★ NEW: Attach Referral
+      if (partnerId) {
+        await businessRepo.updateReferredBy(b.id, partnerId);
+        await referralRepo.create({ partnerId, referredBusinessId: b.id });
+      }
+
       await memberRepo.create({ businessId: b.id, userId: u.id, role: 'OWNER', status: 'ACTIVE', invitedBy: null, invitedAt: null, acceptedAt: new Date().toISOString() });
       const tpId = plans.getTrialPlan(); const tp = plans.getPlan(tpId); const tDays = plans.getTrialDays(tpId);
       const tEnd = new Date(); tEnd.setDate(tEnd.getDate() + tDays);
@@ -264,7 +282,6 @@ router.post('/2fa/login', strictLimiter, async (req, res) => {
     const membership = await memberRepo.findFirstActiveByUser(user.id);
     let business = membership ? await businessRepo.findById(membership.businessId) : await businessRepo.findByUserIdFirst(user.id);
     
-    // Allow Platform Staff to login without a business
     const isPlatformStaff = Boolean(user.platformRole);
     if (!business && !isPlatformStaff) return res.status(403).json({ success: false, message: 'No business associated with this account.' });
 
@@ -334,7 +351,6 @@ router.get('/me', async (req, res) => {
     if (decoded.businessId) membership = await memberRepo.findByBusinessAndUser(decoded.businessId, user.id);
     if (!membership) membership = await memberRepo.findFirstActiveByUser(user.id);
 
-    // Allow Platform Staff to bypass strict business membership check
     const isPlatformStaff = Boolean(user.platformRole);
     if ((!membership || membership.status !== 'ACTIVE') && !isPlatformStaff) {
       return res.status(403).json({ success: false, message: 'You do not have access to this business.' });

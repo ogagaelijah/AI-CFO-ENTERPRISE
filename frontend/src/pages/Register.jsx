@@ -1,10 +1,7 @@
 // frontend/src/pages/Register.jsx
+// v1.6.0-prod — Captures partner referral code from localStorage.
 // v1.5.1-prod — Phone-taken block now also shows the "Log in instead" link
 //               (parity with email-taken).
-// v1.5.0-prod — Surfaces EMAIL_TAKEN + PHONE_TAKEN as inline errors with
-//               actionable "Log in instead" hints (was silently swallowed).
-// v1.4.0-prod — Post-registration "Check your email" success screen.
-// v1.3.1-prod — Renames "Consultancy" to "Consultancy / Services".
 
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -53,11 +50,24 @@ const Register = () => {
     industry: '',
   });
   const [errors, setErrors] = useState({});
+  
+  // ★ NEW: Referral Code State
+  const [referralCode, setReferralCode] = useState(null);
 
   // Set when registration succeeds — triggers the "check your email" screen
   const [successEmail, setSuccessEmail] = useState(null);
   const [resending, setResending] = useState(false);
   const [resent, setResent] = useState(false);
+
+  // ★ NEW: Check for referral code on mount
+  useEffect(() => {
+    const savedCode = localStorage.getItem('referral_code');
+    if (savedCode) {
+      setReferralCode(savedCode);
+      // Optional: Clear it so it doesn't stick around forever
+      // localStorage.removeItem('referral_code'); 
+    }
+  }, []);
 
   useEffect(() => {
     if (!requestedPlanId) return;
@@ -111,9 +121,12 @@ const Register = () => {
         password: formData.password,
         businessName: formData.businessName.trim(),
         industry: formData.industry,
+        ref: referralCode, // ★ NEW: Send referral code
       };
       await register(userData);
       setSuccessEmail(userData.email);
+      // ★ Optional: Clean up the code after successful registration
+      localStorage.removeItem('referral_code'); 
     } catch (error) {
       console.error('Registration error:', error);
       const responseData = error.response?.data || {};
