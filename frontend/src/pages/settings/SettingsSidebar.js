@@ -1,5 +1,7 @@
 // src/pages/settings/SettingsSidebar.js
-import { Home, Settings as SettingsIcon, BarChart3, TrendingUp, DollarSign, TrendingDown, ShoppingCart, Package, Users, CreditCard, Building2, Truck, Briefcase, Calendar, Lightbulb, Brain, Layers } from 'lucide-react';
+// v1.1.0 — Adds Partner Program link.
+
+import { Home, Settings as SettingsIcon, BarChart3, TrendingUp, DollarSign, TrendingDown, ShoppingCart, Package, Users, CreditCard, Building2, Truck, Briefcase, Calendar, Lightbulb, Brain, Layers, HandCoins } from 'lucide-react'; // ★ Added HandCoins
 
 export const NAV_ITEMS = [
   { icon: Home, label: 'Dashboard', href: '/dashboard' },
@@ -19,4 +21,5 @@ export const NAV_ITEMS = [
   { icon: Lightbulb, label: 'Recommendations', href: '/recommendations' },
   { icon: Brain, label: 'AI Assistant', href: '/ai' },
   { icon: Layers, label: 'Subscription', href: '/subscription' },
+  { icon: HandCoins, label: 'Partner Program', href: '/partner' }, // ★ NEW
 ];

@@ -1,8 +1,9 @@
 // frontend/src/App.jsx
-// v2.7.1 — Wraps app in NotificationProvider for shared notification state.
+// v2.9.0 — Adds Admin Partner Payouts route.
+// v2.8.0 — Adds Partner Dashboard and Referral Link routes.
 
 import { lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
@@ -21,9 +22,11 @@ import AcceptInvite from './pages/AcceptInvite';
 const Dashboard       = lazy(() => import('./pages/Dashboard'));
 const AdminDashboard  = lazy(() => import('./pages/AdminDashboard'));
 const ComingSoon      = lazy(() => import('./pages/admin/ComingSoon'));
+const AdminPartnerPayouts = lazy(() => import('./pages/admin/AdminPartnerPayouts')); // ★ NEW
 const Settings        = lazy(() => import('./pages/Settings'));
 const Subscription    = lazy(() => import('./pages/Subscription'));
 const PaymentSuccess  = lazy(() => import('./pages/PaymentSuccess'));
+const PartnerDashboard = lazy(() => import('./pages/Partner/PartnerDashboard'));
 
 const Sales           = lazy(() => import('./pages/Sales'));
 const Expenses        = lazy(() => import('./pages/Expenses'));
@@ -56,6 +59,14 @@ const Advisor         = lazy(() => import('./pages/Advisor'));
 
 const Reports         = lazy(() => import('./pages/Reports'));
 
+function ReferralRedirect() {
+  const { code } = useParams();
+  if (code) {
+    localStorage.setItem('referral_code', code);
+  }
+  return <Navigate to="/register" replace />;
+}
+
 function PageLoader() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-slate-900">
@@ -85,6 +96,9 @@ function App() {
                 <Route path="/accept-invite" element={<AcceptInvite />} />
                 <Route path="/payment/success" element={<PaymentSuccess />} />
 
+                {/* ★ NEW: Partner Referral Catch-all */}
+                <Route path="/p/:code" element={<ReferralRedirect />} />
+
                 {/* Protected Routes - Regular Users */}
                 <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
                 <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
@@ -100,6 +114,7 @@ function App() {
                 <Route path="/donations" element={<ProtectedRoute><Donations /></ProtectedRoute>} />
                 <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
                 <Route path="/subscription" element={<ProtectedRoute><Subscription /></ProtectedRoute>} />
+                <Route path="/partner" element={<ProtectedRoute><PartnerDashboard /></ProtectedRoute>} />
                 <Route path="/sales" element={<ProtectedRoute><Sales /></ProtectedRoute>} />
                 <Route path="/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
                 <Route path="/debtors" element={<ProtectedRoute><Debtors /></ProtectedRoute>} />
@@ -120,6 +135,7 @@ function App() {
 
                 {/* Protected Routes - Admin Only */}
                 <Route path="/admin" element={<ProtectedRoute requireAdmin={true}><AdminDashboard /></ProtectedRoute>} />
+                <Route path="/admin/partner-payouts" element={<ProtectedRoute requireAdmin={true}><AdminPartnerPayouts /></ProtectedRoute>} /> {/* ★ NEW */}
                 <Route path="/admin/users" element={<ProtectedRoute requireAdmin={true}><ComingSoon /></ProtectedRoute>} />
                 <Route path="/admin/businesses" element={<ProtectedRoute requireAdmin={true}><ComingSoon /></ProtectedRoute>} />
                 <Route path="/admin/subscriptions" element={<ProtectedRoute requireAdmin={true}><ComingSoon /></ProtectedRoute>} />

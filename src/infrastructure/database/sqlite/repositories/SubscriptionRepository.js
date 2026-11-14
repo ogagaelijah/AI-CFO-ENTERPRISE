@@ -1,5 +1,5 @@
 // src/infrastructure/database/sqlite/repositories/SubscriptionRepository.js
-// v3.2.0-prod — Fixes trial date parsing and logic to ensure 14-day Pro trials work flawlessly.
+// v3.3.0-prod — Adds auto_renew and paystack_authorization_code support.
 
 const BaseRepository = require('./BaseRepository');
 const plans = require('../../../../config/plans');
@@ -15,13 +15,14 @@ class Subscription {
         this.endDate = data.endDate ? new Date(data.endDate) : null;
         this.trialEndDate = data.trialEndDate ? new Date(data.trialEndDate) : null;
         this.features = data.features || {};
+        this.autoRenew = data.autoRenew !== undefined ? data.autoRenew : true;
+        this.paystackAuthorizationCode = data.paystackAuthorizationCode ?? null;
         this.createdAt = data.createdAt ? new Date(data.createdAt) : null;
         this.updatedAt = data.updatedAt ? new Date(data.updatedAt) : null;
     }
 
     isTrialActive() {
         if (this.status !== 'trial' || !this.trialEndDate) return false;
-        // Ensure we are comparing milliseconds properly
         const end = new Date(this.trialEndDate).getTime();
         if (isNaN(end)) return false;
         return Date.now() < end;
@@ -97,6 +98,7 @@ class Subscription {
             endDate: this.endDate,
             trialEndDate: this.trialEndDate,
             features: this.features,
+            autoRenew: this.autoRenew,
             isTrial: this.isTrialActive(),
             isExpired: this.isExpired(),
             isReadOnly: this.isReadOnly(),
@@ -124,6 +126,8 @@ class SubscriptionRepository extends BaseRepository {
             endDate: row.end_date ? new Date(row.end_date) : null,
             trialEndDate: row.trial_end_date ? new Date(row.trial_end_date) : null,
             features: row.features ? safeJSON(row.features) : {},
+            autoRenew: row.auto_renew !== undefined ? row.auto_renew : true, // ★ NEW
+            paystackAuthorizationCode: row.paystack_authorization_code || null, // ★ NEW
             createdAt: row.created_at ? new Date(row.created_at) : null,
             updatedAt: row.updated_at ? new Date(row.updated_at) : null,
         });
@@ -137,8 +141,8 @@ class SubscriptionRepository extends BaseRepository {
         const result = await this._query(
             `INSERT INTO subscriptions (
                 business_id, plan_id, status, start_date, end_date,
-                trial_end_date, features, billing_cycle
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                trial_end_date, features, billing_cycle, auto_renew, paystack_authorization_code
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             RETURNING id`,
             [
                 data.businessId,
@@ -149,6 +153,8 @@ class SubscriptionRepository extends BaseRepository {
                 data.trialEndDate ? toISO(data.trialEndDate) : null,
                 JSON.stringify(features),
                 billingCycle,
+                data.autoRenew !== undefined ? data.autoRenew : true,
+                data.paystackAuthorizationCode || null,
             ]
         );
         return this.findById(result.rows[0].id);
@@ -237,6 +243,31 @@ class SubscriptionRepository extends BaseRepository {
         return result.rows.map(r => this._hydrate(r));
     }
 
+    // ★ NEW: Find subscriptions that expire within the next 24 hours and are set to auto-renew
+    async findDueForRenewal() {
+        const result = await this._query(
+            `SELECT * FROM subscriptions
+             WHERE status = 'active' 
+               AND auto_renew = true 
+               AND paystack_authorization_code IS NOT NULL
+               AND end_date IS NOT NULL 
+               AND end_date <= NOW() + INTERVAL '1 day'`,
+            []
+        );
+        return result.rows.map(r => this._hydrate(r));
+    }
+
+    // ★ NEW: Toggle auto renew
+    async toggleAutoRenew(id, autoRenew) {
+        const result = await this._query(
+            `UPDATE subscriptions 
+             SET auto_renew = $1, updated_at = NOW()
+             WHERE id = $2`,
+            [autoRenew, id]
+        );
+        return result.rowCount > 0;
+    }
+
     async update(id, data = {}) {
         const fields = [];
         const values = [];
@@ -269,6 +300,14 @@ class SubscriptionRepository extends BaseRepository {
         if (data.features !== undefined) {
             fields.push(`features = $${i++}`);
             values.push(JSON.stringify(data.features));
+        }
+        if (data.paystackAuthorizationCode !== undefined) { // ★ NEW
+            fields.push(`paystack_authorization_code = $${i++}`);
+            values.push(data.paystackAuthorizationCode);
+        }
+        if (data.autoRenew !== undefined) { // ★ NEW
+            fields.push(`auto_renew = $${i++}`);
+            values.push(data.autoRenew);
         }
 
         fields.push('updated_at = NOW()');

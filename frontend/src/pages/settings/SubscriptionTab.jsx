@@ -1,13 +1,15 @@
 // frontend/src/pages/settings/SubscriptionTab.jsx
+// v2.1.0-prod — Adds Auto-Renew toggle.
 // v2.0.0-prod — Real plan data via usePlan, working cancel, upgrade CTA.
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { CheckCircle, CreditCard, Loader2, AlertTriangle } from 'lucide-react';
+import { CheckCircle, CreditCard, Loader2, AlertTriangle, RefreshCw } from 'lucide-react'; // ★ Added RefreshCw
 
 import { usePlan } from '../../hooks/usePlan';
 import { useAuth } from '../../context/AuthContext';
 import { subscriptionApi } from '../../services/api';
+import api from '../../services/api'; // ★ Added for auto-renew call
 import { reportError, reportEvent } from '../../services/telemetry';
 
 const FEATURE_LABELS = {
@@ -54,9 +56,43 @@ const SubscriptionTab = () => {
   const [cancelError, setCancelError] = useState('');
   const [cancelSuccess, setCancelSuccess] = useState(false);
 
+  // ★ NEW: Auto-Renew State
+  const [autoRenew, setAutoRenew] = useState(true);
+  const [togglingRenew, setTogglingRenew] = useState(false);
+
   const features = plan?.features || {};
   const activeFeatureKeys = Object.keys(features).filter((k) => features[k]);
   const price = plan?.pricing?.monthly ?? 0;
+
+  // ★ NEW: Fetch current auto-renew status on mount
+  useEffect(() => {
+    const fetchAutoRenew = async () => {
+      try {
+        const res = await api.get('/subscription/current');
+        if (res.data?.success && res.data.autoRenew !== undefined) {
+          setAutoRenew(res.data.autoRenew);
+        }
+      } catch (err) {
+        console.error('Failed to fetch auto-renew status', err);
+      }
+    };
+    fetchAutoRenew();
+  }, []);
+
+  // ★ NEW: Toggle handler
+  const handleToggleAutoRenew = async () => {
+    if (togglingRenew) return;
+    setTogglingRenew(true);
+    try {
+      const newValue = !autoRenew;
+      await api.put('/subscription/auto-renew', { autoRenew: newValue });
+      setAutoRenew(newValue);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to update auto-renew preference');
+    } finally {
+      setTogglingRenew(false);
+    }
+  };
 
   const handleCancel = async () => {
     if (cancelling) return;
@@ -164,6 +200,32 @@ const SubscriptionTab = () => {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {/* ★ NEW: Auto-Renew Toggle UI */}
+      {!isReadOnly && !isTrial && status === 'active' && (
+        <div className="mt-6 flex items-center justify-between p-4 bg-gray-50 dark:bg-slate-700/50 rounded-lg border border-gray-200 dark:border-slate-600">
+          <div className="flex items-center gap-3">
+            <RefreshCw className={`w-5 h-5 ${autoRenew ? 'text-green-500' : 'text-gray-400'}`} />
+            <div>
+              <p className="text-sm font-medium text-gray-900 dark:text-white">Auto-Renew Subscription</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {autoRenew ? 'Your card will be charged automatically at the end of the billing cycle.' : 'You will lose access when this billing cycle ends.'}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={handleToggleAutoRenew}
+            disabled={togglingRenew}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              autoRenew ? 'bg-green-500' : 'bg-gray-300 dark:bg-slate-500'
+            } ${togglingRenew ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+              autoRenew ? 'translate-x-6' : 'translate-x-1'
+            }`} />
+          </button>
         </div>
       )}
 

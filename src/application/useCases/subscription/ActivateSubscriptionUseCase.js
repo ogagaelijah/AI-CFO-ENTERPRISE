@@ -1,4 +1,5 @@
 // src/application/useCases/subscription/ActivateSubscriptionUseCase.js
+// v1.2.0-prod — Adds paystackAuthorizationCode for auto-renew.
 // v1.1.0-prod
 //
 // Idempotent subscription activation.
@@ -50,6 +51,7 @@ class ActivateSubscriptionUseCase {
      * @param {string} [input.billingCycle]      'monthly' | 'yearly'
      * @param {string} [input.paystackEventId]
      * @param {string} [input.paystackReference]
+     * @param {string} [input.paystackAuthorizationCode] // ★ NEW
      *
      * @returns {Promise<{
      *   activated: boolean,
@@ -69,6 +71,7 @@ class ActivateSubscriptionUseCase {
             billingCycle = 'monthly',
             paystackEventId = null,
             paystackReference = null,
+            paystackAuthorizationCode = null, // ★ NEW
         } = input;
 
         if (!Number.isInteger(businessId) || businessId <= 0) {
@@ -123,6 +126,7 @@ class ActivateSubscriptionUseCase {
                     endDate: newEndDate,
                     trialEndDate: null,
                     features,
+                    paystackAuthorizationCode, // ★ NEW
                 });
             } else {
                 subscription = await this.subscriptionRepo.create({
@@ -133,6 +137,7 @@ class ActivateSubscriptionUseCase {
                     startDate: now,
                     endDate: newEndDate,
                     features,
+                    paystackAuthorizationCode, // ★ NEW
                 });
             }
 

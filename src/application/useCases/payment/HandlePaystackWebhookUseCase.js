@@ -1,4 +1,6 @@
 // src/application/useCases/payment/HandlePaystackWebhookUseCase.js
+// v1.3.0-prod — Adds Partner Referral Commission trigger on charge.success.
+// v1.2.0-prod — Adds paystack_authorization_code extraction.
 // v1.1.0-prod
 //
 // Orchestrator for incoming Paystack webhook events.
@@ -31,6 +33,7 @@
 const PaystackSignatureVerifier = require('../../services/payment/PaystackSignatureVerifier');
 const ActivateSubscriptionUseCase = require('../subscription/ActivateSubscriptionUseCase');
 const BusinessRepository = require('../../../infrastructure/database/sqlite/repositories/BusinessRepository');
+const ProcessReferralCommissionUseCase = require('../partners/ProcessReferralCommissionUseCase'); // ★ NEW
 const { query } = require('../../../infrastructure/database/sqlite/connection');
 const logger = require('../../../shared/utils/logger');
 
@@ -39,6 +42,7 @@ class HandlePaystackWebhookUseCase {
         this.verifier = opts.verifier || new PaystackSignatureVerifier();
         this.activate = opts.activate || new ActivateSubscriptionUseCase();
         this.businessRepo = opts.businessRepo || new BusinessRepository();
+        this.processCommission = opts.processCommission || new ProcessReferralCommissionUseCase(); // ★ NEW
         this.logger = opts.logger || logger;
     }
 
@@ -245,6 +249,7 @@ class HandlePaystackWebhookUseCase {
         const businessId = this._extractBusinessId(event);
         const planId = this._extractPlanId(event);
         const billingCycle = this._extractBillingCycle(event);
+        const paystackAuthCode = event?.data?.authorization?.authorization_code || null; // ★ NEW
 
         // No business in metadata — cannot activate, but this is not a
         // transient failure. Mark skipped, log a warning.
@@ -285,7 +290,27 @@ class HandlePaystackWebhookUseCase {
             billingCycle,
             paystackEventId: `evt_${event?.data?.id}`,
             paystackReference: event?.data?.reference || null,
+            paystackAuthorizationCode: paystackAuthCode, // ★ NEW
         });
+
+        // ★ NEW: Process Partner Referral Commission
+        try {
+            const amountPaidInKobo = event?.data?.amount || 0;
+            const amountPaid = amountPaidInKobo / 100; // Convert kobo to Naira
+            
+            if (amountPaid > 0 && result.activated) {
+                await this.processCommission.execute({ 
+                    businessId, 
+                    amountPaid 
+                });
+            }
+        } catch (commissionErr) {
+            // We catch this so a commission failure NEVER stops the subscription from activating
+            this.logger.error(
+                { err: commissionErr.message, businessId },
+                'paystack webhook: partner commission processing failed (safe to ignore for subscription)'
+            );
+        }
 
         return {
             businessId: result.businessId,

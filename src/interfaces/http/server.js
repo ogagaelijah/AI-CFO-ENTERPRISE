@@ -1,4 +1,7 @@
 // src/interfaces/http/server.js
+// v2.24.0-prod — Adds Admin Partner Payout routes.
+// v2.23.0-prod — Starts the auto-renewal cron.
+// v2.22.0-prod — Adds Partner Referral routes.
 // v2.21.0-prod — Starts the daily overdue notification cron and the morning daily report cron at 7:00 AM Africa/Lagos.
 
 const { initSentry, Sentry } = require('../../shared/utils/sentry');
@@ -117,6 +120,8 @@ const teamRoutes = require('./routes/teamRoutes');
 const platformRoutes = require('./routes/platformRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const commentRoutes = require('./routes/commentRoutes');
+const partnerRoutes = require('./routes/partnerRoutes');
+const adminPartnerRoutes = require('./routes/adminPartnerRoutes'); // ★ NEW
 
 app.use('/api/auth', authRoutes);
 app.use('/api/chat', chatRoutes);
@@ -130,6 +135,8 @@ app.use('/api/platform', standardLimiter, authMiddleware, platformRoutes);
 
 app.use('/api/users', standardLimiter, authMiddleware, userRoutes);
 app.use('/api/business', standardLimiter, authMiddleware, businessRoutes);
+app.use('/api/partners', standardLimiter, authMiddleware, partnerRoutes);
+app.use('/api/admin/partners', standardLimiter, authMiddleware, adminPartnerRoutes); // ★ NEW
 
 app.use('/api/sales', standardLimiter, authMiddleware, planGuard({ feature: 'sales' }), salesRoutes);
 app.use('/api/inventory', standardLimiter, authMiddleware, planGuard({ feature: 'inventory' }), inventoryRoutes);
@@ -244,13 +251,22 @@ const server = app.listen(PORT, () => {
     logger.error({ err: err.message }, 'overdue notifications: failed to schedule cron');
   }
 
-  // ★ NEW: Morning Daily Report cron (7:00 AM Africa/Lagos)
+  // ★ Morning Daily Report cron (7:00 AM Africa/Lagos)
   try {
     const { startDailyReportCron } = require('../../jobs/dailyReportNotificationJob');
     startDailyReportCron();
     logger.info('morning daily report: cron scheduled for 07:00 AM Africa/Lagos');
   } catch (err) {
     logger.error({ err: err.message }, 'morning daily report: failed to schedule cron');
+  }
+
+  // ★ Auto-Renewal cron (2:00 AM Africa/Lagos)
+  try {
+    const { startAutoRenewalCron } = require('../../jobs/autoRenewalCron');
+    startAutoRenewalCron();
+    logger.info('auto-renewal: cron scheduled for 02:00 AM Africa/Lagos');
+  } catch (err) {
+    logger.error({ err: err.message }, 'auto-renewal: failed to schedule cron');
   }
 });
 
