@@ -1,10 +1,11 @@
 // frontend/src/components/ProtectedRoute.jsx
+// v2.1.0-prod — Adds allowedRoles prop to block unauthorized URL access.
 // v2.0.0-prod — Uses platformRole for admin access instead of hardcoded emails.
 
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-const ProtectedRoute = ({ children, requireAdmin = false }) => {
+const ProtectedRoute = ({ children, requireAdmin = false, allowedRoles = null }) => {
   const { isAuthenticated, isLoading, user } = useAuth();
 
   if (isLoading) {
@@ -22,11 +23,15 @@ const ProtectedRoute = ({ children, requireAdmin = false }) => {
     return <Navigate to="/" replace />;
   }
 
+  // ★ NEW: Check if the user's role is in the allowedRoles array
+  if (allowedRoles && !allowedRoles.includes(user?.role)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
   if (requireAdmin) {
-    // ★ NEW: Check platformRole instead of hardcoded emails
     const allowedPlatformRoles = ['SUPERADMIN', 'ADMIN', 'SUPPORT', 'TECHNICAL', 'OPERATIONS', 'MARKETING', 'HR', 'COMPLIANCE', 'FINANCE'];
     const isPlatformStaff = user?.platformRole && allowedPlatformRoles.includes(user.platformRole);
-    const isTenantAdmin = user?.isAdmin === true; // Keeping this just in case
+    const isTenantAdmin = user?.isAdmin === true;
 
     if (!isPlatformStaff && !isTenantAdmin) {
       return <Navigate to="/dashboard" replace />;
