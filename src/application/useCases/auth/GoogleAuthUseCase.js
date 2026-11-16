@@ -1,5 +1,5 @@
 // src/application/useCases/auth/GoogleAuthUseCase.js
-// v1.0.0 — Verifies Google tokens and handles account linking.
+// v1.1.0 — Accepts both Web and Android Client IDs for audience verification.
 
 const { OAuth2Client } = require('google-auth-library');
 
@@ -12,15 +12,19 @@ class GoogleAuthUseCase {
     }
 
     async execute(credential) {
-        // 1. Verify the token with Google's servers
         let payload;
         try {
             const ticket = await this.googleClient.verifyIdToken({
                 idToken: credential,
-                audience: process.env.GOOGLE_CLIENT_ID,
+                // ★ FIX: Accept both Web (for browser) and Android (for mobile) audiences
+                audience: [
+                    process.env.GOOGLE_CLIENT_ID,
+                    process.env.GOOGLE_ANDROID_CLIENT_ID 
+                ], 
             });
             payload = ticket.getPayload();
         } catch (error) {
+            console.error('Google verify error:', error.message);
             throw new Error('Invalid Google token. Please try again.');
         }
 
@@ -30,25 +34,20 @@ class GoogleAuthUseCase {
             throw new Error('Your Google email is not verified.');
         }
 
-        // 2. Check if user already exists by Google ID
         let user = await this.userRepository.findByGoogleId(googleId);
 
-        // 3. If not, check by Email (Account Linking)
         if (!user) {
             user = await this.userRepository.findByEmail(email);
             if (user) {
-                // Link the Google ID to the existing account
                 await this.userRepository.update(user.id, { googleId, authProvider: 'google' });
                 user.googleId = googleId;
             }
         }
 
-        // 4. If user still doesn't exist, they need to onboard
         if (!user) {
             return { needsOnboarding: true, email, fullName, googleId };
         }
 
-        // 5. User exists, resolve their business and log them in
         const membership = await this.memberRepository.findFirstActiveByUser(user.id);
         let business = membership ? await this.businessRepository.findById(membership.businessId) : await this.businessRepository.findByUserIdFirst(user.id);
         
