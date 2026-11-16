@@ -1,4 +1,5 @@
 // frontend/src/context/AuthContext.jsx
+// v4.5.0-prod — Adds loginWithToken and ref-backed isLoggingIn for Google Auth stability.
 // v4.3.0-prod — Adds login2FA method for handling the 2FA verification step.
 
 import {
@@ -89,6 +90,15 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  
+  // Ref-backed isLoggingIn to prevent race conditions
+  const [isLoggingIn, setIsLoggingInState] = useState(false);
+  const isLoggingInRef = useRef(false);
+
+  const setIsLoggingIn = useCallback((value) => {
+    isLoggingInRef.current = value;
+    setIsLoggingInState(value);
+  }, []);
 
   const planFetchRef = useRef(null);
 
@@ -168,6 +178,8 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     setUnauthorizedHandler(() => {
+      if (isLoggingInRef.current) return;
+
       setUser(null);
       setIsAuthenticated(false);
       clearPlanCache();
@@ -282,7 +294,6 @@ export const AuthProvider = ({ children }) => {
     return response.data;
   };
 
-  // ★ NEW: 2FA Login Handler
   const login2FA = async (tempToken, code) => {
     const response = await authApi.login2FA(tempToken, code);
 
@@ -304,6 +315,30 @@ export const AuthProvider = ({ children }) => {
 
     return response.data;
   };
+
+  // ★ NEW: Login With Token (for Google Auth)
+  const loginWithToken = useCallback(
+    async (token) => {
+      setStoredToken(token);
+
+      const response = await authApi.getCurrentUser();
+      if (!response.data?.user) {
+        throw new Error('Could not load user after login');
+      }
+
+      const userData = mergeBusinessFields(
+        response.data.user,
+        response.data.business
+      );
+      userData.planData = await fetchPlan({ force: true });
+
+      setUser(userData);
+      setIsAuthenticated(true);
+
+      return userData;
+    },
+    [fetchPlan]
+  );
 
   const logout = async () => {
     try {
@@ -348,10 +383,13 @@ export const AuthProvider = ({ children }) => {
     isAuthenticated,
     register,
     login,
-    login2FA, // ★ Exported
+    login2FA,
+    loginWithToken, // ★ Exported
     logout,
     refreshPlan,
     refreshUser,
+    isLoggingIn,
+    setIsLoggingIn,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

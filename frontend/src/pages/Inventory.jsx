@@ -1,4 +1,5 @@
 // frontend/src/pages/Inventory.jsx
+// v1.4.0-prod — Adds Cashier Read-Only permissions (hides Add/Edit/Delete).
 // v1.3.0-prod — Fixes page size selector (25, 50, etc.) and preserves logic.
 
 import { useState, useEffect, useMemo } from 'react';
@@ -29,6 +30,9 @@ const DEFAULT_SUMMARY = {
 const Inventory = () => {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
+
+  // ★ NEW: Check if user can edit
+  const canEdit = user?.role !== 'CASHIER';
 
   const urlSearch = searchParams.get('search') || '';
   const [searchInput, setSearchInput] = useState(urlSearch);
@@ -69,8 +73,8 @@ const Inventory = () => {
     isInitialLoading,
     error: loadError,
     goToPage,
-    setLimit,           // ★ NEW: Extract setLimit
-    currentLimit,       // ★ NEW: Extract currentLimit
+    setLimit,
+    currentLimit,
     refresh,
   } = usePaginatedApi('/inventory', {
     itemKey: 'items',
@@ -209,13 +213,16 @@ const Inventory = () => {
             >
               <RefreshCw className="w-5 h-5" />
             </button>
-            <button
-              onClick={() => setShowAddModal(true)}
-              className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
-            >
-              <Plus className="w-5 h-5" />
-              <span>Add Stock</span>
-            </button>
+            {/* ★ NEW: Hide Add Stock for Cashiers */}
+            {canEdit && (
+              <button
+                onClick={() => setShowAddModal(true)}
+                className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition"
+              >
+                <Plus className="w-5 h-5" />
+                <span>Add Stock</span>
+              </button>
+            )}
           </div>
         }
       />
@@ -264,17 +271,16 @@ const Inventory = () => {
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 overflow-hidden">
         <InventoryTable
           items={inventory}
-          onEdit={(item) => {
+          onEdit={canEdit ? (item) => {
             setSelectedItem(item);
             setShowEditModal(true);
-          }}
-          onAdjust={(item) => {
+          } : undefined}
+          onAdjust={canEdit ? (item) => {
             setSelectedItem(item);
             setShowAdjustModal(true);
-          }}
-          onDelete={openDeleteModal}
+          } : undefined}
+          onDelete={canEdit ? openDeleteModal : undefined}
         />
-        {/* ★ FIXED: Pass currentLimit and setLimit to Pagination */}
         <Pagination 
           pagination={pagination} 
           onPageChange={goToPage} 
@@ -283,40 +289,41 @@ const Inventory = () => {
         />
       </div>
 
-      <AddStockModal
-        isOpen={showAddModal}
-        onClose={() => setShowAddModal(false)}
-        onSubmit={handleAddStock}
-      />
-
-      <EditItemModal
-        isOpen={showEditModal}
-        item={selectedItem}
-        onClose={() => { setShowEditModal(false); setSelectedItem(null); }}
-        onSubmit={handleEditItem}
-      />
-
-      <AdjustStockModal
-        isOpen={showAdjustModal}
-        item={selectedItem}
-        onClose={() => { setShowAdjustModal(false); setSelectedItem(null); }}
-        onSubmit={handleAdjustStock}
-      />
-
-      <ConfirmModal
-        isOpen={showDeleteModal}
-        data={deleteConfirmData}
-        title="Delete Inventory Item"
-        message={`Are you sure you want to delete "${selectedItem?.item_name}"?`}
-        confirmLabel="Delete"
-        confirmColor="red"
-        onConfirm={handleDeleteItem}
-        onCancel={() => {
-          setShowDeleteModal(false);
-          setSelectedItem(null);
-          setDeleteConfirmData(null);
-        }}
-      />
+      {canEdit && (
+        <>
+          <AddStockModal
+            isOpen={showAddModal}
+            onClose={() => setShowAddModal(false)}
+            onSubmit={handleAddStock}
+          />
+          <EditItemModal
+            isOpen={showEditModal}
+            item={selectedItem}
+            onClose={() => { setShowEditModal(false); setSelectedItem(null); }}
+            onSubmit={handleEditItem}
+          />
+          <AdjustStockModal
+            isOpen={showAdjustModal}
+            item={selectedItem}
+            onClose={() => { setShowAdjustModal(false); setSelectedItem(null); }}
+            onSubmit={handleAdjustStock}
+          />
+          <ConfirmModal
+            isOpen={showDeleteModal}
+            data={deleteConfirmData}
+            title="Delete Inventory Item"
+            message={`Are you sure you want to delete "${selectedItem?.item_name}"?`}
+            confirmLabel="Delete"
+            confirmColor="red"
+            onConfirm={handleDeleteItem}
+            onCancel={() => {
+              setShowDeleteModal(false);
+              setSelectedItem(null);
+              setDeleteConfirmData(null);
+            }}
+          />
+        </>
+      )}
     </div>
   );
 };
