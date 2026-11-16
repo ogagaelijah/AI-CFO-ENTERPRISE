@@ -1,4 +1,6 @@
 // mobile/src/context/AuthContext.js
+// v2.2.0-prod — Adds loginWithToken method for Google Auth.
+// v2.1.0-prod — Adds isPartner state check.
 // v2.0.0-prod — Adds subscription state (isReadOnly, subscriptionStatus).
 //               Includes fail-open safety net + dashboard cache warming.
 
@@ -16,6 +18,20 @@ export const AuthProvider = ({ children }) => {
   // Subscription State
   const [subscriptionStatus, setSubscriptionStatus] = useState('ACTIVE');
   const [isReadOnly, setIsReadOnly] = useState(false);
+
+  // ★ NEW: Partner State
+  const [isPartner, setIsPartner] = useState(false);
+
+  // ★ NEW: Check Partner Status
+  const checkPartnerStatus = useCallback(async () => {
+    try {
+      await api.get('/partners/dashboard');
+      setIsPartner(true);
+    } catch (err) {
+      // 404 means they are not a partner yet
+      setIsPartner(false); 
+    }
+  }, []);
 
   // ─── Subscription Fetcher ───
   const checkSubscription = useCallback(async () => {
@@ -46,8 +62,9 @@ export const AuthProvider = ({ children }) => {
         const userData = await SecureStore.getItemAsync('userData');
         if (token && userData) {
           setUser(JSON.parse(userData));
-          // Check subscription and warm dashboard cache
+          // Check subscription, partner status, and warm dashboard cache
           await checkSubscription();
+          await checkPartnerStatus();
           api.get('/dashboard/summary').catch(() => {}); 
         }
       } catch (e) {
@@ -57,7 +74,7 @@ export const AuthProvider = ({ children }) => {
       }
     };
     loadToken();
-  }, [checkSubscription]);
+  }, [checkSubscription, checkPartnerStatus]);
 
   const handlePushToken = async () => {
     try {
@@ -94,6 +111,7 @@ export const AuthProvider = ({ children }) => {
         // Trigger heavy background tasks (not awaited to block UI)
         await handlePushToken();
         await checkSubscription();
+        await checkPartnerStatus();
         api.get('/dashboard/summary').catch(() => {}); // Cache warm
 
         return { success: true };
@@ -106,6 +124,45 @@ export const AuthProvider = ({ children }) => {
       return { 
         success: false, 
         message: error.response?.data?.message || error.message || 'Login failed' 
+      };
+    }
+  };
+
+  // ★ NEW: Login With Token (For Google Auth)
+  const loginWithToken = async (token) => {
+    try {
+      // 1. Fetch user data using the provided token
+      const response = await api.get('/auth/me', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      if (response.data?.user) {
+        const userData = response.data.user;
+        if (response.data.business) {
+          userData.businessId = response.data.business.id;
+          userData.businessName = response.data.business.name;
+          userData.industry = response.data.business.industry;
+        }
+
+        // 2. Persist to SecureStore exactly like the standard login
+        await SecureStore.setItemAsync('userToken', token);
+        await SecureStore.setItemAsync('userData', JSON.stringify(userData));
+        setUser(userData);
+        
+        // 3. Trigger background tasks
+        await handlePushToken();
+        await checkSubscription();
+        await checkPartnerStatus();
+        api.get('/dashboard/summary').catch(() => {});
+
+        return { success: true };
+      }
+      return { success: false, message: 'Failed to load user data' };
+    } catch (error) {
+      console.log("🔴 RAW GOOGLE LOGIN ERROR:", error.message);
+      return { 
+        success: false, 
+        message: error.response?.data?.message || error.message || 'Google login failed' 
       };
     }
   };
@@ -125,6 +182,7 @@ export const AuthProvider = ({ children }) => {
         
         await handlePushToken();
         await checkSubscription();
+        await checkPartnerStatus();
         api.get('/dashboard/summary').catch(() => {}); // Cache warm
 
         return { success: true };
@@ -147,6 +205,7 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
     setSubscriptionStatus('ACTIVE');
     setIsReadOnly(false);
+    setIsPartner(false); // ★ NEW
   };
 
   return (
@@ -154,11 +213,14 @@ export const AuthProvider = ({ children }) => {
       user, 
       isLoading, 
       login, 
+      loginWithToken, // ★ Exported
       register, 
       logout,
       subscriptionStatus,
       isReadOnly,
-      checkSubscription // Exposed so screens can force-check if needed
+      checkSubscription,
+      isPartner,           // ★ NEW
+      checkPartnerStatus   // ★ NEW
     }}>
       {children}
     </AuthContext.Provider>

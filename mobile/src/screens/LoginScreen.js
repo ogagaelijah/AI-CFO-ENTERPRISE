@@ -1,8 +1,11 @@
+// mobile/src/screens/LoginScreen.js
+// v1.1.0 — Adds Google Auth Button.
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { GoogleLoginButton } from '../components/GoogleLoginButton'; // ★ NEW
 
 export default function LoginScreen({ navigation }) {
   const [identifier, setIdentifier] = useState('');
@@ -63,6 +66,16 @@ export default function LoginScreen({ navigation }) {
           <Text style={{ color: theme.textMuted }}>Forgot Password?</Text>
         </TouchableOpacity>
 
+        {/* ★ NEW: Divider */}
+        <View style={styles.dividerContainer}>
+          <View style={[styles.dividerLine, { backgroundColor: theme.border }]} />
+          <Text style={[styles.dividerText, { color: theme.textMuted }]}>or</Text>
+          <View style={[styles.dividerLine, { backgroundColor: theme.border }]} />
+        </View>
+
+        {/* ★ NEW: Google Button */}
+        <GoogleLoginButton navigation={navigation} />
+
         <TouchableOpacity style={styles.linkBtn} onPress={() => navigation.navigate('Register')}>
           <Text style={{ color: theme.textMuted }}>Don't have an account? <Text style={{ color: theme.primary, fontWeight: 'bold' }}>Sign Up</Text></Text>
         </TouchableOpacity>
@@ -89,4 +102,9 @@ const styles = StyleSheet.create({
   button: { padding: 15, borderRadius: 8, alignItems: 'center', marginTop: 10 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
   linkBtn: { alignItems: 'center', marginTop: 20 },
+  
+  // ★ NEW styles for divider
+  dividerContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 24, marginBottom: 4 },
+  dividerLine: { flex: 1, height: 1 },
+  dividerText: { marginHorizontal: 10, fontSize: 14 },
 });

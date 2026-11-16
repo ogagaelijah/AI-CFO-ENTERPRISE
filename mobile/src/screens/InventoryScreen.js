@@ -1,4 +1,5 @@
 // mobile/src/screens/InventoryScreen.js
+// v2.6.0-prod — Adds Cashier Read-Only permissions (hides FAB, disables edit).
 // v2.5.0-prod — Summary cards + low-stock banner now come from ONE source:
 // GET /inventory/summary (live SQL aggregate over the whole business, uncached).
 // Dashboard call removed. Pagination read from the real response shape
@@ -62,7 +63,11 @@ const isComplete = (n) => !!n && [n.items, n.qty, n.value, n.profit].every(v => 
 
 export const InventoryScreen = ({ navigation }) => {
   const { theme } = useTheme();
-  const { isReadOnly } = useAuth();
+  const { isReadOnly, user } = useAuth();
+  
+  // ★ NEW: Cashier restriction
+  const canEdit = user?.role !== 'CASHIER' && !isReadOnly;
+
   const [inventory, setInventory] = useState([]);
   const [initialLoading, setInitialLoading] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -403,8 +408,13 @@ export const InventoryScreen = ({ navigation }) => {
           return (
             <TouchableOpacity
               style={[styles.invCard, { backgroundColor: theme.cardBg, borderColor: theme.border }]}
-              onPress={() => navigation.navigate('AddEditInventory', { item })}
-              activeOpacity={0.7}
+              // ★ FIXED: Only allow navigation to edit screen if canEdit is true
+              onPress={() => {
+                if (canEdit) {
+                  navigation.navigate('AddEditInventory', { item });
+                }
+              }}
+              activeOpacity={canEdit ? 0.7 : 1}
             >
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 16, fontWeight: '600', color: theme.text }}>{item.item_name}</Text>
@@ -434,14 +444,15 @@ export const InventoryScreen = ({ navigation }) => {
                   <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.success }}>₦{itemValue.toLocaleString()}</Text>
                   <Text style={{ fontSize: 10, color: theme.textMuted }}>Total Value</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={20} color={theme.textMuted} style={{ alignSelf: 'center' }} />
+                {canEdit && <Ionicons name="chevron-forward" size={20} color={theme.textMuted} style={{ alignSelf: 'center' }} />}
               </View>
             </TouchableOpacity>
           );
         }}
       />
 
-      {!isReadOnly && (
+      {/* ★ FIXED: Hide FAB for Cashiers */}
+      {canEdit && (
         <TouchableOpacity
           style={[styles.fab, { backgroundColor: theme.primary }]}
           onPress={() => navigation.navigate('AddEditInventory')}

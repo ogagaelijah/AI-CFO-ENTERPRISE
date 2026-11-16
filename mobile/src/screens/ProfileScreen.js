@@ -1,3 +1,6 @@
+// mobile/src/screens/ProfileScreen.js
+// v1.2.0 — Routes to ApplyPartner screen to handle the state logic there.
+
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -5,14 +8,14 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 
 export const ProfileScreen = ({ navigation }) => {
-  const { user, logout } = useAuth();
+  const { user, logout } = useAuth(); 
   const { theme } = useTheme();
 
   const displayName = user?.businessName || user?.business_name || user?.fullName || 'User';
   const role = user?.role || 'OWNER';
   
-  // ★ NEW: Check permissions
   const canManageTeam = role === 'OWNER' || role === 'ADMIN';
+  const canBePartner = role === 'OWNER' || role === 'ADMIN';
 
   const MenuItem = ({ icon, title, subtitle, onPress, isDanger }) => (
     <TouchableOpacity 
@@ -75,6 +78,16 @@ export const ProfileScreen = ({ navigation }) => {
             subtitle="Password, Two-Factor Auth"
             onPress={() => navigation.navigate('Settings', { tab: 'Security' })} 
           />
+
+          {/* ★ NEW: Partner Program - Always goes to ApplyPartner first */}
+          {canBePartner && (
+            <MenuItem 
+              icon="gift-outline" 
+              title="Partner Program" 
+              subtitle="Earn 20% by referring businesses"
+              onPress={() => navigation.navigate('ApplyPartner')} 
+            />
+          )}
 
           {/* ★ HIDDEN FOR CASHIERS */}
           {canManageTeam && (
