@@ -1,10 +1,11 @@
 // frontend/src/App.jsx
+// v3.1.0 — Restricts /debtors route to non-Cashiers.
 // v3.0.0 — Adds Google OAuth Provider and Onboarding route.
 // v2.9.0 — Adds Admin Partner Payouts route.
 
 import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
-import { GoogleOAuthProvider } from '@react-oauth/google'; // ★ NEW
+import { GoogleOAuthProvider } from '@react-oauth/google';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
@@ -17,7 +18,7 @@ import VerifyEmail from './pages/VerifyEmail';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import AcceptInvite from './pages/AcceptInvite';
-import Onboarding from './pages/Onboarding'; // ★ NEW (Eager loaded since it's part of auth flow)
+import Onboarding from './pages/Onboarding';
 
 const Dashboard       = lazy(() => import('./pages/Dashboard'));
 const AdminDashboard  = lazy(() => import('./pages/AdminDashboard'));
@@ -79,10 +80,10 @@ function PageLoader() {
 }
 
 function App() {
-  const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '264411909899-7dit8iu4b93gunb11c0oeracrbqb31rd.apps.googleusercontent.com'; // ★ Uses env var with fallback
+  const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '264411909899-7dit8iu4b93gunb11c0oeracrbqb31rd.apps.googleusercontent.com';
 
   return (
-    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}> {/* ★ NEW */}
+    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
       <ThemeProvider>
         <AuthProvider>
           <NotificationProvider>
@@ -93,7 +94,7 @@ function App() {
                   <Route path="/" element={<Landing />} />
                   <Route path="/register" element={<Register />} />
                   <Route path="/login" element={<Login />} />
-                  <Route path="/onboarding" element={<Onboarding />} /> {/* ★ NEW */}
+                  <Route path="/onboarding" element={<Onboarding />} />
                   <Route path="/verify-email" element={<VerifyEmail />} />
                   <Route path="/forgot-password" element={<ForgotPassword />} />
                   <Route path="/reset-password" element={<ResetPassword />} />
@@ -120,7 +121,14 @@ function App() {
                   <Route path="/partner" element={<ProtectedRoute><PartnerDashboard /></ProtectedRoute>} />
                   <Route path="/sales" element={<ProtectedRoute><Sales /></ProtectedRoute>} />
                   <Route path="/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
-                  <Route path="/debtors" element={<ProtectedRoute><Debtors /></ProtectedRoute>} />
+                  
+                  {/* ★ NEW: Restrict Debtors to non-Cashiers */}
+                  <Route path="/debtors" element={
+                    <ProtectedRoute allowedRoles={['OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT']}>
+                      <Debtors />
+                    </ProtectedRoute>
+                  } />
+
                   <Route path="/income" element={<ProtectedRoute><Income /></ProtectedRoute>} />
                   <Route path="/expenses" element={<ProtectedRoute><Expenses /></ProtectedRoute>} />
                   <Route path="/purchases" element={<ProtectedRoute><Purchases /></ProtectedRoute>} />

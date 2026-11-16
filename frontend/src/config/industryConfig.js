@@ -1,5 +1,5 @@
 // frontend/src/config/industryConfig.js
-// v1.5.0-prod — Hides tenant links for non-superadmin platform staff.
+// v1.6.0-prod — Restricts Debtors sidebar link to non-Cashiers.
 
 import { 
   Store, Wrench, Building, Stethoscope, Briefcase, 
@@ -13,9 +13,9 @@ import {
 
 // ── Role shortcuts
 const ALL_ROLES       = ['OWNER', 'ADMIN', 'MANAGER', 'CASHIER', 'ACCOUNTANT'];
-const OPERATIONAL     = ['OWNER', 'ADMIN', 'MANAGER', 'CASHIER'];   // Can operate but not see financials
-const FINANCIAL       = ['OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT']; // Can view financials
-const FINANCIAL_WRITE = ['OWNER', 'ADMIN', 'MANAGER'];               // Can write financials
+const OPERATIONAL     = ['OWNER', 'ADMIN', 'MANAGER', 'CASHIER'];   
+const FINANCIAL       = ['OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT']; // ★ Cashiers removed
+const FINANCIAL_WRITE = ['OWNER', 'ADMIN', 'MANAGER'];               
 const ADMIN_ONLY      = ['OWNER', 'ADMIN'];
 const OWNER_ONLY      = ['OWNER'];
 const PLATFORM_STAFF  = ['PLATFORM_STAFF'];
@@ -77,7 +77,7 @@ const CONSULTANCY_LIKE = {
     { icon: TrendingDown, label: 'Expenses', href: '/expenses', roles: FINANCIAL },
     { icon: Clock, label: 'Hours', href: '/hours', roles: FINANCIAL },
     { icon: Package, label: 'Materials', href: '/inventory', roles: FINANCIAL },
-    { icon: Users, label: 'Debtors', href: '/debtors', roles: ALL_ROLES },
+    { icon: Users, label: 'Debtors', href: '/debtors', roles: FINANCIAL }, // ★ FIXED
     { icon: CreditCard, label: 'Creditors', href: '/creditors', roles: FINANCIAL },
     { icon: TruckIcon, label: 'Suppliers', href: '/suppliers', roles: ALL_ROLES },
 
@@ -128,7 +128,7 @@ export const INDUSTRY_CONFIGS = {
       { icon: TrendingDown, label: 'Expenses', href: '/expenses', roles: FINANCIAL },
       { icon: ShoppingCart, label: 'Purchases', href: '/purchases', roles: FINANCIAL },
       { icon: Package, label: 'Inventory', href: '/inventory', roles: ALL_ROLES },
-      { icon: Users, label: 'Debtors', href: '/debtors', roles: ALL_ROLES },
+      { icon: Users, label: 'Debtors', href: '/debtors', roles: FINANCIAL }, // ★ FIXED
       { icon: CreditCard, label: 'Creditors', href: '/creditors', roles: FINANCIAL },
       { icon: Building2, label: 'Customers', href: '/customers', roles: ALL_ROLES },
       { icon: TruckIcon, label: 'Suppliers', href: '/suppliers', roles: ALL_ROLES },
@@ -180,7 +180,7 @@ export const INDUSTRY_CONFIGS = {
       { icon: ShoppingCart, label: 'Purchases', href: '/purchases', roles: FINANCIAL },
       { icon: Package, label: 'Raw Materials', href: '/inventory?type=raw', roles: FINANCIAL },
       { icon: Package, label: 'Inventory', href: '/inventory', roles: ALL_ROLES },
-      { icon: Users, label: 'Debtors', href: '/debtors', roles: ALL_ROLES },
+      { icon: Users, label: 'Debtors', href: '/debtors', roles: FINANCIAL }, // ★ FIXED
       { icon: CreditCard, label: 'Creditors', href: '/creditors', roles: FINANCIAL },
       { icon: TruckIcon, label: 'Suppliers', href: '/suppliers', roles: ALL_ROLES },
 
@@ -248,7 +248,7 @@ export const INDUSTRY_CONFIGS = {
       { icon: DollarSign, label: 'Income', href: '/income', roles: FINANCIAL },
       { icon: TrendingDown, label: 'Expenses', href: '/expenses', roles: FINANCIAL },
       { icon: Package, label: 'Supplies', href: '/inventory', roles: ALL_ROLES },
-      { icon: Users, label: 'Debtors', href: '/debtors', roles: ALL_ROLES },
+      { icon: Users, label: 'Debtors', href: '/debtors', roles: FINANCIAL }, // ★ FIXED
       { icon: CreditCard, label: 'Creditors', href: '/creditors', roles: FINANCIAL },
       { icon: TruckIcon, label: 'Suppliers', href: '/suppliers', roles: ALL_ROLES },
 
@@ -298,7 +298,7 @@ export const INDUSTRY_CONFIGS = {
       { icon: DollarSign, label: 'Rent', href: '/rent', roles: ALL_ROLES },
       { icon: DollarSign, label: 'Income', href: '/income', roles: FINANCIAL },
       { icon: TrendingDown, label: 'Expenses', href: '/expenses', roles: FINANCIAL },
-      { icon: Users, label: 'Debtors', href: '/debtors', roles: ALL_ROLES },
+      { icon: Users, label: 'Debtors', href: '/debtors', roles: FINANCIAL }, // ★ FIXED
       { icon: CreditCard, label: 'Creditors', href: '/creditors', roles: FINANCIAL },
       { icon: TruckIcon, label: 'Suppliers', href: '/suppliers', roles: ALL_ROLES },
 
@@ -351,7 +351,7 @@ export const INDUSTRY_CONFIGS = {
       { icon: TrendingDown, label: 'Expenses', href: '/expenses', roles: FINANCIAL },
       { icon: ShoppingCart, label: 'Purchases', href: '/purchases', roles: FINANCIAL },
       { icon: Package, label: 'Inventory', href: '/inventory', roles: ALL_ROLES },
-      { icon: Users, label: 'Debtors', href: '/debtors', roles: ALL_ROLES },
+      { icon: Users, label: 'Debtors', href: '/debtors', roles: FINANCIAL }, // ★ FIXED
       { icon: CreditCard, label: 'Creditors', href: '/creditors', roles: FINANCIAL },
       { icon: TruckIcon, label: 'Suppliers', href: '/suppliers', roles: ALL_ROLES },
 
@@ -449,7 +449,7 @@ export const INDUSTRY_CONFIGS = {
       { icon: Users, label: 'Drivers', href: '/drivers', roles: ALL_ROLES },
       { icon: DollarSign, label: 'Income', href: '/income', roles: FINANCIAL },
       { icon: TrendingDown, label: 'Expenses', href: '/expenses', roles: FINANCIAL },
-      { icon: Users, label: 'Debtors', href: '/debtors', roles: ALL_ROLES },
+      { icon: Users, label: 'Debtors', href: '/debtors', roles: FINANCIAL }, // ★ FIXED
 
       { type: 'section', label: '─── INTELLIGENCE ───' },
       { icon: BarChart3, label: 'Analytics', href: '/analytics', roles: FINANCIAL },
