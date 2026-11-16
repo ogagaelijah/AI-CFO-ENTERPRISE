@@ -1,4 +1,5 @@
 // src/infrastructure/database/sqlite/repositories/UserRepository.js
+// v3.7.0-prod — Adds Google Auth support.
 // v3.6.0-prod — Adds role to member queries for notification routing.
 
 const BaseRepository = require('./BaseRepository');
@@ -12,6 +13,8 @@ class User {
         this.phoneNumber = data.phoneNumber || null;
         this.fullName = data.fullName || null;
         this.passwordHash = data.passwordHash || null;
+        this.googleId = data.googleId || null; // ★ NEW
+        this.authProvider = data.authProvider || 'local'; // ★ NEW
         this.emailVerified = data.emailVerified || false;
         this.phoneVerified = data.phoneVerified || false;
         this.resetToken = data.resetToken || null;
@@ -121,6 +124,8 @@ class UserRepository extends BaseRepository {
             phoneNumber: row.phone_number,
             fullName: row.full_name,
             passwordHash: row.password_hash,
+            googleId: row.google_id, // ★ NEW
+            authProvider: row.auth_provider, // ★ NEW
             emailVerified: row.email_verified === true || row.email_verified === 1,
             phoneVerified: row.phone_verified === true || row.phone_verified === 1,
             resetToken: row.reset_token,
@@ -146,8 +151,8 @@ class UserRepository extends BaseRepository {
                 reset_token, reset_token_expiry,
                 email_verification_token, email_verification_expiry,
                 password_changed_at, two_factor_secret, two_factor_enabled,
-                platform_role
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                platform_role, google_id, auth_provider
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
             RETURNING id`,
             [
                 userData.telegramId || null,
@@ -165,6 +170,8 @@ class UserRepository extends BaseRepository {
                 userData.twoFactorSecret || null,
                 userData.twoFactorEnabled ? true : false,
                 userData.platformRole || null,
+                userData.googleId || null, // ★ NEW
+                userData.authProvider || 'local', // ★ NEW
             ]
         );
 
@@ -181,6 +188,12 @@ class UserRepository extends BaseRepository {
             'SELECT * FROM users WHERE LOWER(email) = LOWER($1)',
             [email]
         );
+        return this.toEntity(result.rows[0] || null);
+    }
+
+    // ★ NEW: Find by Google ID
+    async findByGoogleId(googleId) {
+        const result = await this._query('SELECT * FROM users WHERE google_id = $1', [googleId]);
         return this.toEntity(result.rows[0] || null);
     }
 
@@ -226,6 +239,8 @@ class UserRepository extends BaseRepository {
                 twoFactorSecret: entity.twoFactorSecret,
                 twoFactorEnabled: entity.twoFactorEnabled,
                 platformRole: entity.platformRole,
+                googleId: entity.googleId,
+                authProvider: entity.authProvider,
             });
         }
 
@@ -249,6 +264,8 @@ class UserRepository extends BaseRepository {
             twoFactorSecret: 'two_factor_secret',
             twoFactorEnabled: 'two_factor_enabled',
             platformRole: 'platform_role',
+            googleId: 'google_id', // ★ NEW
+            authProvider: 'auth_provider', // ★ NEW
         };
 
         for (const [key, column] of Object.entries(map)) {
@@ -307,7 +324,6 @@ class UserRepository extends BaseRepository {
         return result.rows[0].count;
     }
 
-    // ★ Save the push token to the business_members table
     async updatePushToken(userId, businessId, pushToken) {
         const result = await this._query(
             `UPDATE business_members 
@@ -318,7 +334,6 @@ class UserRepository extends BaseRepository {
         return result.rowCount > 0;
     }
 
-    // ★ Fetch all push tokens for a specific business, optionally excluding a user
     async findByBusinessIdWithPushTokens(businessId, excludeUserId = null) {
         let sql = `
             SELECT bm.user_id, bm.role, bm.push_token, u.full_name 
@@ -339,7 +354,6 @@ class UserRepository extends BaseRepository {
         return result.rows;
     }
 
-    // ★ Fetch ALL members for a business, regardless of push tokens (for web notifications)
     async findAllByBusinessId(businessId, excludeUserId = null) {
         let sql = `
             SELECT bm.user_id, bm.role, bm.push_token, u.full_name 

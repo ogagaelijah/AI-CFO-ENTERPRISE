@@ -1,4 +1,6 @@
 // frontend/src/services/api.js
+// v4.9.0-prod — Ignores 401s on public routes (login/register) to prevent redirect races.
+// v4.8.0-prod — Adds Google Auth endpoints.
 // v4.7.0-prod — Adds commentApi endpoints.
 
 import axios from 'axios';
@@ -92,11 +94,20 @@ api.interceptors.response.use(
         url?.includes('/auth/me') ||
         url?.includes('/auth/login') ||
         url?.includes('/auth/register') ||
-        url?.includes('/auth/2fa/login');
+        url?.includes('/auth/2fa/login') ||
+        url?.includes('/auth/google');
+
+      // ★ NEW: Check if we are currently on a public page. If so, ignore the 401
+      // because the user is actively trying to log in.
+      const isPublicRoute = 
+        window.location.pathname === '/login' || 
+        window.location.pathname === '/register' || 
+        window.location.pathname === '/' ||
+        window.location.pathname === '/onboarding';
 
       // On a genuine 401 from a protected endpoint, wipe the stored token
       // so we don't keep sending a dead bearer.
-      if (!isAuthProbe) {
+      if (!isAuthProbe && !isPublicRoute) {
         clearStoredToken();
         if (typeof onUnauthorized === 'function') {
           try {
@@ -171,6 +182,10 @@ export const authApi = {
   enable2FA: (code) => api.post('/auth/2fa/enable', { code }),
   login2FA: (tempToken, code) => api.post('/auth/2fa/login', { tempToken, code }),
   disable2FA: (code) => api.post('/auth/2fa/disable', { code }),
+
+  // ★ NEW: Google Auth
+  googleAuth: (credential) => api.post('/auth/google', { credential }),
+  googleComplete: (data) => api.post('/auth/google/complete', data),
 };
 
 export const businessApi = {

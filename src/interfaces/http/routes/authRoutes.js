@@ -1,4 +1,5 @@
 // src/interfaces/http/routes/authRoutes.js
+// v5.9.0-prod — Adds Google OAuth login & registration routes.
 // v5.8.0-prod — Adds Platform Staff login and Referral tracking.
 
 const express = require('express');
@@ -11,8 +12,8 @@ const UserRepository = require('../../../infrastructure/database/sqlite/reposito
 const BusinessRepository = require('../../../infrastructure/database/sqlite/repositories/BusinessRepository');
 const BusinessMemberRepository = require('../../../infrastructure/database/sqlite/repositories/BusinessMemberRepository');
 const SubscriptionRepository = require('../../../infrastructure/database/sqlite/repositories/SubscriptionRepository');
-const PartnerRepository = require('../../../infrastructure/database/sqlite/repositories/PartnerRepository'); // ★ NEW
-const ReferralRepository = require('../../../infrastructure/database/sqlite/repositories/ReferralRepository'); // ★ NEW
+const PartnerRepository = require('../../../infrastructure/database/sqlite/repositories/PartnerRepository');
+const ReferralRepository = require('../../../infrastructure/database/sqlite/repositories/ReferralRepository');
 const SecurityEventService = require('../../../infrastructure/services/security/SecurityEventService');
 const { withTransaction } = require('../../../infrastructure/database/sqlite/connection');
 const plans = require('../../../config/plans');
@@ -25,6 +26,8 @@ const Setup2FAUseCase = require('../../../application/useCases/auth/Setup2FAUseC
 const Enable2FAUseCase = require('../../../application/useCases/auth/Enable2FAUseCase');
 const Verify2FALoginUseCase = require('../../../application/useCases/auth/Verify2FALoginUseCase');
 const Disable2FAUseCase = require('../../../application/useCases/auth/Disable2FAUseCase');
+const GoogleAuthUseCase = require('../../../application/useCases/auth/GoogleAuthUseCase'); // ★ NEW
+const CompleteGoogleRegistrationUseCase = require('../../../application/useCases/auth/CompleteGoogleRegistrationUseCase'); // ★ NEW
 
 const emailService = require('../../../infrastructure/services/email/ResendService');
 const logger = require('../../../shared/utils/logger');
@@ -40,8 +43,8 @@ const userRepo = new UserRepository();
 const businessRepo = new BusinessRepository();
 const memberRepo = new BusinessMemberRepository();
 const subscriptionRepo = new SubscriptionRepository();
-const partnerRepo = new PartnerRepository(); // ★ NEW
-const referralRepo = new ReferralRepository(); // ★ NEW
+const partnerRepo = new PartnerRepository();
+const referralRepo = new ReferralRepository();
 const securityEvents = new SecurityEventService();
 
 const loginUseCase = new LoginUseCase(userRepo, memberRepo, businessRepo);
@@ -52,6 +55,8 @@ const setup2FAUseCase = new Setup2FAUseCase(userRepo);
 const enable2FAUseCase = new Enable2FAUseCase(userRepo);
 const verify2FALoginUseCase = new Verify2FALoginUseCase(userRepo);
 const disable2FAUseCase = new Disable2FAUseCase(userRepo);
+const googleAuthUseCase = new GoogleAuthUseCase(userRepo, memberRepo, businessRepo); // ★ NEW
+const completeGoogleUC = new CompleteGoogleRegistrationUseCase(userRepo, businessRepo, memberRepo, subscriptionRepo, partnerRepo, referralRepo); // ★ NEW
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 const JWT_EXPIRES_IN = '7d';
@@ -118,7 +123,7 @@ const authenticateToken = (req, res, next) => {
 // ─────────────────────────────────────────────
 router.post('/register', registerLimiter, async (req, res) => {
   try {
-    const { fullName, email, phone, password, businessName, industry, ref } = req.body; // ★ ADDED ref
+    const { fullName, email, phone, password, businessName, industry, ref } = req.body;
     if (!fullName || !email || !password || !businessName || !industry) return res.status(400).json({ success: false, message: 'Missing required fields' });
 
     const pwError = validatePassword(password);
@@ -140,7 +145,6 @@ router.post('/register', registerLimiter, async (req, res) => {
       return res.status(409).json({ success: false, code: 'PHONE_TAKEN', message: 'This phone number is already registered.' });
     }
 
-    // ★ NEW: Check Referral Code
     let partnerId = null;
     if (ref) {
       const partner = await partnerRepo.findByCode(ref);
@@ -157,7 +161,6 @@ router.post('/register', registerLimiter, async (req, res) => {
       const u = await userRepo.create({ telegramId: uniqueTelegramId, email, phoneNumber: normalizedPhone, fullName, passwordHash, emailVerified: false, phoneVerified: false, emailVerificationToken: hashedVerifyToken, emailVerificationExpiry: verifyExpiry, passwordChangedAt: new Date().toISOString() });
       const b = await businessRepo.create({ userId: u.id, name: businessName, industry });
       
-      // ★ NEW: Attach Referral
       if (partnerId) {
         await businessRepo.updateReferredBy(b.id, partnerId);
         await referralRepo.create({ partnerId, referredBusinessId: b.id });
@@ -412,6 +415,85 @@ router.post('/reset-password', strictLimiter, async (req, res) => {
     securityEvents.log({ eventType: 'PASSWORD_RESET_SUCCESS', ipAddress: clientIp(req), userAgent: clientUa(req) });
     return res.json(result);
   } catch (error) { return res.status(400).json({ success: false, message: error.message || 'Password reset failed' }); }
+});
+
+// ─────────────────────────────────────────────
+// ★ NEW: POST /google
+// Verifies Google Token, logs in or flags for onboarding
+// ─────────────────────────────────────────────
+router.post('/google', async (req, res) => {
+  try {
+    const { credential } = req.body;
+    if (!credential) return res.status(400).json({ success: false, message: 'Google credential is required' });
+
+    const result = await googleAuthUseCase.execute(credential);
+
+    if (result.needsOnboarding) {
+      return res.json({ success: true, needsOnboarding: true, email: result.email, fullName: result.fullName, googleId: result.googleId });
+    }
+
+    const token = signToken(result.user, result.business);
+    res.cookie('token', token, COOKIE_OPTIONS);
+    securityEvents.log({ eventType: 'LOGIN_SUCCESS_GOOGLE', userId: result.user.id, email: result.user.email, ipAddress: clientIp(req), userAgent: clientUa(req) });
+
+    return res.json({
+      success: true, message: 'Login successful', token,
+      user: { 
+        id: result.user.id, 
+        fullName: result.user.fullName, 
+        email: result.user.email, 
+        phoneNumber: result.user.phoneNumber, 
+        industry: result.business?.industry || null, 
+        businessId: result.business?.id || null, 
+        role: result.role, 
+        emailVerified: result.user.emailVerified, 
+        twoFactorEnabled: result.user.twoFactorEnabled, 
+        platformRole: result.user.platformRole 
+      },
+      business: result.business 
+        ? { id: result.business.id, name: result.business.name, industry: result.business.industry }
+        : null,
+    });
+  } catch (error) {
+    return res.status(401).json({ success: false, message: error.message || 'Google authentication failed' });
+  }
+});
+
+// ─────────────────────────────────────────────
+// ★ NEW: POST /google/complete
+// Completes onboarding for a new Google user
+// ─────────────────────────────────────────────
+router.post('/google/complete', registerLimiter, async (req, res) => {
+  try {
+    const { email, fullName, googleId, businessName, industry, phone, ref } = req.body;
+    if (!email || !fullName || !googleId || !businessName || !industry) {
+      return res.status(400).json({ success: false, message: 'Missing required fields' });
+    }
+
+    let normalizedPhone = null;
+    if (phone && String(phone).trim().length > 0) {
+      normalizedPhone = normalizePhone(phone);
+      if (!normalizedPhone) return res.status(400).json({ success: false, code: 'INVALID_PHONE', message: 'Please enter a valid Nigerian phone number.' });
+    }
+
+    const { user, business, trialPlanId, trialPlan, trialDays, trialEndDate } = await completeGoogleUC.execute({
+      email, fullName, googleId, businessName, industry, normalizedPhone, ref
+    });
+
+    securityEvents.log({ eventType: 'REGISTER_SUCCESS_GOOGLE', userId: user.id, email, ipAddress: clientIp(req), userAgent: clientUa(req), metadata: { businessId: business.id } });
+
+    const token = signToken(user, business);
+    res.cookie('token', token, COOKIE_OPTIONS);
+
+    return res.status(201).json({
+      success: true, message: `Account created. You have ${trialDays} days of ${trialPlan.name} access.`, token,
+      user: { id: user.id, fullName: user.fullName, email: user.email, phoneNumber: user.phoneNumber, industry: business.industry, businessId: business.id, role: 'OWNER', emailVerified: true, twoFactorEnabled: user.twoFactorEnabled, platformRole: user.platformRole },
+      business: { id: business.id, name: business.name, industry: business.industry },
+      trial: { planId: trialPlanId, planName: trialPlan.name, days: trialDays, endDate: trialEndDate },
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message || 'Registration failed' });
+  }
 });
 
 module.exports = router;

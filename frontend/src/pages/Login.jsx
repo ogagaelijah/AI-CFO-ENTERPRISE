@@ -1,14 +1,16 @@
 // frontend/src/pages/Login.jsx
+// v1.2.0 — Adds Google Auth Button.
 // v1.1.0 — Handles 2FA intercept and code verification.
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { Moon, Sun, Mail, Lock, ChevronRight, Eye, EyeOff, ShieldCheck } from 'lucide-react';
+import GoogleAuthButton from '../components/auth/GoogleAuthButton'; // ★ NEW
 
 const Login = () => {
   const { theme, toggleTheme } = useTheme();
-  const { login, login2FA } = useAuth(); // ★ Import login2FA
+  const { login, login2FA } = useAuth();
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -18,7 +20,6 @@ const Login = () => {
   });
   const [errors, setErrors] = useState({});
 
-  // ★ 2FA State
   const [requires2FA, setRequires2FA] = useState(false);
   const [tempToken, setTempToken] = useState('');
   const [twoFACode, setTwoFACode] = useState('');
@@ -48,7 +49,6 @@ const Login = () => {
     try {
       const result = await login(formData);
       
-      // ★ Intercept for 2FA
       if (result?.requires2FA) {
         setRequires2FA(true);
         setTempToken(result.tempToken);
@@ -71,7 +71,6 @@ const Login = () => {
     e.preventDefault();
     setIsLoading(true);
     try {
-      // ★ Call the new AuthContext handler
       await login2FA(tempToken, twoFACode);
       navigate('/dashboard');
     } catch (error) {
@@ -81,7 +80,6 @@ const Login = () => {
     }
   };
 
-  // ★ 2FA Screen Render
   if (requires2FA) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-slate-900 flex flex-col">
@@ -153,7 +151,6 @@ const Login = () => {
     );
   }
 
-  // Standard Login Screen
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-900 transition-colors duration-300 flex flex-col">
       <header className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md z-50 border-b border-gray-200 dark:border-slate-700 transition-colors duration-300">
@@ -229,6 +226,17 @@ const Login = () => {
                 ) : (<>Log In <ChevronRight className="w-5 h-5 ml-2" /></>)}
               </button>
             </form>
+
+            <div className="mt-6 relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-300 dark:border-slate-600"></div>
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="px-2 bg-white dark:bg-slate-800 text-gray-500">Or continue with</span>
+              </div>
+            </div>
+
+            <GoogleAuthButton onError={(msg) => setErrors({ submit: msg })} />
 
             <div className="mt-6 text-center">
               <p className="text-sm text-gray-600 dark:text-gray-400">Don't have an account? <Link to="/register" className="text-primary-600 dark:text-gold-400 font-medium hover:underline transition">Create one →</Link></p>
