@@ -1,5 +1,7 @@
 // mobile/App.js
-// v2.2.1-prod — Adds SafeAreaProvider for react-native-safe-area-context.
+// v2.5.0-prod — Fixes React Navigation Fragment crash.
+// v2.4.0-prod — Adds GoogleOnboarding screen.
+// v2.3.0-prod — Adds Partner Screens.
 
 import React, { useEffect, useRef } from 'react';
 import { NavigationContainer, DefaultTheme, DarkTheme, createNavigationContainerRef } from '@react-navigation/native';
@@ -34,6 +36,9 @@ import { CreditorsScreen } from './src/screens/CreditorsScreen';
 import { AddCreditorScreen } from './src/screens/AddCreditorScreen';
 import ReportsMenuScreen from './src/screens/ReportsMenuScreen';
 import ReportDetailScreen from './src/screens/ReportDetailScreen';
+import { PartnerDashboardScreen } from './src/screens/Partner/PartnerDashboardScreen';
+import { ApplyPartnerScreen } from './src/screens/Partner/ApplyPartnerScreen';
+import { GoogleOnboardingScreen } from './src/screens/GoogleOnboardingScreen';
 import { ActivityIndicator, View } from 'react-native';
 
 const Stack = createNativeStackNavigator();
@@ -132,35 +137,39 @@ function AppNavigator() {
   return (
     <NavigationContainer ref={navigationRef} theme={isDark ? DarkTheme : DefaultTheme}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {user ? (
-          user.emailVerified === false ? (
-            <Stack.Screen name="VerifyEmail" component={VerifyEmailScreen} />
-          ) : (
-            <React.Fragment>
-              <Stack.Screen name="Main" component={MainTabs} />
-              <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ presentation: 'modal' }} />
-              <Stack.Screen name="AddEditInventory" component={AddEditInventoryScreen} options={{ presentation: 'modal' }} />
-              <Stack.Screen name="Settings" component={SettingsScreen} />
-              <Stack.Screen name="TeamManagement" component={TeamManagementScreen} />
-              <Stack.Screen name="Profile" component={ProfileScreen} />
-              <Stack.Screen name="Expenses" component={ExpensesScreen} />
-              <Stack.Screen name="Purchases" component={PurchasesScreen} />
-              <Stack.Screen name="PurchasesHistory" component={PurchasesHistoryScreen} />
-              <Stack.Screen name="Creditors" component={CreditorsScreen} />
-              <Stack.Screen name="AddCreditor" component={AddCreditorScreen} options={{ presentation: 'modal' }} />
-              
-              {/* Reports Hub */}
-              <Stack.Screen name="ReportsMenu" component={ReportsMenuScreen} options={{ headerShown: true, title: 'Reports Hub' }} />
-              <Stack.Screen name="ReportDetail" component={ReportDetailScreen} options={({ route }) => ({ headerShown: true, title: route.params?.reportLabel || 'Report' })} />
-            </React.Fragment>
-          )
-        ) : (
-          <React.Fragment>
+        {!user ? (
+          // Unauthenticated Stack
+          <>
             <Stack.Screen name="Welcome" component={WelcomeScreen} />
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="Register" component={RegisterScreen} />
             <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
-          </React.Fragment>
+            <Stack.Screen name="GoogleOnboarding" component={GoogleOnboardingScreen} />
+          </>
+        ) : user.emailVerified === false ? (
+          // Unverified User
+          <Stack.Screen name="VerifyEmail" component={VerifyEmailScreen} />
+        ) : (
+          // Authenticated App
+          <>
+            <Stack.Screen name="Main" component={MainTabs} />
+            <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ presentation: 'modal' }} />
+            <Stack.Screen name="AddEditInventory" component={AddEditInventoryScreen} options={{ presentation: 'modal' }} />
+            <Stack.Screen name="Settings" component={SettingsScreen} />
+            <Stack.Screen name="TeamManagement" component={TeamManagementScreen} />
+            <Stack.Screen name="Profile" component={ProfileScreen} />
+            <Stack.Screen name="Expenses" component={ExpensesScreen} />
+            <Stack.Screen name="Purchases" component={PurchasesScreen} />
+            <Stack.Screen name="PurchasesHistory" component={PurchasesHistoryScreen} />
+            <Stack.Screen name="Creditors" component={CreditorsScreen} />
+            <Stack.Screen name="AddCreditor" component={AddCreditorScreen} options={{ presentation: 'modal' }} />
+            
+            <Stack.Screen name="PartnerDashboard" component={PartnerDashboardScreen} options={{ headerShown: true, title: 'Partner Dashboard' }} />
+            <Stack.Screen name="ApplyPartner" component={ApplyPartnerScreen} options={{ headerShown: true, title: 'Partner Program' }} />
+
+            <Stack.Screen name="ReportsMenu" component={ReportsMenuScreen} options={{ headerShown: true, title: 'Reports Hub' }} />
+            <Stack.Screen name="ReportDetail" component={ReportDetailScreen} options={({ route }) => ({ headerShown: true, title: route.params?.reportLabel || 'Report' })} />
+          </>
         )}
       </Stack.Navigator>
     </NavigationContainer>

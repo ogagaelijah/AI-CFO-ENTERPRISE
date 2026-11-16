@@ -2,6 +2,7 @@
   "expo": {
     "name": "AI CFO Enterprise",
     "slug": "ai-cfo-enterprise",
+    "scheme": "aicfo",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -42,7 +43,8 @@
       ],
       "expo-notifications",
       "expo-font",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "@react-native-google-signin/google-signin"
     ],
     "extra": {
       "eas": {

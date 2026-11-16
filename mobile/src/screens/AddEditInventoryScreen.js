@@ -1,4 +1,5 @@
 // mobile/src/screens/AddEditInventoryScreen.js
+// v2.4.0-prod — Blocks save/delete actions for Cashiers.
 // v2.3.0-prod — Allows Item Name editing and decimals.
 
 import React, { useState } from 'react';
@@ -6,11 +7,16 @@ import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert,
 import { Ionicons } from '@expo/vector-icons';
 import api from '../services/api';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext'; // ★ NEW
 
 export const AddEditInventoryScreen = ({ navigation, route }) => {
   const { theme } = useTheme();
+  const { user } = useAuth(); // ★ NEW
   const existingItem = route.params?.item;
   const isEditing = !!existingItem;
+
+  // ★ NEW: Cashier restriction
+  const canEdit = user?.role !== 'CASHIER';
 
   const [itemName, setItemName] = useState(existingItem?.item_name || '');
   const [quantity, setQuantity] = useState(existingItem?.quantity?.toString() || '');
@@ -44,6 +50,9 @@ export const AddEditInventoryScreen = ({ navigation, route }) => {
   };
 
   const handleSave = async () => {
+    // ★ NEW: Block save for Cashiers
+    if (!canEdit) return Alert.alert('Access Denied', 'Cashiers cannot modify inventory.');
+
     if (!itemName.trim()) return Alert.alert('Error', 'Item name is required');
     if (!quantity || parseFloat(quantity) < 0) return Alert.alert('Error', 'Valid quantity is required');
     if (!costPrice || parseFloat(costPrice) < 0) return Alert.alert('Error', 'Valid cost price is required');
@@ -102,6 +111,9 @@ export const AddEditInventoryScreen = ({ navigation, route }) => {
   };
 
   const handleDelete = () => {
+    // ★ NEW: Block delete for Cashiers
+    if (!canEdit) return Alert.alert('Access Denied', 'Cashiers cannot delete inventory.');
+
     Alert.alert(
       'Delete Item',
       `Are you sure you want to permanently delete "${itemName}"? This action cannot be undone.`,
@@ -151,6 +163,7 @@ export const AddEditInventoryScreen = ({ navigation, route }) => {
           placeholderTextColor={theme.textMuted} 
           value={itemName} 
           onChangeText={setItemName} 
+          editable={canEdit} // ★ NEW
         />
 
         <View style={styles.row}>
@@ -163,6 +176,7 @@ export const AddEditInventoryScreen = ({ navigation, route }) => {
               keyboardType="numeric" 
               value={quantity} 
               onChangeText={setQuantity} 
+              editable={canEdit} // ★ NEW
             />
           </View>
           <View style={{ flex: 1, marginLeft: 12 }}>
@@ -173,6 +187,7 @@ export const AddEditInventoryScreen = ({ navigation, route }) => {
               placeholderTextColor={theme.textMuted} 
               value={baseUnit} 
               onChangeText={setBaseUnit} 
+              editable={canEdit} // ★ NEW
             />
           </View>
         </View>
@@ -187,6 +202,7 @@ export const AddEditInventoryScreen = ({ navigation, route }) => {
               keyboardType="numeric" 
               value={costPrice} 
               onChangeText={setCostPrice} 
+              editable={canEdit} // ★ NEW
             />
           </View>
           <View style={{ flex: 1, marginLeft: 12 }}>
@@ -198,6 +214,7 @@ export const AddEditInventoryScreen = ({ navigation, route }) => {
               keyboardType="numeric" 
               value={sellingPrice} 
               onChangeText={setSellingPrice} 
+              editable={canEdit} // ★ NEW
             />
           </View>
         </View>
@@ -210,6 +227,7 @@ export const AddEditInventoryScreen = ({ navigation, route }) => {
           keyboardType="numeric" 
           value={reorderLevel} 
           onChangeText={setReorderLevel} 
+          editable={canEdit} // ★ NEW
         />
 
         <View style={{ borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 16, marginTop: 20 }}>
@@ -234,6 +252,7 @@ export const AddEditInventoryScreen = ({ navigation, route }) => {
                   placeholderTextColor={theme.textMuted}
                   value={pack.packName}
                   onChangeText={(v) => handlePackChange(index, 'packName', v)}
+                  editable={canEdit} // ★ NEW
                 />
               </View>
               <View style={{ flex: 1, marginRight: 6 }}>
@@ -245,6 +264,7 @@ export const AddEditInventoryScreen = ({ navigation, route }) => {
                   keyboardType="numeric"
                   value={pack.multiplier}
                   onChangeText={(v) => handlePackChange(index, 'multiplier', v)}
+                  editable={canEdit} // ★ NEW
                 />
               </View>
               <View style={{ flex: 1.5, marginRight: 6 }}>
@@ -256,41 +276,48 @@ export const AddEditInventoryScreen = ({ navigation, route }) => {
                   keyboardType="numeric"
                   value={pack.sellingPrice}
                   onChangeText={(v) => handlePackChange(index, 'sellingPrice', v)}
+                  editable={canEdit} // ★ NEW
                 />
               </View>
-              <TouchableOpacity
-                onPress={() => handleRemovePack(index)}
-                style={{ padding: 6, marginTop: 12 }}
-              >
-                <Ionicons name="trash" size={18} color={theme.danger} />
-              </TouchableOpacity>
+              {canEdit && ( // ★ NEW: Hide trash icon
+                <TouchableOpacity
+                  onPress={() => handleRemovePack(index)}
+                  style={{ padding: 6, marginTop: 12 }}
+                >
+                  <Ionicons name="trash" size={18} color={theme.danger} />
+                </TouchableOpacity>
+              )}
             </View>
           ))}
 
-          <TouchableOpacity
-            style={[styles.addPackBtn, { borderColor: theme.primary }]}
-            onPress={handleAddPack}
-          >
-            <Ionicons name="add" size={18} color={theme.primary} />
-            <Text style={{ color: theme.primary, fontWeight: '600', marginLeft: 6 }}>Add Wholesale Pack</Text>
-          </TouchableOpacity>
+          {canEdit && ( // ★ NEW: Hide Add Pack button
+            <TouchableOpacity
+              style={[styles.addPackBtn, { borderColor: theme.primary }]}
+              onPress={handleAddPack}
+            >
+              <Ionicons name="add" size={18} color={theme.primary} />
+              <Text style={{ color: theme.primary, fontWeight: '600', marginLeft: 6 }}>Add Wholesale Pack</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
-        <TouchableOpacity 
-          style={[styles.saveBtn, { backgroundColor: theme.primary }, loading && { opacity: 0.7 }]} 
-          onPress={handleSave} 
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>
-              {isEditing ? 'Save Changes' : 'Add Item'}
-            </Text>
-          )}
-        </TouchableOpacity>
+        {canEdit && ( // ★ NEW: Hide Save button
+          <TouchableOpacity 
+            style={[styles.saveBtn, { backgroundColor: theme.primary }, loading && { opacity: 0.7 }]} 
+            onPress={handleSave} 
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>
+                {isEditing ? 'Save Changes' : 'Add Item'}
+              </Text>
+            )}
+          </TouchableOpacity>
+        )}
 
-        {isEditing && (
+        {isEditing && canEdit && ( // ★ NEW: Hide Delete button
           <TouchableOpacity 
             style={[styles.deleteBtn, { backgroundColor: theme.danger + '15', borderColor: theme.danger }]} 
             onPress={handleDelete} 
