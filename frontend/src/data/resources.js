@@ -1,4 +1,6 @@
-// frontend/src/data/resources.js
+
+ // frontend/src/data/resources.js
+// v1.6.0 — Improves resource descriptions for clarity, relevance and SEO.
 // v1.5.0 — Updated titles to point to channel hubs (Blog, Guides, Video Library).
 // v1.2.0 — Adds first guide (Google Docs, P&L). First blog post already live.
 //           PLACEHOLDER_MODE = false — hides "Subscribe on YouTube" footer.
@@ -17,7 +19,8 @@ export const RESOURCES = [
   {
     type: 'blog',
     title: 'AI CFO Blog',
-    description: 'Practical financial advice, systems, and tips for African SME owners. Read all our latest articles on Substack.',
+    description:
+      'Discover practical articles on financial management, business performance, cash flow, profitability and smarter decision-making for African SME owners.',
     url: 'https://aicfotechnologies.substack.com',
     thumbnail: null,
     date: '2026-10-13',
@@ -25,7 +28,8 @@ export const RESOURCES = [
   {
     type: 'guide',
     title: 'AI CFO Guides',
-    description: 'Plain-English guides to Profit & Loss, Cash Flow, and more. Explore our full collection of documents.',
+    description:
+      'Explore practical, plain-English guides to financial reports, Profit and Loss, cash flow and other essential business management topics.',
     url: 'https://drive.google.com/drive/folders/1_R-gkThoTaWf16h7i0SY27P9Dz6vbrtI?ths=true',
     thumbnail: null,
     date: '2026-10-13',
@@ -33,7 +37,8 @@ export const RESOURCES = [
   {
     type: 'video',
     title: 'AI CFO Video Library',
-    description: 'Explore our full collection of tutorials, walkthroughs, and tips to get the most out of AI CFO Enterprise.',
+    description:
+      'Watch tutorials and product walkthroughs to learn how to use AI CFO Enterprise for sales tracking, inventory management, financial reporting and business insights.',
     url: 'https://youtube.com/@CFOTECHNOLOGIES',
     thumbnail: null,
     duration: 'Channel',

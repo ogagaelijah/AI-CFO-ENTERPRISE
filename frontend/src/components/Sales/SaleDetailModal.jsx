@@ -1,6 +1,7 @@
+
 // frontend/src/components/Sales/SaleDetailModal.jsx
-// v1.4.0-prod — Reads `item.cogs` directly from the backend to correctly 
-//               display total cost of goods sold for multi-pack sales.
+// v1.5.0-prod — Awaits lazy-loaded sale receipt PDF generation
+//               and handles download failures safely.
 
 import { X, Printer, Download } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -43,8 +44,13 @@ const SaleDetailModal = ({ isOpen, sale, isLoading, onClose, businessInfo = null
     printSaleReceipt(sale, resolvedBusinessInfo);
   };
 
-  const handleDownloadPDF = () => {
-    downloadSaleReceiptPDF(sale, resolvedBusinessInfo);
+  const handleDownloadPDF = async () => {
+    try {
+      await downloadSaleReceiptPDF(sale, resolvedBusinessInfo);
+    } catch (err) {
+      console.error('Sale receipt download failed:', err);
+      window.alert('Failed to generate the sale receipt PDF. Please try again.');
+    }
   };
 
   return (
@@ -116,12 +122,12 @@ const SaleDetailModal = ({ isOpen, sale, isLoading, onClose, businessInfo = null
                     const cost = item.costPrice || item.unitCost || 0;
                     const sell = item.sellingPrice || item.unitPrice || 0;
                     const total = qty * sell;
-                    
-                    // ★ FIXED: Use backend's calculated item.cogs if available.
+
+                    // Use backend's calculated item.cogs if available.
                     // Falls back to qty * cost for backward compatibility with old sales.
                     const cogs = item.cogs !== undefined ? item.cogs : (qty * cost);
                     const profit = total - cogs;
-                    
+
                     return (
                       <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-slate-700/50">
                         <td className="px-3 py-2 text-gray-900 dark:text-white">
@@ -189,7 +195,7 @@ const SaleDetailModal = ({ isOpen, sale, isLoading, onClose, businessInfo = null
             </p>
           )}
 
-          {/* ★ NEW: Internal Comments Section */}
+          {/* Internal Comments Section */}
           <CommentSection entityType="SALE" entityId={sale.id} />
 
           {/* Footer actions */}

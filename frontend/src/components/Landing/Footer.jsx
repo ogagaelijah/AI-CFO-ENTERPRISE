@@ -1,12 +1,16 @@
+
 // frontend/src/components/Landing/Footer.jsx
-// v1.2.0 — Company column now links to #about and #contact (were #faq/mailto).
+// v1.4.0 — Uses React Router for internal public-page navigation.
+// v1.3.0 — Adds working public-page destinations and legal links.
+// v1.2.0 — Company column now links to dedicated About and Contact pages.
 // v1.1.0 — Replaces Lucide brand icons with inline SVGs.
 // v1.0.1 — Fixes grid: lg:grid-cols-6.
 // v1.0.0 — Multi-column footer.
 
+import { Link } from 'react-router-dom';
 import { Phone, MessageCircle, Mail } from 'lucide-react';
 
-/* ── Brand icons (inline SVG — Lucide 1.33.0 no longer ships these) ── */
+/* ── Brand icons ── */
 const YouTubeIcon = (props) => (
   <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
     <path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.6 15.6V8.4l6.2 3.6-6.2 3.6z" />
@@ -55,26 +59,26 @@ const COLUMNS = [
   {
     title: 'Product',
     links: [
-      { label: 'Features', href: '#features' },
-      { label: 'Industries', href: '#industries' },
-      { label: 'Pricing', href: '#pricing' },
-      { label: 'FAQ', href: '#faq' },
+      { label: 'Features', href: '/#features' },
+      { label: 'Industries', href: '/#industries' },
+      { label: 'Pricing', href: '/pricing' },
+      { label: 'FAQ', href: '/#faq' },
     ],
   },
   {
     title: 'Company',
     links: [
-      { label: 'About', href: '#about' },
-      { label: 'Contact', href: '#contact' },
-      { label: 'Support', href: '#contact' },
+      { label: 'About', href: '/about' },
+      { label: 'Contact', href: '/contact' },
+      { label: 'Support', href: '/contact' },
     ],
   },
   {
     title: 'Resources',
     links: [
-      { label: 'Blog', href: '#resources' },
-      { label: 'Videos', href: '#resources' },
-      { label: 'Guides', href: '#resources' },
+      { label: 'Blog', href: '/resources' },
+      { label: 'Videos', href: '/resources' },
+      { label: 'Guides', href: '/resources' },
     ],
   },
 ];
@@ -89,7 +93,7 @@ export default function Footer() {
               AI CFO <span className="text-gold-400">ENTERPRISE</span>
             </div>
             <p className="text-sm text-gray-400 leading-relaxed">
-              Built for African SMEs 🇳🇬
+              Built for African SMEs
             </p>
           </div>
 
@@ -101,9 +105,12 @@ export default function Footer() {
               <ul className="space-y-3">
                 {col.links.map((link) => (
                   <li key={link.label}>
-                    <a href={link.href} className="text-sm text-gray-300 hover:text-white transition">
+                    <Link
+                      to={link.href}
+                      className="text-sm text-gray-300 hover:text-white transition"
+                    >
                       {link.label}
-                    </a>
+                    </Link>
                   </li>
                 ))}
               </ul>
@@ -178,9 +185,21 @@ export default function Footer() {
           <p className="text-sm text-gray-500 text-center md:text-left">
             © 2026 AI CFO ENTERPRISE. All rights reserved.
           </p>
+
           <div className="flex flex-wrap justify-center gap-5 text-sm text-gray-400">
-            <a href="#" className="hover:text-white transition">Terms</a>
-            <a href="#" className="hover:text-white transition">Privacy</a>
+            <Link
+              to="/terms-of-service"
+              className="hover:text-white transition"
+            >
+              Terms
+            </Link>
+
+            <Link
+              to="/privacy"
+              className="hover:text-white transition"
+            >
+              Privacy
+            </Link>
           </div>
         </div>
       </div>

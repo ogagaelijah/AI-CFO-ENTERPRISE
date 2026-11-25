@@ -168,7 +168,7 @@ const FAQ_GROUPS = [
       },
       {
         q: 'Does it work on mobile?',
-        a: 'Today you can use AI CFO Enterprise through the web interface and via our Telegram bot. A dedicated mobile app is coming after public launch.',
+        a: 'Yes, you can access the platform through the mobile which is smart and fast. You can also access AI CFO Enterprise through the web interface and via our Telegram bot.',
       },
       {
         q: 'What if I get stuck?',

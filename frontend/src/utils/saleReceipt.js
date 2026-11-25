@@ -1,7 +1,7 @@
-// frontend/src/utils/saleReceipt.js
-// v1.6.0-prod — Formats item names with fractions (0.25 Qtr) based on pack type.
 
-import jsPDF from 'jspdf';
+// frontend/src/utils/saleReceipt.js
+// v1.7.0-prod — Lazy-loads jsPDF only when a PDF receipt is requested.
+//               Preserves browser printing and existing receipt logic.
 
 const BRAND = {
   name: 'AI CFO ENTERPRISE',
@@ -31,7 +31,7 @@ const resolveLineItems = (sale) => {
     const qty = Number(item.quantity) || 0;
     const sell = Number(item.sellingPrice ?? item.unitPrice ?? 0);
     const total = Number(item.total) || qty * sell;
-    
+
     let displayName = item.name || '—';
     let isPack = false;
     let fractionLabel = '';
@@ -39,7 +39,7 @@ const resolveLineItems = (sale) => {
     if (item.soldUnit && item.soldUnit !== 'Piece' && item.soldUnit !== 'None') {
       const unitLower = item.soldUnit.toLowerCase();
       isPack = true;
-      
+
       if (unitLower.includes('quarter') || unitLower.includes('qtr')) {
         fractionLabel = '(0.25) Qtr';
       } else if (unitLower.includes('half')) {
@@ -242,166 +242,202 @@ export const printSaleReceipt = (sale, options = {}) => {
 };
 
 // ── PDF download ────────────────────────────────────────────────────
-export const downloadSaleReceiptPDF = (sale, options = {}) => {
+export const downloadSaleReceiptPDF = async (sale, options = {}) => {
   if (!sale) return;
 
-  const businessName = options.businessName || 'AI CFO ENTERPRISE';
-  const businessAddress = options.businessAddress || '';
-  const businessPhone = options.businessPhone || '';
+  try {
+    const { default: jsPDF } = await import('jspdf');
 
-  const items = resolveLineItems(sale);
-  const totals = computeTotals(sale, items);
+    if (typeof jsPDF !== 'function') {
+      throw new Error('jsPDF could not be initialized.');
+    }
 
-  const money = (n) => `NGN ${Number(n || 0).toLocaleString()}`;
+    const businessName = options.businessName || 'AI CFO ENTERPRISE';
+    const businessAddress = options.businessAddress || '';
+    const businessPhone = options.businessPhone || '';
 
-  const doc = new jsPDF('p', 'mm', 'a4');
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  let y = 20;
+    const items = resolveLineItems(sale);
+    const totals = computeTotals(sale, items);
 
-  const resetSpacing = () => { if (typeof doc.setCharSpace === 'function') doc.setCharSpace(0); };
+    const money = (n) => `NGN ${Number(n || 0).toLocaleString()}`;
 
-  const drawWatermark = () => {
-    doc.saveGraphicsState();
-    try {
-      doc.setGState(new doc.GState({ opacity: 0.06 }));
+    const doc = new jsPDF('p', 'mm', 'a4');
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    let y = 20;
+
+    const resetSpacing = () => {
+      if (typeof doc.setCharSpace === 'function') doc.setCharSpace(0);
+    };
+
+    const drawWatermark = () => {
+      doc.saveGraphicsState();
+      try {
+        doc.setGState(new doc.GState({ opacity: 0.06 }));
+        doc.setTextColor(0);
+      } catch {
+        doc.setTextColor(230, 230, 230);
+      }
+      doc.setFontSize(60);
+      doc.setFont('helvetica', 'bold');
+      doc.text(BRAND.name, pageWidth / 2, pageHeight / 2, { align: 'center', angle: 30 });
+      doc.restoreGraphicsState?.();
       doc.setTextColor(0);
-    } catch { doc.setTextColor(230, 230, 230); }
-    doc.setFontSize(60);
+    };
+
+    resetSpacing();
+    doc.setFontSize(20);
     doc.setFont('helvetica', 'bold');
-    doc.text(BRAND.name, pageWidth / 2, pageHeight / 2, { align: 'center', angle: 30 });
-    doc.restoreGraphicsState?.();
     doc.setTextColor(0);
-  };
-
-  resetSpacing();
-  doc.setFontSize(20);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(0);
-  doc.text(businessName, pageWidth / 2, y, { align: 'center' });
-  y += 6;
-
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(100);
-  if (businessAddress) { doc.text(businessAddress, pageWidth / 2, y, { align: 'center' }); y += 5; }
-  if (businessPhone) { doc.text(businessPhone, pageWidth / 2, y, { align: 'center' }); y += 5; }
-
-  doc.setTextColor(60);
-  doc.setFontSize(13);
-  doc.setFont('helvetica', 'bold');
-  doc.text('RECEIPT / INVOICE', pageWidth / 2, y + 4, { align: 'center' });
-  y += 16;
-
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(0);
-  const leftX = 15;
-  const rightX = pageWidth - 15;
-
-  doc.text(`Invoice #: ${sale.invoice_no || `#${sale.id}`}`, leftX, y);
-  doc.text(`Date: ${formatDate(sale.sale_date)}`, rightX, y, { align: 'right' });
-  y += 6;
-
-  doc.text(`Customer: ${sale.customer_name || 'Walk-in'}`, leftX, y);
-  doc.text(`Status: ${statusLabel(sale.payment_status)}`, rightX, y, { align: 'right' });
-  y += 10;
-
-  const colX = {
-    item: leftX,
-    qty: pageWidth - 90,
-    price: pageWidth - 55,
-    total: rightX,
-  };
-
-  doc.setDrawColor(200);
-  doc.setLineWidth(0.3);
-  doc.line(leftX, y, rightX, y);
-  y += 5;
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.text('ITEM', colX.item, y);
-  doc.text('QTY', colX.qty, y, { align: 'right' });
-  doc.text('UNIT PRICE', colX.price, y, { align: 'right' });
-  doc.text('TOTAL', colX.total, y, { align: 'right' });
-  y += 3;
-  doc.line(leftX, y, rightX, y);
-  y += 5;
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  resetSpacing();
-  for (const it of items) {
-    if (y > 250) { doc.addPage(); y = 20; }
-    const itemText = doc.splitTextToSize(it.label, colX.qty - colX.item - 10);
-    doc.text(itemText, colX.item, y);
-    doc.text(String(it.quantity), colX.qty, y, { align: 'right' });
-    doc.text(money(it.sellingPrice), colX.price, y, { align: 'right' });
-    doc.text(money(it.total), colX.total, y, { align: 'right' });
-    y += 6 * (Array.isArray(itemText) ? itemText.length : 1) + 2;
-  }
-
-  y += 3;
-  doc.setDrawColor(0);
-  doc.setLineWidth(0.5);
-  doc.line(leftX, y, rightX, y);
-  y += 6;
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.text('Total:', colX.price, y, { align: 'right' });
-  doc.text(money(totals.total), colX.total, y, { align: 'right' });
-  y += 6;
-
-  doc.setFont('helvetica', 'normal');
-  doc.text('Amount Paid:', colX.price, y, { align: 'right' });
-  doc.text(money(totals.paid), colX.total, y, { align: 'right' });
-  y += 6;
-
-  if (totals.balance > 0) {
-    doc.setTextColor(185, 28, 28);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Balance Due:', colX.price, y, { align: 'right' });
-    doc.text(money(totals.balance), colX.total, y, { align: 'right' });
-    doc.setTextColor(0);
+    doc.text(businessName, pageWidth / 2, y, { align: 'center' });
     y += 6;
-  }
 
-  if (sale.notes) {
-    y += 6;
-    doc.setFont('helvetica', 'italic');
-    doc.setFontSize(9);
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
     doc.setTextColor(100);
-    doc.text(`Notes: ${sale.notes}`, leftX, y, { maxWidth: rightX - leftX });
+    if (businessAddress) {
+      doc.text(businessAddress, pageWidth / 2, y, { align: 'center' });
+      y += 5;
+    }
+    if (businessPhone) {
+      doc.text(businessPhone, pageWidth / 2, y, { align: 'center' });
+      y += 5;
+    }
+
+    doc.setTextColor(60);
+    doc.setFontSize(13);
+    doc.setFont('helvetica', 'bold');
+    doc.text('RECEIPT / INVOICE', pageWidth / 2, y + 4, { align: 'center' });
+    y += 16;
+
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
     doc.setTextColor(0);
+    const leftX = 15;
+    const rightX = pageWidth - 15;
+
+    doc.text(`Invoice #: ${sale.invoice_no || `#${sale.id}`}`, leftX, y);
+    doc.text(`Date: ${formatDate(sale.sale_date)}`, rightX, y, { align: 'right' });
+    y += 6;
+
+    doc.text(`Customer: ${sale.customer_name || 'Walk-in'}`, leftX, y);
+    doc.text(`Status: ${statusLabel(sale.payment_status)}`, rightX, y, { align: 'right' });
+    y += 10;
+
+    const colX = {
+      item: leftX,
+      qty: pageWidth - 90,
+      price: pageWidth - 55,
+      total: rightX,
+    };
+
+    doc.setDrawColor(200);
+    doc.setLineWidth(0.3);
+    doc.line(leftX, y, rightX, y);
+    y += 5;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text('ITEM', colX.item, y);
+    doc.text('QTY', colX.qty, y, { align: 'right' });
+    doc.text('UNIT PRICE', colX.price, y, { align: 'right' });
+    doc.text('TOTAL', colX.total, y, { align: 'right' });
+    y += 3;
+    doc.line(leftX, y, rightX, y);
+    y += 5;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    resetSpacing();
+
+    for (const it of items) {
+      if (y > 250) {
+        doc.addPage();
+        y = 20;
+      }
+
+      const itemText = doc.splitTextToSize(it.label, colX.qty - colX.item - 10);
+      doc.text(itemText, colX.item, y);
+      doc.text(String(it.quantity), colX.qty, y, { align: 'right' });
+      doc.text(money(it.sellingPrice), colX.price, y, { align: 'right' });
+      doc.text(money(it.total), colX.total, y, { align: 'right' });
+      y += 6 * (Array.isArray(itemText) ? itemText.length : 1) + 2;
+    }
+
+    y += 3;
+    doc.setDrawColor(0);
+    doc.setLineWidth(0.5);
+    doc.line(leftX, y, rightX, y);
+    y += 6;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text('Total:', colX.price, y, { align: 'right' });
+    doc.text(money(totals.total), colX.total, y, { align: 'right' });
+    y += 6;
+
+    doc.setFont('helvetica', 'normal');
+    doc.text('Amount Paid:', colX.price, y, { align: 'right' });
+    doc.text(money(totals.paid), colX.total, y, { align: 'right' });
+    y += 6;
+
+    if (totals.balance > 0) {
+      doc.setTextColor(185, 28, 28);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Balance Due:', colX.price, y, { align: 'right' });
+      doc.text(money(totals.balance), colX.total, y, { align: 'right' });
+      doc.setTextColor(0);
+      y += 6;
+    }
+
+    if (sale.notes) {
+      y += 6;
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(9);
+      doc.setTextColor(100);
+      doc.text(`Notes: ${sale.notes}`, leftX, y, { maxWidth: rightX - leftX });
+      doc.setTextColor(0);
+    }
+
+    y += 14;
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(10);
+    doc.setTextColor(80);
+    doc.text(
+      'Thank you for your business. We look forward to serving you again.',
+      pageWidth / 2,
+      y,
+      { align: 'center', maxWidth: rightX - leftX }
+    );
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(140);
+    doc.text(`POWERED BY ${BRAND.shortName}`, pageWidth / 2, pageHeight - 18, { align: 'center' });
+    doc.setTextColor(160);
+    doc.text(BRAND.url, pageWidth / 2, pageHeight - 13, { align: 'center' });
+
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      drawWatermark();
+    }
+
+    const filename = `receipt-${(sale.invoice_no || sale.id || 'sale').toString().replace(/[^\w-]/g, '_')}.pdf`;
+    doc.save(filename);
+  } catch (err) {
+    console.error('Sale receipt PDF generation failed:', err);
+    throw err;
   }
-
-  y += 14;
-  doc.setFont('helvetica', 'italic');
-  doc.setFontSize(10);
-  doc.setTextColor(80);
-  doc.text('Thank you for your business. We look forward to serving you again.', pageWidth / 2, y, { align: 'center', maxWidth: rightX - leftX });
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(140);
-  doc.text(`POWERED BY ${BRAND.shortName}`, pageWidth / 2, pageHeight - 18, { align: 'center' });
-  doc.setTextColor(160);
-  doc.text(BRAND.url, pageWidth / 2, pageHeight - 13, { align: 'center' });
-
-  const pageCount = doc.internal.getNumberOfPages();
-  for (let i = 1; i <= pageCount; i++) {
-    doc.setPage(i);
-    drawWatermark();
-  }
-
-  const filename = `receipt-${(sale.invoice_no || sale.id || 'sale').toString().replace(/[^\w-]/g, '_')}.pdf`;
-  doc.save(filename);
 };
 
 // ── helpers ────────────────────────────────────────────────────────
 function escapeHtml(str) {
   if (str === null || str === undefined) return '';
-  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }

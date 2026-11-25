@@ -1,5 +1,6 @@
+
 // frontend/src/components/Landing/ResourcesSection.jsx
-// v1.4.0 — Handles Hub links for Blog, Guides, and YouTube Library.
+// v1.5.0 — Supports page-specific H1/H2 heading hierarchy.
 
 import { useState } from 'react';
 import { Play, FileText, BookOpen, ExternalLink } from 'lucide-react';
@@ -20,9 +21,9 @@ const TYPE_META = {
 
 // ─── CONFIGURATION: UPDATE YOUR CHANNEL LINKS HERE ───
 const CHANNEL_LINKS = {
-  video: 'https://youtube.com/@CFOTECHNOLOGIES',      
-  blog: 'https://aicfotechnologies.substack.com',     
-  guide: 'https://drive.google.com/drive/folders/1_R-gkThoTaWf16h7i0SY27P9Dz6vbrtI?ths=true',          
+  video: 'https://youtube.com/@CFOTECHNOLOGIES',
+  blog: 'https://aicfotechnologies.substack.com',
+  guide: 'https://drive.google.com/drive/folders/1_R-gkThoTaWf16h7i0SY27P9Dz6vbrtI?ths=true',
 };
 // ─────────────────────────────────────────────────────
 
@@ -42,7 +43,7 @@ const formatDate = (iso) => {
 function ResourceCard({ resource }) {
   const meta = TYPE_META[resource.type] || TYPE_META.blog;
   const { Icon } = meta;
-  
+
   const targetUrl = CHANNEL_LINKS[resource.type];
   const isClickable = targetUrl && targetUrl !== '#';
 
@@ -119,8 +120,10 @@ function ResourceCard({ resource }) {
   );
 }
 
-export default function ResourcesSection() {
+export default function ResourcesSection({ headingLevel = 'h2' }) {
   const [filter, setFilter] = useState('all');
+
+  const Heading = headingLevel === 'h1' ? 'h1' : 'h2';
 
   const visible = filter === 'all'
     ? RESOURCES
@@ -130,12 +133,16 @@ export default function ResourcesSection() {
     <section id="resources" className="py-20 px-4 bg-white dark:bg-slate-800 transition-colors duration-300">
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-10">
-          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-3">
-            Resources
-          </h2>
+
+          <Heading className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-3">
+            Business Resources &amp; Learning Centre
+          </Heading>
+
           <p className="text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
-            Learn how to grow your business with AI CFO — videos, blog posts, and practical guides.
+            Explore practical videos, articles and guides on business management,
+            financial analytics and smarter decision-making for African SMEs.
           </p>
+
         </div>
 
         <div className="flex justify-center mb-10">
