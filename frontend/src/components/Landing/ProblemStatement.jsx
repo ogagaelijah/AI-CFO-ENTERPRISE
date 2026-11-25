@@ -1,4 +1,7 @@
-import React from 'react';
+
+// frontend/src/components/Landing/ProblemStatement.jsx
+// v1.1.0 — Refines business management and financial analytics messaging.
+// v1.0.0 — Original problem statement section.
 
 const problems = [
   {
@@ -6,21 +9,21 @@ const problems = [
     problem: 'You know your business.',
     pain: "You don't have time to learn accounting.",
     solution:
-      'AI CFO Enterprise assumes you know your business — not debits and credits. Record what happened, and we handle the rest.',
+      'AI CFO Enterprise assumes you know your business — not debits and credits. Record what happened, and we turn your business transactions into useful financial information.',
   },
   {
     icon: '💬',
     problem: 'Your numbers are scattered.',
     pain: 'Notebooks, WhatsApp, and your head.',
     solution:
-      'Sales, expenses, debtors, stock — all in one place. No more guessing what you earned this month.',
+      'Sales, expenses, debtors, creditors and inventory — all in one place. Get a clearer picture of your business without juggling multiple records.',
   },
   {
     icon: '📊',
     problem: 'You need answers, not spreadsheets.',
     pain: 'You want to know if you are actually making a profit.',
     solution:
-      'Automatic P&L, Cash Flow, Balance Sheet, and executive summaries — explained in plain English.',
+      'Understand your revenue, expenses, profitability, cash flow and outstanding payments through clear business reports, financial analytics and executive summaries.',
   },
 ];
 
@@ -31,8 +34,11 @@ export default function ProblemStatement() {
         <div className="text-center mb-14">
           <h2 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white">
             Built for business owners,{' '}
-            <span className="text-primary-600 dark:text-gold-400">not accountants</span>
+            <span className="text-primary-600 dark:text-gold-400">
+              not accountants
+            </span>
           </h2>
+
           <p className="mt-4 text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
             You did not start your business to spend your evenings doing bookkeeping.
           </p>
@@ -45,10 +51,15 @@ export default function ProblemStatement() {
               className="rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-6 transition-colors duration-300"
             >
               <div className="text-3xl mb-4">{item.icon}</div>
+
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                 {item.problem}
               </h3>
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{item.pain}</p>
+
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {item.pain}
+              </p>
+
               <p className="mt-4 text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
                 {item.solution}
               </p>

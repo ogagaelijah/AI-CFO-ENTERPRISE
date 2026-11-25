@@ -1,4 +1,6 @@
+
 // frontend/src/App.jsx
+// v3.2.0 — Adds public Terms of Service and Privacy Policy pages.
 // v3.1.0 — Restricts /debtors route to non-Cashiers.
 // v3.0.0 — Adds Google OAuth Provider and Onboarding route.
 // v2.9.0 — Adds Admin Partner Payouts route.
@@ -19,6 +21,13 @@ import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import AcceptInvite from './pages/AcceptInvite';
 import Onboarding from './pages/Onboarding';
+import About from './pages/About';
+import Pricing from './pages/Pricing';
+import Resources from './pages/Resources';
+import Contact from './pages/Contact';
+import TermsOfService from './pages/TermsOfService';
+import Privacy from './pages/Privacy';
+import NotFound from './pages/NotFound';
 
 const Dashboard       = lazy(() => import('./pages/Dashboard'));
 const AdminDashboard  = lazy(() => import('./pages/AdminDashboard'));
@@ -92,6 +101,12 @@ function App() {
                 <Routes>
                   {/* Public Routes */}
                   <Route path="/" element={<Landing />} />
+                  <Route path="/about" element={<About />} />
+                  <Route path="/pricing" element={<Pricing />} />
+                  <Route path="/resources" element={<Resources />} />
+                  <Route path="/contact" element={<Contact />} />
+                  <Route path="/terms-of-service" element={<TermsOfService />} />
+                  <Route path="/privacy" element={<Privacy />} />
                   <Route path="/register" element={<Register />} />
                   <Route path="/login" element={<Login />} />
                   <Route path="/onboarding" element={<Onboarding />} />
@@ -121,8 +136,8 @@ function App() {
                   <Route path="/partner" element={<ProtectedRoute><PartnerDashboard /></ProtectedRoute>} />
                   <Route path="/sales" element={<ProtectedRoute><Sales /></ProtectedRoute>} />
                   <Route path="/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
-                  
-                  {/* ★ NEW: Restrict Debtors to non-Cashiers */}
+
+                  {/* Restrict Debtors to non-Cashiers */}
                   <Route path="/debtors" element={
                     <ProtectedRoute allowedRoles={['OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT']}>
                       <Debtors />
@@ -155,8 +170,8 @@ function App() {
                   <Route path="/admin/health" element={<ProtectedRoute requireAdmin={true}><ComingSoon /></ProtectedRoute>} />
                   <Route path="/admin/settings" element={<ProtectedRoute requireAdmin={true}><ComingSoon /></ProtectedRoute>} />
 
-                  {/* Fallback Route */}
-                  <Route path="*" element={<Landing />} />
+                  {/* 404 Not Found Route */}
+                  <Route path="*" element={<NotFound />} />
                 </Routes>
               </Suspense>
             </BrowserRouter>

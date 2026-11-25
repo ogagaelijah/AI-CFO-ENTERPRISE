@@ -1,9 +1,7 @@
-// frontend/src/utils/feeReceipt.js
-// v1.0.0-prod — Print + PDF generator for a single fee.
-//               Mirrors saleReceipt.js patterns. Fee objects already
-//               carry studentName, admissionNumber, className, termName.
 
-import jsPDF from 'jspdf';
+// frontend/src/utils/feeReceipt.js
+// v1.1.0-prod — Print + PDF generator for a single fee.
+//               PDF library is loaded on demand to reduce initial bundle size.
 
 const BRAND = {
   name: 'AI CFO ENTERPRISE',
@@ -15,7 +13,11 @@ const formatDate = (d) => {
   if (!d) return '—';
   const dt = new Date(d);
   if (isNaN(dt.getTime())) return '—';
-  return dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  return dt.toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
 };
 
 const statusLabel = (status) => {
@@ -83,74 +85,114 @@ export const printFee = (fee, options = {}) => {
             z-index: 0;
           }
           .content { position: relative; z-index: 1; }
-
           header { text-align: center; margin-bottom: 20px; }
-          .biz-name { font-size: 22px; font-weight: 800; margin-bottom: 6px; color: #000; letter-spacing: 0.3px; }
-          .biz-meta { font-size: 12px; color: #555; line-height: 1.5; }
-
-          h1 {
-            font-size: 15px; font-weight: 600; text-align: center;
-            margin: 18px 0 22px; letter-spacing: 1.5px;
-            text-transform: uppercase; color: #333;
+          .biz-name {
+            font-size: 22px;
+            font-weight: 800;
+            margin-bottom: 6px;
+            color: #000;
+            letter-spacing: 0.3px;
           }
-
+          .biz-meta { font-size: 12px; color: #555; line-height: 1.5; }
+          h1 {
+            font-size: 15px;
+            font-weight: 600;
+            text-align: center;
+            margin: 18px 0 22px;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            color: #333;
+          }
           .meta-grid {
-            display: grid; grid-template-columns: 1fr 1fr;
-            gap: 6px 24px; margin-bottom: 20px; font-size: 13px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px 24px;
+            margin-bottom: 20px;
+            font-size: 13px;
           }
           .meta-grid .label { color: #666; }
           .meta-grid .value { font-weight: 500; }
-
           .bill-to {
-            margin-bottom: 20px; padding: 12px 14px;
-            background: #f9fafb; border-left: 3px solid #6b7280; border-radius: 2px;
+            margin-bottom: 20px;
+            padding: 12px 14px;
+            background: #f9fafb;
+            border-left: 3px solid #6b7280;
+            border-radius: 2px;
           }
           .bill-to .label {
-            font-size: 11px; text-transform: uppercase;
-            letter-spacing: 0.5px; color: #6b7280; margin-bottom: 3px;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #6b7280;
+            margin-bottom: 3px;
           }
           .bill-to .name { font-weight: 600; font-size: 14px; color: #111; }
-
-          table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
-          th, td { padding: 8px 10px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 12px;
+          }
+          th, td {
+            padding: 8px 10px;
+            border-bottom: 1px solid #e5e7eb;
+            text-align: left;
+          }
           th {
-            background: #f9fafb; font-size: 11px; font-weight: 600;
-            text-transform: uppercase; letter-spacing: 0.5px; color: #6b7280;
+            background: #f9fafb;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #6b7280;
           }
           td.right, th.right { text-align: right; }
           tfoot td { border-bottom: none; font-weight: 600; }
-          tfoot tr.sub td { border-top: 2px solid #111; padding-top: 12px; }
-
+          tfoot tr.sub td {
+            border-top: 2px solid #111;
+            padding-top: 12px;
+          }
           .status {
-            display: inline-block; padding: 2px 8px; border-radius: 9999px;
-            font-size: 11px; font-weight: 600;
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 9999px;
+            font-size: 11px;
+            font-weight: 600;
           }
-          .status.PAID      { background: #d1fae5; color: #065f46; }
-          .status.SENT      { background: #dbeafe; color: #1e40af; }
-          .status.DRAFT     { background: #f3f4f6; color: #374151; }
-          .status.OVERDUE   { background: #fee2e2; color: #991b1b; }
+          .status.PAID { background: #d1fae5; color: #065f46; }
+          .status.SENT { background: #dbeafe; color: #1e40af; }
+          .status.DRAFT { background: #f3f4f6; color: #374151; }
+          .status.OVERDUE { background: #fee2e2; color: #991b1b; }
           .status.CANCELLED { background: #f3f4f6; color: #6b7280; }
-
           .notes {
-            margin-top: 16px; padding-top: 12px;
-            border-top: 1px solid #e5e7eb; font-size: 12px; color: #555;
+            margin-top: 16px;
+            padding-top: 12px;
+            border-top: 1px solid #e5e7eb;
+            font-size: 12px;
+            color: #555;
           }
-
           .closing {
-            margin-top: 32px; text-align: center; font-size: 12px;
-            font-style: italic; color: #444; letter-spacing: 0.2px;
+            margin-top: 32px;
+            text-align: center;
+            font-size: 12px;
+            font-style: italic;
+            color: #444;
+            letter-spacing: 0.2px;
           }
-
           footer {
-            margin-top: 36px; padding-top: 14px;
-            border-top: 1px solid #e5e7eb; text-align: center;
-            font-size: 10px; color: #9ca3af; letter-spacing: 0.3px;
+            margin-top: 36px;
+            padding-top: 14px;
+            border-top: 1px solid #e5e7eb;
+            text-align: center;
+            font-size: 10px;
+            color: #9ca3af;
+            letter-spacing: 0.3px;
           }
           footer .brand-line {
-            font-weight: 600; color: #6b7280; letter-spacing: 0.5px;
+            font-weight: 600;
+            color: #6b7280;
+            letter-spacing: 0.5px;
           }
           footer .url { margin-top: 2px; }
-
           @media print {
             body { padding: 0; }
             @page { margin: 16mm; }
@@ -160,7 +202,6 @@ export const printFee = (fee, options = {}) => {
       </head>
       <body>
         <div class="watermark">${BRAND.name}</div>
-
         <div class="content">
           <header>
             <div class="biz-name">${escapeHtml(businessName)}</div>
@@ -266,197 +307,220 @@ export const printFee = (fee, options = {}) => {
 };
 
 // ─── PDF download ────────────────────────────────────────────────
-export const downloadFeePDF = (fee, options = {}) => {
+export const downloadFeePDF = async (fee, options = {}) => {
   if (!fee) return;
 
-  const businessName = options.businessName || 'AI CFO ENTERPRISE';
-  const businessAddress = options.businessAddress || '';
-  const businessPhone = options.businessPhone || '';
+  try {
+    // Load jsPDF only when a fee PDF is requested.
+    const { default: jsPDF } = await import('jspdf');
 
-  const totals = computeTotals(fee);
-  const studentName = fee.studentName || '—';
-
-  const money = (n) => `NGN ${Number(n || 0).toLocaleString()}`;
-
-  const doc = new jsPDF('p', 'mm', 'a4');
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  let y = 20;
-
-  const resetSpacing = () => {
-    if (typeof doc.setCharSpace === 'function') {
-      doc.setCharSpace(0);
+    if (typeof jsPDF !== 'function') {
+      throw new Error('jsPDF could not be initialized.');
     }
-  };
 
-  const drawWatermark = () => {
-    doc.saveGraphicsState();
-    try {
-      // eslint-disable-next-line new-cap
-      doc.setGState(new doc.GState({ opacity: 0.06 }));
+    const businessName = options.businessName || 'AI CFO ENTERPRISE';
+    const businessAddress = options.businessAddress || '';
+    const businessPhone = options.businessPhone || '';
+
+    const totals = computeTotals(fee);
+    const studentName = fee.studentName || '—';
+
+    const money = (n) => `NGN ${Number(n || 0).toLocaleString()}`;
+
+    const doc = new jsPDF('p', 'mm', 'a4');
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    let y = 20;
+
+    const resetSpacing = () => {
+      if (typeof doc.setCharSpace === 'function') {
+        doc.setCharSpace(0);
+      }
+    };
+
+    const drawWatermark = () => {
+      doc.saveGraphicsState();
+      try {
+        // eslint-disable-next-line new-cap
+        doc.setGState(new doc.GState({ opacity: 0.06 }));
+        doc.setTextColor(0);
+      } catch {
+        doc.setTextColor(230, 230, 230);
+      }
+      doc.setFontSize(60);
+      doc.setFont('helvetica', 'bold');
+      doc.text(BRAND.name, pageWidth / 2, pageHeight / 2, {
+        align: 'center',
+        angle: 30,
+      });
+      doc.restoreGraphicsState?.();
       doc.setTextColor(0);
-    } catch {
-      doc.setTextColor(230, 230, 230);
+    };
+
+    resetSpacing();
+    doc.setFontSize(20);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0);
+    doc.text(businessName, pageWidth / 2, y, { align: 'center' });
+    y += 6;
+
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100);
+    if (businessAddress) {
+      doc.text(businessAddress, pageWidth / 2, y, { align: 'center' });
+      y += 5;
     }
-    doc.setFontSize(60);
+    if (businessPhone) {
+      doc.text(businessPhone, pageWidth / 2, y, { align: 'center' });
+      y += 5;
+    }
+
+    doc.setTextColor(60);
+    doc.setFontSize(13);
     doc.setFont('helvetica', 'bold');
-    doc.text(BRAND.name, pageWidth / 2, pageHeight / 2, {
-      align: 'center',
-      angle: 30,
-    });
-    doc.restoreGraphicsState?.();
+    doc.text('STUDENT FEE', pageWidth / 2, y + 4, { align: 'center' });
+    y += 16;
+
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
     doc.setTextColor(0);
-  };
+    const leftX = 15;
+    const rightX = pageWidth - 15;
 
-  resetSpacing();
-  doc.setFontSize(20);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(0);
-  doc.text(businessName, pageWidth / 2, y, { align: 'center' });
-  y += 6;
-
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(100);
-  if (businessAddress) {
-    doc.text(businessAddress, pageWidth / 2, y, { align: 'center' });
-    y += 5;
-  }
-  if (businessPhone) {
-    doc.text(businessPhone, pageWidth / 2, y, { align: 'center' });
-    y += 5;
-  }
-
-  doc.setTextColor(60);
-  doc.setFontSize(13);
-  doc.setFont('helvetica', 'bold');
-  doc.text('STUDENT FEE', pageWidth / 2, y + 4, { align: 'center' });
-  y += 16;
-
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(0);
-  const leftX = 15;
-  const rightX = pageWidth - 15;
-
-  doc.text(`Fee #: ${fee.feeNumber || `#${fee.id}`}`, leftX, y);
-  doc.text(`Issue Date: ${formatDate(fee.issueDate)}`, rightX, y, { align: 'right' });
-  y += 6;
-
-  doc.text(`Due Date: ${formatDate(fee.dueDate)}`, leftX, y);
-  doc.text(`Status: ${statusLabel(fee.status)}`, rightX, y, { align: 'right' });
-  y += 10;
-
-  doc.setFontSize(9);
-  doc.setTextColor(100);
-  doc.text('STUDENT', leftX, y);
-  y += 5;
-  doc.setFontSize(11);
-  doc.setTextColor(0);
-  doc.setFont('helvetica', 'bold');
-  doc.text(studentName, leftX, y);
-  y += 6;
-
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  if (fee.admissionNumber) {
-    doc.text(`Admission #: ${fee.admissionNumber}`, leftX, y);
-    y += 5;
-  }
-  if (fee.className) {
-    doc.text(`Class: ${fee.className}`, leftX, y);
-    y += 5;
-  }
-  if (fee.termName) {
-    doc.text(`Term: ${fee.termName}`, leftX, y);
-    y += 5;
-  }
-  y += 4;
-
-  doc.setDrawColor(200);
-  doc.setLineWidth(0.3);
-  doc.line(leftX, y, rightX, y);
-  y += 5;
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.text('DESCRIPTION', leftX, y);
-  doc.text('AMOUNT', rightX, y, { align: 'right' });
-  y += 3;
-  doc.line(leftX, y, rightX, y);
-  y += 5;
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  resetSpacing();
-
-  doc.text(fee.description || 'Tuition / Fees', leftX, y, { maxWidth: pageWidth - 70 });
-  doc.text(money(totals.amount), rightX, y, { align: 'right' });
-  y += 8;
-
-  y += 3;
-  doc.setDrawColor(0);
-  doc.setLineWidth(0.5);
-  doc.line(leftX, y, rightX, y);
-  y += 6;
-
-  const moneyColX = pageWidth - 55;
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.text('Total:', moneyColX, y, { align: 'right' });
-  doc.text(money(totals.amount), rightX, y, { align: 'right' });
-  y += 6;
-
-  doc.setFont('helvetica', 'normal');
-  doc.text('Amount Paid:', moneyColX, y, { align: 'right' });
-  doc.text(money(totals.paid), rightX, y, { align: 'right' });
-  y += 6;
-
-  if (totals.balance > 0) {
-    doc.setTextColor(185, 28, 28);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Balance Due:', moneyColX, y, { align: 'right' });
-    doc.text(money(totals.balance), rightX, y, { align: 'right' });
-    doc.setTextColor(0);
+    doc.text(`Fee #: ${fee.feeNumber || `#${fee.id}`}`, leftX, y);
+    doc.text(`Issue Date: ${formatDate(fee.issueDate)}`, rightX, y, { align: 'right' });
     y += 6;
-  }
 
-  if (fee.notes) {
-    y += 6;
-    doc.setFont('helvetica', 'italic');
+    doc.text(`Due Date: ${formatDate(fee.dueDate)}`, leftX, y);
+    doc.text(`Status: ${statusLabel(fee.status)}`, rightX, y, { align: 'right' });
+    y += 10;
+
     doc.setFontSize(9);
     doc.setTextColor(100);
-    doc.text(`Notes: ${fee.notes}`, leftX, y, { maxWidth: rightX - leftX });
+    doc.text('STUDENT', leftX, y);
+    y += 5;
+    doc.setFontSize(11);
     doc.setTextColor(0);
+    doc.setFont('helvetica', 'bold');
+    doc.text(studentName, leftX, y);
+    y += 6;
+
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    if (fee.admissionNumber) {
+      doc.text(`Admission #: ${fee.admissionNumber}`, leftX, y);
+      y += 5;
+    }
+    if (fee.className) {
+      doc.text(`Class: ${fee.className}`, leftX, y);
+      y += 5;
+    }
+    if (fee.termName) {
+      doc.text(`Term: ${fee.termName}`, leftX, y);
+      y += 5;
+    }
+    y += 4;
+
+    doc.setDrawColor(200);
+    doc.setLineWidth(0.3);
+    doc.line(leftX, y, rightX, y);
+    y += 5;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text('DESCRIPTION', leftX, y);
+    doc.text('AMOUNT', rightX, y, { align: 'right' });
+    y += 3;
+    doc.line(leftX, y, rightX, y);
+    y += 5;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    resetSpacing();
+
+    doc.text(fee.description || 'Tuition / Fees', leftX, y, {
+      maxWidth: pageWidth - 70,
+    });
+    doc.text(money(totals.amount), rightX, y, { align: 'right' });
+    y += 8;
+
+    y += 3;
+    doc.setDrawColor(0);
+    doc.setLineWidth(0.5);
+    doc.line(leftX, y, rightX, y);
+    y += 6;
+
+    const moneyColX = pageWidth - 55;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text('Total:', moneyColX, y, { align: 'right' });
+    doc.text(money(totals.amount), rightX, y, { align: 'right' });
+    y += 6;
+
+    doc.setFont('helvetica', 'normal');
+    doc.text('Amount Paid:', moneyColX, y, { align: 'right' });
+    doc.text(money(totals.paid), rightX, y, { align: 'right' });
+    y += 6;
+
+    if (totals.balance > 0) {
+      doc.setTextColor(185, 28, 28);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Balance Due:', moneyColX, y, { align: 'right' });
+      doc.text(money(totals.balance), rightX, y, { align: 'right' });
+      doc.setTextColor(0);
+      y += 6;
+    }
+
+    if (fee.notes) {
+      y += 6;
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(9);
+      doc.setTextColor(100);
+      doc.text(`Notes: ${fee.notes}`, leftX, y, {
+        maxWidth: rightX - leftX,
+      });
+      doc.setTextColor(0);
+    }
+
+    y += 14;
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(10);
+    doc.setTextColor(80);
+    doc.text(
+      'Thank you for your business. We look forward to serving you again.',
+      pageWidth / 2,
+      y,
+      { align: 'center', maxWidth: rightX - leftX }
+    );
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(140);
+    doc.text(`POWERED BY ${BRAND.shortName}`, pageWidth / 2, pageHeight - 18, {
+      align: 'center',
+    });
+    doc.setTextColor(160);
+    doc.text(BRAND.url, pageWidth / 2, pageHeight - 13, {
+      align: 'center',
+    });
+
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      drawWatermark();
+    }
+
+    const filename = `fee-${(
+      fee.feeNumber || fee.id || 'fee'
+    ).toString().replace(/[^\w-]/g, '_')}.pdf`;
+
+    doc.save(filename);
+  } catch (err) {
+    console.error('Fee PDF generation failed:', err);
+    throw err;
   }
-
-  y += 14;
-  doc.setFont('helvetica', 'italic');
-  doc.setFontSize(10);
-  doc.setTextColor(80);
-  doc.text(
-    'Thank you for your business. We look forward to serving you again.',
-    pageWidth / 2,
-    y,
-    { align: 'center', maxWidth: rightX - leftX }
-  );
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(140);
-  doc.text(`POWERED BY ${BRAND.shortName}`, pageWidth / 2, pageHeight - 18, { align: 'center' });
-  doc.setTextColor(160);
-  doc.text(BRAND.url, pageWidth / 2, pageHeight - 13, { align: 'center' });
-
-  const pageCount = doc.internal.getNumberOfPages();
-  for (let i = 1; i <= pageCount; i++) {
-    doc.setPage(i);
-    drawWatermark();
-  }
-
-  const filename = `fee-${(fee.feeNumber || fee.id || 'fee').toString().replace(/[^\w-]/g, '_')}.pdf`;
-  doc.save(filename);
 };
 
 function escapeHtml(str) {

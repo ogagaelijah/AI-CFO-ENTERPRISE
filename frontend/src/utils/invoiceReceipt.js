@@ -1,15 +1,11 @@
+
 // frontend/src/utils/invoiceReceipt.js
-// v1.0.0-prod — Print + PDF generator for a single invoice.
-//               Mirrors saleReceipt.js patterns:
-//                 - print uses browser dialog with ₦ glyph
-//                 - PDF uses "NGN" prefix (jsPDF Helvetica lacks ₦)
-//                 - watermark + branded footer
+// v1.1.0-prod — Print + PDF generator for a single invoice.
+//               PDF library loads on demand when a PDF is requested.
 //
 // Two outputs:
 //   printInvoice(invoice, options)       → browser print dialog
 //   downloadInvoicePDF(invoice, options) → jsPDF download
-
-import jsPDF from 'jspdf';
 
 const BRAND = {
   name: 'AI CFO ENTERPRISE',
@@ -328,206 +324,218 @@ export const printInvoice = (invoice, options = {}) => {
 };
 
 // ─── PDF download ────────────────────────────────────────────────
-export const downloadInvoicePDF = (invoice, options = {}) => {
+export const downloadInvoicePDF = async (invoice, options = {}) => {
   if (!invoice) return;
 
-  const businessName = options.businessName || 'AI CFO ENTERPRISE';
-  const businessAddress = options.businessAddress || '';
-  const businessPhone = options.businessPhone || '';
+  try {
+    // Load jsPDF only when an invoice PDF is requested.
+    const { default: jsPDF } = await import('jspdf');
 
-  const totals = computeTotals(invoice);
-  const customerName = invoice.customer_name || invoice.customerName || '—';
-  const projectName = invoice.project_name || invoice.projectName || null;
-
-  const money = (n) => `NGN ${Number(n || 0).toLocaleString()}`;
-
-  const doc = new jsPDF('p', 'mm', 'a4');
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  let y = 20;
-
-  const resetSpacing = () => {
-    if (typeof doc.setCharSpace === 'function') {
-      doc.setCharSpace(0);
+    if (typeof jsPDF !== 'function') {
+      throw new Error('jsPDF could not be initialized.');
     }
-  };
 
-  const drawWatermark = () => {
-    doc.saveGraphicsState();
-    try {
-      // eslint-disable-next-line new-cap
-      doc.setGState(new doc.GState({ opacity: 0.06 }));
+    const businessName = options.businessName || 'AI CFO ENTERPRISE';
+    const businessAddress = options.businessAddress || '';
+    const businessPhone = options.businessPhone || '';
+
+    const totals = computeTotals(invoice);
+    const customerName = invoice.customer_name || invoice.customerName || '—';
+    const projectName = invoice.project_name || invoice.projectName || null;
+
+    const money = (n) => `NGN ${Number(n || 0).toLocaleString()}`;
+
+    const doc = new jsPDF('p', 'mm', 'a4');
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    let y = 20;
+
+    const resetSpacing = () => {
+      if (typeof doc.setCharSpace === 'function') {
+        doc.setCharSpace(0);
+      }
+    };
+
+    const drawWatermark = () => {
+      doc.saveGraphicsState();
+      try {
+        // eslint-disable-next-line new-cap
+        doc.setGState(new doc.GState({ opacity: 0.06 }));
+        doc.setTextColor(0);
+      } catch {
+        doc.setTextColor(230, 230, 230);
+      }
+      doc.setFontSize(60);
+      doc.setFont('helvetica', 'bold');
+      doc.text(BRAND.name, pageWidth / 2, pageHeight / 2, {
+        align: 'center',
+        angle: 30,
+      });
+      doc.restoreGraphicsState?.();
       doc.setTextColor(0);
-    } catch {
-      doc.setTextColor(230, 230, 230);
-    }
-    doc.setFontSize(60);
+    };
+
+    // Header
+    resetSpacing();
+    doc.setFontSize(20);
     doc.setFont('helvetica', 'bold');
-    doc.text(BRAND.name, pageWidth / 2, pageHeight / 2, {
-      align: 'center',
-      angle: 30,
-    });
-    doc.restoreGraphicsState?.();
     doc.setTextColor(0);
-  };
+    doc.text(businessName, pageWidth / 2, y, { align: 'center' });
+    y += 6;
 
-  // Header
-  resetSpacing();
-  doc.setFontSize(20);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(0);
-  doc.text(businessName, pageWidth / 2, y, { align: 'center' });
-  y += 6;
-
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(100);
-  if (businessAddress) {
-    doc.text(businessAddress, pageWidth / 2, y, { align: 'center' });
-    y += 5;
-  }
-  if (businessPhone) {
-    doc.text(businessPhone, pageWidth / 2, y, { align: 'center' });
-    y += 5;
-  }
-
-  // Title
-  doc.setTextColor(60);
-  doc.setFontSize(13);
-  doc.setFont('helvetica', 'bold');
-  doc.text('INVOICE', pageWidth / 2, y + 4, { align: 'center' });
-  y += 16;
-
-  // Meta
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(0);
-  const leftX = 15;
-  const rightX = pageWidth - 15;
-
-  doc.text(`Invoice #: ${invoice.invoice_number || invoice.invoiceNumber || `#${invoice.id}`}`, leftX, y);
-  doc.text(`Issue Date: ${formatDate(invoice.issue_date || invoice.issueDate)}`, rightX, y, { align: 'right' });
-  y += 6;
-
-  doc.text(`Due Date: ${formatDate(invoice.due_date || invoice.dueDate)}`, leftX, y);
-  doc.text(`Status: ${statusLabel(invoice.status)}`, rightX, y, { align: 'right' });
-  y += 10;
-
-  // Bill To
-  doc.setFontSize(9);
-  doc.setTextColor(100);
-  doc.text('BILL TO', leftX, y);
-  y += 5;
-  doc.setFontSize(11);
-  doc.setTextColor(0);
-  doc.setFont('helvetica', 'bold');
-  doc.text(customerName, leftX, y);
-  y += 6;
-  if (projectName) {
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Project: ${projectName}`, leftX, y);
-    y += 6;
-  }
-  y += 4;
+    doc.setTextColor(100);
+    if (businessAddress) {
+      doc.text(businessAddress, pageWidth / 2, y, { align: 'center' });
+      y += 5;
+    }
+    if (businessPhone) {
+      doc.text(businessPhone, pageWidth / 2, y, { align: 'center' });
+      y += 5;
+    }
 
-  // Table header
-  doc.setDrawColor(200);
-  doc.setLineWidth(0.3);
-  doc.line(leftX, y, rightX, y);
-  y += 5;
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.text('DESCRIPTION', leftX, y);
-  doc.text('AMOUNT', rightX, y, { align: 'right' });
-  y += 3;
-  doc.line(leftX, y, rightX, y);
-  y += 5;
-
-  // Table body
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  resetSpacing();
-
-  doc.text('Services rendered', leftX, y);
-  doc.text(money(totals.subtotal), rightX, y, { align: 'right' });
-  y += 6;
-
-  if (totals.tax > 0) {
-    doc.text('Tax', leftX, y);
-    doc.text(money(totals.tax), rightX, y, { align: 'right' });
-    y += 6;
-  }
-
-  // Totals
-  y += 3;
-  doc.setDrawColor(0);
-  doc.setLineWidth(0.5);
-  doc.line(leftX, y, rightX, y);
-  y += 6;
-
-  const moneyColX = pageWidth - 55;
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.text('Total:', moneyColX, y, { align: 'right' });
-  doc.text(money(totals.total), rightX, y, { align: 'right' });
-  y += 6;
-
-  doc.setFont('helvetica', 'normal');
-  doc.text('Amount Paid:', moneyColX, y, { align: 'right' });
-  doc.text(money(totals.paid), rightX, y, { align: 'right' });
-  y += 6;
-
-  if (totals.balance > 0) {
-    doc.setTextColor(185, 28, 28);
+    // Title
+    doc.setTextColor(60);
+    doc.setFontSize(13);
     doc.setFont('helvetica', 'bold');
-    doc.text('Balance Due:', moneyColX, y, { align: 'right' });
-    doc.text(money(totals.balance), rightX, y, { align: 'right' });
-    doc.setTextColor(0);
-    y += 6;
-  }
+    doc.text('INVOICE', pageWidth / 2, y + 4, { align: 'center' });
+    y += 16;
 
-  // Notes
-  if (invoice.notes) {
+    // Meta
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(0);
+    const leftX = 15;
+    const rightX = pageWidth - 15;
+
+    doc.text(`Invoice #: ${invoice.invoice_number || invoice.invoiceNumber || `#${invoice.id}`}`, leftX, y);
+    doc.text(`Issue Date: ${formatDate(invoice.issue_date || invoice.issueDate)}`, rightX, y, { align: 'right' });
     y += 6;
-    doc.setFont('helvetica', 'italic');
+
+    doc.text(`Due Date: ${formatDate(invoice.due_date || invoice.dueDate)}`, leftX, y);
+    doc.text(`Status: ${statusLabel(invoice.status)}`, rightX, y, { align: 'right' });
+    y += 10;
+
+    // Bill To
     doc.setFontSize(9);
     doc.setTextColor(100);
-    doc.text(`Notes: ${invoice.notes}`, leftX, y, { maxWidth: rightX - leftX });
+    doc.text('BILL TO', leftX, y);
+    y += 5;
+    doc.setFontSize(11);
     doc.setTextColor(0);
+    doc.setFont('helvetica', 'bold');
+    doc.text(customerName, leftX, y);
+    y += 6;
+    if (projectName) {
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Project: ${projectName}`, leftX, y);
+      y += 6;
+    }
+    y += 4;
+
+    // Table header
+    doc.setDrawColor(200);
+    doc.setLineWidth(0.3);
+    doc.line(leftX, y, rightX, y);
+    y += 5;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text('DESCRIPTION', leftX, y);
+    doc.text('AMOUNT', rightX, y, { align: 'right' });
+    y += 3;
+    doc.line(leftX, y, rightX, y);
+    y += 5;
+
+    // Table body
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    resetSpacing();
+
+    doc.text('Services rendered', leftX, y);
+    doc.text(money(totals.subtotal), rightX, y, { align: 'right' });
+    y += 6;
+
+    if (totals.tax > 0) {
+      doc.text('Tax', leftX, y);
+      doc.text(money(totals.tax), rightX, y, { align: 'right' });
+      y += 6;
+    }
+
+    // Totals
+    y += 3;
+    doc.setDrawColor(0);
+    doc.setLineWidth(0.5);
+    doc.line(leftX, y, rightX, y);
+    y += 6;
+
+    const moneyColX = pageWidth - 55;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text('Total:', moneyColX, y, { align: 'right' });
+    doc.text(money(totals.total), rightX, y, { align: 'right' });
+    y += 6;
+
+    doc.setFont('helvetica', 'normal');
+    doc.text('Amount Paid:', moneyColX, y, { align: 'right' });
+    doc.text(money(totals.paid), rightX, y, { align: 'right' });
+    y += 6;
+
+    if (totals.balance > 0) {
+      doc.setTextColor(185, 28, 28);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Balance Due:', moneyColX, y, { align: 'right' });
+      doc.text(money(totals.balance), rightX, y, { align: 'right' });
+      doc.setTextColor(0);
+      y += 6;
+    }
+
+    // Notes
+    if (invoice.notes) {
+      y += 6;
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(9);
+      doc.setTextColor(100);
+      doc.text(`Notes: ${invoice.notes}`, leftX, y, { maxWidth: rightX - leftX });
+      doc.setTextColor(0);
+    }
+
+    // Closing
+    y += 14;
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(10);
+    doc.setTextColor(80);
+    doc.text(
+      'Thank you for your business. We look forward to serving you again.',
+      pageWidth / 2,
+      y,
+      { align: 'center', maxWidth: rightX - leftX }
+    );
+
+    // Footer
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(140);
+    doc.text(`POWERED BY ${BRAND.shortName}`, pageWidth / 2, pageHeight - 18, { align: 'center' });
+    doc.setTextColor(160);
+    doc.text(BRAND.url, pageWidth / 2, pageHeight - 13, { align: 'center' });
+
+    // Watermark on every page
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      drawWatermark();
+    }
+
+    const filename = `invoice-${(invoice.invoice_number || invoice.invoiceNumber || invoice.id || 'invoice').toString().replace(/[^\w-]/g, '_')}.pdf`;
+    doc.save(filename);
+  } catch (err) {
+    console.error('Invoice PDF generation failed:', err);
+    throw err;
   }
-
-  // Closing
-  y += 14;
-  doc.setFont('helvetica', 'italic');
-  doc.setFontSize(10);
-  doc.setTextColor(80);
-  doc.text(
-    'Thank you for your business. We look forward to serving you again.',
-    pageWidth / 2,
-    y,
-    { align: 'center', maxWidth: rightX - leftX }
-  );
-
-  // Footer
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(140);
-  doc.text(`POWERED BY ${BRAND.shortName}`, pageWidth / 2, pageHeight - 18, { align: 'center' });
-  doc.setTextColor(160);
-  doc.text(BRAND.url, pageWidth / 2, pageHeight - 13, { align: 'center' });
-
-  // Watermark on every page
-  const pageCount = doc.internal.getNumberOfPages();
-  for (let i = 1; i <= pageCount; i++) {
-    doc.setPage(i);
-    drawWatermark();
-  }
-
-  const filename = `invoice-${(invoice.invoice_number || invoice.invoiceNumber || invoice.id || 'invoice').toString().replace(/[^\w-]/g, '_')}.pdf`;
-  doc.save(filename);
 };
 
 function escapeHtml(str) {

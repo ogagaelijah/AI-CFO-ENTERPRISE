@@ -4,9 +4,35 @@
 //               balance-sheet, daily, weekly, monthly, yearly,
 //               inventory-movement, inventory-valuation.
 
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+
+// PDF libraries are loaded only when a PDF export is requested.
+let jsPDF;
+let autoTable;
+let pdfLibrariesPromise = null;
+
+async function loadPdfLibraries() {
+  if (!pdfLibrariesPromise) {
+    pdfLibrariesPromise = Promise.all([
+      import('jspdf'),
+      import('jspdf-autotable'),
+    ])
+      .then(([jsPDFModule, autoTableModule]) => {
+        jsPDF = jsPDFModule.default;
+        autoTable = autoTableModule.default;
+
+        if (typeof jsPDF !== 'function' || typeof autoTable !== 'function') {
+          throw new Error('PDF libraries could not be initialized.');
+        }
+      })
+      .catch((error) => {
+        pdfLibrariesPromise = null;
+        throw error;
+      });
+  }
+
+  return pdfLibrariesPromise;
+}
 
 // ── Constants ──────────────────────────────────────────────────────
 const BRAND = {
@@ -169,13 +195,15 @@ function savePdf(doc, reportType) {
 // ═══════════════════════════════════════════════════════════════════
 // PDF EXPORT
 // ═══════════════════════════════════════════════════════════════════
-export const exportToPDF = (reportData, reportType) => {
+export const exportToPDF = async (reportData, reportType) => {
   if (!reportData) {
     console.error('exportToPDF: no report data');
     return;
   }
 
   try {
+    await loadPdfLibraries();
+
     switch (reportType) {
       case 'daily':         return exportDailyPdf(reportData);
       case 'weekly':        return exportWeeklyPdf(reportData);

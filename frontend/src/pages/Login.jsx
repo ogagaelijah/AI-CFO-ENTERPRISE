@@ -1,12 +1,14 @@
+
 // frontend/src/pages/Login.jsx
 // v1.2.0 — Adds Google Auth Button.
 // v1.1.0 — Handles 2FA intercept and code verification.
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { Moon, Sun, Mail, Lock, ChevronRight, Eye, EyeOff, ShieldCheck } from 'lucide-react';
-import GoogleAuthButton from '../components/auth/GoogleAuthButton'; // ★ NEW
+import GoogleAuthButton from '../components/auth/GoogleAuthButton';
 
 const Login = () => {
   const { theme, toggleTheme } = useTheme();
@@ -48,14 +50,14 @@ const Login = () => {
     setIsLoading(true);
     try {
       const result = await login(formData);
-      
+
       if (result?.requires2FA) {
         setRequires2FA(true);
         setTempToken(result.tempToken);
         setIsLoading(false);
         return;
       }
-      
+
       navigate('/dashboard');
     } catch (error) {
       console.error('Login error:', error);
@@ -83,6 +85,15 @@ const Login = () => {
   if (requires2FA) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-slate-900 flex flex-col">
+        <Helmet>
+          <title>Two-Factor Authentication | AI CFO Enterprise</title>
+          <meta
+            name="description"
+            content="Complete two-factor authentication to securely access your AI CFO Enterprise account."
+          />
+          <meta name="robots" content="noindex, follow" />
+        </Helmet>
+
         <header className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md z-50 border-b border-gray-200 dark:border-slate-700">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
             <Link to="/" className="flex items-center space-x-2">
@@ -153,6 +164,15 @@ const Login = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-900 transition-colors duration-300 flex flex-col">
+      <Helmet>
+        <title>Login | AI CFO Enterprise</title>
+        <meta
+          name="description"
+          content="Log in to your AI CFO Enterprise account to manage your business, monitor financial performance, track inventory and access business insights."
+        />
+        <meta name="robots" content="noindex, follow" />
+      </Helmet>
+
       <header className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md z-50 border-b border-gray-200 dark:border-slate-700 transition-colors duration-300">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">

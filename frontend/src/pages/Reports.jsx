@@ -201,7 +201,7 @@ const Reports = () => {
     try {
       setExporting('pdf');
       await new Promise((r) => setTimeout(r, 50));
-      exportToPDF(rawReportData, activeReport);
+      await exportToPDF(rawReportData, activeReport);
     } catch (err) {
       console.error('Export PDF failed:', err);
       setError('Failed to generate PDF. Please try again.');

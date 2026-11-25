@@ -1,36 +1,48 @@
-// frontend/src/components/Landing/AboutSection.jsx
-// v1.0.0 — Professional CFO positioning. Narrates that AI CFO Enterprise is
-//           not just a recording system but an analytical, forecasting,
-//           strategic advisor for African SMEs.
 
-import { BarChart3, ShieldAlert, LineChart, Lightbulb, Building2, TrendingUp } from 'lucide-react';
+ // frontend/src/components/Landing/AboutSection.jsx
+// v1.2.0 — Supports context-aware heading levels for SEO.
+//           Defaults to H2 on the homepage; dedicated About page uses H1.
+
+import {
+  BarChart3,
+  ShieldAlert,
+  LineChart,
+  Lightbulb,
+  Building2,
+  TrendingUp,
+} from 'lucide-react';
 
 const PILLARS = [
   {
     Icon: BarChart3,
-    title: 'Analytics that explain themselves',
-    desc: 'Your numbers turned into plain English — what\'s growing, what\'s leaking, what needs attention.',
+    title: 'Business analytics made clear',
+    desc: 'Turn business data into clear insights about revenue, expenses, profitability and performance — explained in plain language.',
   },
   {
     Icon: ShieldAlert,
-    title: 'Risks surfaced early',
-    desc: 'Cash-flow crunches, thin margins, overdue debtors — flagged before they become crises.',
+    title: 'See business risks earlier',
+    desc: 'Identify warning signs such as cash-flow pressure, shrinking margins and overdue customer payments before they become bigger problems.',
   },
   {
     Icon: LineChart,
-    title: 'Forecasts you can act on',
-    desc: 'Projected revenue, expenses, and cash position based on your real history — not guesswork.',
+    title: 'Forecasts based on your business data',
+    desc: 'Explore projected revenue, expenses and cash flow using your recorded business activity and historical trends.',
   },
   {
     Icon: Lightbulb,
-    title: 'Strategic advice, on demand',
-    desc: 'Recommendations in your inbox like you\'d get from a seasoned CFO — pricing, collections, growth.',
+    title: 'Practical recommendations',
+    desc: 'Get AI-powered guidance to help you evaluate pricing, improve collections, manage costs and make better business decisions.',
   },
 ];
 
-const AboutSection = () => {
+const AboutSection = ({ headingLevel = 'h2' }) => {
+  const Heading = headingLevel === 'h1' ? 'h1' : 'h2';
+
   return (
-    <section id="about" className="py-20 px-4 bg-white dark:bg-slate-800 transition-colors duration-300">
+    <section
+      id="about"
+      className="py-20 px-4 bg-white dark:bg-slate-800 transition-colors duration-300"
+    >
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="text-center mb-14">
@@ -38,11 +50,14 @@ const AboutSection = () => {
             <Building2 className="w-3.5 h-3.5" />
             About AI CFO Enterprise
           </div>
-          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">
-            Not just a recording system — a real CFO.
-          </h2>
+
+          <Heading className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">
+            More than business records. Better business decisions.
+          </Heading>
+
           <p className="text-lg text-gray-600 dark:text-gray-300 max-w-3xl mx-auto">
-            A comprehensive business management platform for African SMEs.
+            Business management and financial analytics that help African SMEs
+            understand their numbers, monitor performance and plan ahead.
           </p>
         </div>
 
@@ -54,17 +69,28 @@ const AboutSection = () => {
               <span className="font-semibold text-gray-900 dark:text-white">
                 AI CFO ENTERPRISE
               </span>{' '}
-              goes beyond bookkeeping. It tracks your sales, inventory, income, expenses,
-              debtors, and creditors — then does what a real CFO does:{' '}
-              <span className="font-semibold text-primary-700 dark:text-gold-400">
-                analyses your numbers, shows you the risks, forecasts where you're headed,
-                and gives you strategic advice
-              </span>{' '}
-              so you can make confident business decisions.
+              brings essential business activities together. Track sales,
+              inventory, income, expenses, debtors and creditors in one
+              platform. Then turn that information into useful financial
+              reports, business performance insights and forecasts.
             </p>
+
             <p>
-              Built for African SMEs. Simple enough to use today, powerful enough to grow
-              with you.
+              More than recording what happens in your business, the platform
+              helps you understand{' '}
+              <span className="font-semibold text-primary-700 dark:text-gold-400">
+                where your money goes, how your business is performing, what
+                risks need attention and what your numbers may mean for the
+                future.
+              </span>{' '}
+              This is the virtual CFO experience: clearer information and
+              practical guidance for more confident decisions.
+            </p>
+
+            <p>
+              Built for African SMEs, AI CFO Enterprise makes business
+              management and financial insights easier to access as your
+              business grows.
             </p>
 
             <div className="pt-2">
@@ -85,9 +111,11 @@ const AboutSection = () => {
                 className="card group bg-gray-50 dark:bg-slate-900/50 border border-gray-200 dark:border-slate-700 p-5"
               >
                 <Icon className="w-8 h-8 text-primary-600 dark:text-gold-400 mb-3 group-hover:scale-110 transition-transform duration-300" />
+
                 <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-1">
                   {title}
                 </h3>
+
                 <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
                   {desc}
                 </p>

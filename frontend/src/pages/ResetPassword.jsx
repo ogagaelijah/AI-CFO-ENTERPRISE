@@ -1,9 +1,10 @@
+
 // frontend/src/pages/ResetPassword.jsx
-// v1.0.0 — Handles /reset-password?token=... from the reset email.
-//           Password + confirm fields, validates locally, calls
-//           POST /auth/reset-password, then routes to /login.
+// v1.0.1 — Adds SEO metadata for the password reset page.
+//           Preserves existing password reset logic and UI.
 
 import { useState } from 'react';
+import { Helmet } from 'react-helmet-async';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import {
   Lock,
@@ -290,53 +291,64 @@ export default function ResetPassword() {
 // ── Shared page shell (header + footer + centered card wrapper)
 function Shell({ theme, toggleTheme, children }) {
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-slate-900 transition-colors duration-300 flex flex-col">
-      <header className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md z-50 border-b border-gray-200 dark:border-slate-700 transition-colors duration-300">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <Link to="/" className="flex items-center space-x-2">
-              <span className="text-2xl font-bold text-primary-600 dark:text-gold-400">
-                AI CFO
-              </span>
-              <span className="text-sm font-medium text-gray-600 dark:text-gray-400 hidden sm:inline">
-                ENTERPRISE
-              </span>
-            </Link>
-            <button
-              onClick={toggleTheme}
-              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition"
-              aria-label="Toggle dark mode"
-            >
-              {theme === 'dark' ? (
-                <Sun className="w-5 h-5 text-gold-400" />
-              ) : (
-                <Moon className="w-5 h-5 text-gray-600" />
-              )}
-            </button>
-          </div>
-        </div>
-      </header>
+    <>
+      <Helmet>
+        <title>Reset Your Password | AI CFO Enterprise</title>
+        <meta
+          name="description"
+          content="Create a new password for your AI CFO Enterprise account using your secure password reset link."
+        />
+        <meta name="robots" content="noindex, follow" />
+      </Helmet>
 
-      <div className="flex-1 flex items-center justify-center px-4 py-12">
-        <div className="w-full max-w-md">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-gray-200 dark:border-slate-700 p-8 transition-colors duration-300">
-            {children}
+      <div className="min-h-screen bg-gray-50 dark:bg-slate-900 transition-colors duration-300 flex flex-col">
+        <header className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md z-50 border-b border-gray-200 dark:border-slate-700 transition-colors duration-300">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex items-center justify-between h-16">
+              <Link to="/" className="flex items-center space-x-2">
+                <span className="text-2xl font-bold text-primary-600 dark:text-gold-400">
+                  AI CFO
+                </span>
+                <span className="text-sm font-medium text-gray-600 dark:text-gray-400 hidden sm:inline">
+                  ENTERPRISE
+                </span>
+              </Link>
+              <button
+                onClick={toggleTheme}
+                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition"
+                aria-label="Toggle dark mode"
+              >
+                {theme === 'dark' ? (
+                  <Sun className="w-5 h-5 text-gold-400" />
+                ) : (
+                  <Moon className="w-5 h-5 text-gray-600" />
+                )}
+              </button>
+            </div>
           </div>
-          <p className="mt-6 text-center text-sm text-gray-500 dark:text-gray-500">
-            Need help?{' '}
-            <a
-              href="mailto:support@aicfotechnologies.com"
-              className="text-primary-600 dark:text-gold-400 hover:underline"
-            >
-              Contact support
-            </a>
-          </p>
+        </header>
+
+        <div className="flex-1 flex items-center justify-center px-4 py-12">
+          <div className="w-full max-w-md">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-gray-200 dark:border-slate-700 p-8 transition-colors duration-300">
+              {children}
+            </div>
+            <p className="mt-6 text-center text-sm text-gray-500 dark:text-gray-500">
+              Need help?{' '}
+              <a
+                href="mailto:support@aicfotechnologies.com"
+                className="text-primary-600 dark:text-gold-400 hover:underline"
+              >
+                Contact support
+              </a>
+            </p>
+          </div>
         </div>
+
+        <footer className="py-4 px-4 text-center text-sm text-gray-500 dark:text-gray-500 border-t border-gray-200 dark:border-slate-700">
+          <p>Built for African SMEs</p>
+        </footer>
       </div>
-
-      <footer className="py-4 px-4 text-center text-sm text-gray-500 dark:text-gray-500 border-t border-gray-200 dark:border-slate-700">
-        <p>Built for African SMEs 🇳🇬</p>
-      </footer>
-    </div>
+    </>
   );
 }

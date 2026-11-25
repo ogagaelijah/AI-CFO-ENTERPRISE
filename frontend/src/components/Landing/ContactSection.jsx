@@ -1,8 +1,8 @@
+
 // frontend/src/components/Landing/ContactSection.jsx
-// v1.1.0 — Email card no longer uses mailto (doesn't fire on machines
-//           without a default mail client). Now shows the address with
-//           a Copy button.
-// v1.0.0 — Contact card grid: Phone, WhatsApp, Email. Anchored at #contact.
+// v1.2.0 — Supports page-specific H1/H2 heading hierarchy.
+// v1.1.0 — Email card uses Copy button instead of mailto.
+// v1.0.0 — Contact card grid: Phone, WhatsApp, Email.
 
 import { useState } from 'react';
 import { Phone, MessageCircle, Mail, Copy, Check } from 'lucide-react';
@@ -69,18 +69,21 @@ function CopyButton({ text }) {
   );
 }
 
-const ContactSection = () => {
+const ContactSection = ({ headingLevel = 'h2' }) => {
+  const Heading = headingLevel === 'h1' ? 'h1' : 'h2';
+
   return (
     <section id="contact" className="py-20 px-4 bg-gray-50 dark:bg-slate-900 transition-colors duration-300">
       <div className="max-w-5xl mx-auto">
         {/* Header */}
         <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-3">
-            Get in touch
-          </h2>
+          <Heading className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-3">
+            Contact AI CFO Enterprise
+          </Heading>
           <p className="text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
-            We respond within 24 hours. Prefer to chat instantly? Use the widget in the
-            bottom-right corner.
+            Have questions about our business management and financial analytics
+            platform? Contact our team for product information, onboarding assistance
+            or support. We are happy to help your business get started.
           </p>
         </div>
 

@@ -1,12 +1,20 @@
-// frontend/src/pages/Landing.jsx
-// v2.1.0 — Adds direct APK download button to Hero section.
 
-import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+// frontend/src/pages/Landing.jsx
+// v2.6.0 — Improves homepage feature descriptions and SEO keyword relevance.
+// v2.5.0 — Adds Organization schema and connects it to Website and SoftwareApplication.
+// v2.4.0 — Adds Schema.org structured data for Website and SoftwareApplication.
+// v2.3.0 — Fixes homepage hash navigation across React Router page changes.
+// v2.2.0 — Extracts pricing into a reusable PricingSection component.
+// SEO — Adds page-specific metadata using react-helmet-async.
+
+import { useEffect } from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import {
   TrendingUp, Package, Users, FileText, BarChart3, Zap,
-  ChevronRight, Check, Loader2, Smartphone
+  ChevronRight, Smartphone
 } from 'lucide-react';
+
 import Navbar from '../components/Landing/Navbar';
 import ProblemStatement from '../components/Landing/ProblemStatement';
 import AboutSection from '../components/Landing/AboutSection';
@@ -16,27 +24,7 @@ import ResourcesSection from '../components/Landing/ResourcesSection';
 import ContactSection from '../components/Landing/ContactSection';
 import Footer from '../components/Landing/Footer';
 import ChatWidget from '../components/Landing/ChatWidget';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-
-const PLAN_FEATURES = [
-  { key: 'sales', label: 'Sales & Income tracking' },
-  { key: 'inventory', label: 'Inventory management' },
-  { key: 'debtors', label: 'Debtors & Creditors' },
-  { key: 'reports_basic', label: 'Daily / Weekly / Monthly reports' },
-  { key: 'reports_financial', label: 'P&L · Cash Flow · Balance Sheet' },
-  { key: 'reports_executive', label: 'Executive reports' },
-  { key: 'reports_export', label: 'Export PDF / Excel' },
-  { key: 'analytics', label: 'Analytics dashboard' },
-  { key: 'forecast', label: 'Forecasting' },
-  { key: 'risk', label: 'Risk detection' },
-  { key: 'decisions', label: 'Decision engine' },
-  { key: 'ai_advisor', label: 'AI CFO Advisor' },
-  { key: 'team_roles', label: 'Team roles' },
-  { key: 'multi_business', label: 'Multi-business' },
-  { key: 'api_access', label: 'API access' },
-  { key: 'white_label', label: 'White-label' },
-];
+import PricingSection from '../components/Landing/PricingSection';
 
 const READY_INDUSTRIES = [
   'Retail / Wholesale',
@@ -54,37 +42,9 @@ const COMING_SOON_INDUSTRIES = [
 ];
 
 const Landing = () => {
-  const [billingCycle, setBillingCycle] = useState('monthly');
-  const [plans, setPlans] = useState([]);
-  const [plansLoading, setPlansLoading] = useState(true);
-  const [plansError, setPlansError] = useState('');
+  const location = useLocation();
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const res = await fetch(`${API_URL}/subscription/plans`, {
-          credentials: 'include',
-        });
-        const json = await res.json();
-        if (cancelled) return;
-        if (json?.success && Array.isArray(json.plans)) {
-          setPlans(json.plans);
-        } else {
-          setPlansError('Unable to load plans');
-        }
-      } catch {
-        if (!cancelled) setPlansError('Unable to load plans');
-      } finally {
-        if (!cancelled) setPlansLoading(false);
-      }
-    };
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
+  // Homepage animations
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -95,32 +55,189 @@ const Landing = () => {
       { threshold: 0.1, rootMargin: '0px 0px -50px 0px' }
     );
 
-    setTimeout(() => {
+    const timeout = setTimeout(() => {
       const elements = document.querySelectorAll('.fade-in');
+
       elements.forEach((el) => {
         observer.observe(el);
+
         const rect = el.getBoundingClientRect();
-        if (rect.top < window.innerHeight) el.classList.add('visible');
+        if (rect.top < window.innerHeight) {
+          el.classList.add('visible');
+        }
       });
     }, 100);
 
     const handleScroll = () => {
       const elements = document.querySelectorAll('.fade-in:not(.visible)');
+
       elements.forEach((el) => {
         const rect = el.getBoundingClientRect();
-        if (rect.top < window.innerHeight - 50) el.classList.add('visible');
+
+        if (rect.top < window.innerHeight - 50) {
+          el.classList.add('visible');
+        }
       });
     };
+
     window.addEventListener('scroll', handleScroll);
 
     return () => {
+      clearTimeout(timeout);
       observer.disconnect();
       window.removeEventListener('scroll', handleScroll);
     };
-  }, [plans]);
+  }, []);
+
+  // Homepage hash navigation.
+  // Handles navigation from other React Router pages as well as
+  // hash changes while already on the homepage.
+  useEffect(() => {
+    if (location.pathname !== '/' || !location.hash) return;
+
+    let firstFrame;
+    let secondFrame;
+
+    const targetId = decodeURIComponent(location.hash.slice(1));
+
+    firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => {
+        const target = document.getElementById(targetId);
+
+        if (target) {
+          target.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start',
+          });
+        }
+      });
+    });
+
+    return () => {
+      cancelAnimationFrame(firstFrame);
+      cancelAnimationFrame(secondFrame);
+    };
+  }, [location.pathname, location.hash]);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-900 transition-colors duration-300 overflow-x-hidden">
+      <Helmet>
+        {/* Structured Data — Organization, Website and Software Application */}
+        <script type="application/ld+json">
+          {JSON.stringify({
+            "@context": "https://schema.org",
+            "@graph": [
+                            {
+                "@type": "Organization",
+                "@id": "https://aicfotechnologies.com/#organization",
+                "name": "AI CFO Technologies Ltd",
+                "url": "https://aicfotechnologies.com/",
+                "brand": "AI CFO Enterprise"
+              },
+              {
+                "@type": "WebSite",
+                "@id": "https://aicfotechnologies.com/#website",
+                "name": "AI CFO Enterprise",
+                "url": "https://aicfotechnologies.com/",
+                "description": "Official website of AI CFO Enterprise, a business management and financial analytics platform for African SMEs.",
+                "inLanguage": "en",
+                "publisher": {
+                  "@id": "https://aicfotechnologies.com/#organization"
+                }
+              },
+              {
+                "@type": "SoftwareApplication",
+                "@id": "https://aicfotechnologies.com/#software",
+                "name": "AI CFO Enterprise",
+                "url": "https://aicfotechnologies.com/",
+                "description": "A business management and financial analytics platform that helps African SMEs track sales, inventory, expenses, debtors, cash flow, profits, and business performance.",
+                "applicationCategory": "BusinessApplication",
+                "operatingSystem": "Web browser",
+                "image": "https://aicfotechnologies.com/og-image.png?v=1",
+                "featureList": [
+                  "Sales and income tracking",
+                  "Inventory management",
+                  "Debtors and creditors management",
+                  "Business reports and financial analytics",
+                  "Financial forecasting",
+                  "AI-powered business insights"
+                ],
+                "publisher": {
+                  "@id": "https://aicfotechnologies.com/#organization"
+                }
+              }
+            ]
+          })}
+        </script>
+
+        <title>AI CFO Enterprise | Business Management & Financial Analytics for African SMEs</title>
+
+        <meta
+          name="description"
+          content="Manage your business with AI CFO Enterprise. Track sales, inventory, expenses, debtors, cash flow and profits. Get financial analytics and business insights in one platform built for African SMEs."
+        />
+
+        <meta
+          name="robots"
+          content="index, follow"
+        />
+
+        <link
+          rel="canonical"
+          href="https://aicfotechnologies.com/"
+        />
+
+        <meta
+          property="og:type"
+          content="website"
+        />
+
+        <meta
+          property="og:site_name"
+          content="AI CFO Enterprise"
+        />
+
+        <meta
+          property="og:title"
+          content="AI CFO Enterprise | Business Management & Financial Analytics"
+        />
+
+        <meta
+          property="og:description"
+          content="Track sales, inventory, expenses, debtors, cash flow and business performance with AI CFO Enterprise."
+        />
+
+        <meta
+          property="og:url"
+          content="https://aicfotechnologies.com/"
+        />
+
+        <meta
+          property="og:image"
+          content="https://aicfotechnologies.com/og-image.png?v=1"
+        />
+
+        <meta
+          name="twitter:card"
+          content="summary_large_image"
+        />
+
+        <meta
+          name="twitter:title"
+          content="AI CFO Enterprise | Financial Intelligence for African SMEs"
+        />
+
+        <meta
+          name="twitter:description"
+          content="Manage sales, inventory, cash flow and business performance in one platform."
+        />
+
+        <meta
+          name="twitter:image"
+          content="https://aicfotechnologies.com/og-image.png?v=1"
+        />
+      </Helmet>
+
       {/* Navbar */}
       <Navbar />
 
@@ -131,39 +248,52 @@ const Landing = () => {
             <Zap className="w-4 h-4 mr-2" />
             Built for African SMEs
           </div>
+
           <h1 className="text-3xl md:text-6xl font-bold text-gray-900 dark:text-white mb-6 leading-tight break-words">
-            Manage your business like a <span className="text-primary-600 dark:text-gold-400">CFO</span>
+            Manage your business like a{' '}
+            <span className="text-primary-600 dark:text-gold-400">
+              CFO
+            </span>
           </h1>
+
           <p className="text-lg md:text-xl text-gray-600 dark:text-gray-300 mb-10 max-w-2xl mx-auto break-words">
             AI CFO ENTERPRISE helps African SMEs track sales, inventory, debtors, and profits — all in one place.
           </p>
-          
+
           {/* Main Call to Actions */}
           <div className="flex flex-col sm:flex-row justify-center gap-4 mb-4">
-            <Link to="/register" className="px-6 py-3 md:px-8 md:py-4 text-base md:text-lg font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-xl transition shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] inline-flex items-center justify-center">
+            <Link
+              to="/register"
+              className="px-6 py-3 md:px-8 md:py-4 text-base md:text-lg font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-xl transition shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] inline-flex items-center justify-center"
+            >
               Start 14-day free trial
               <ChevronRight className="w-5 h-5 ml-2" />
             </Link>
-            <a href="#features" className="px-6 py-3 md:px-8 md:py-4 text-base md:text-lg font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-xl transition inline-flex items-center justify-center">
+
+            <a
+              href="#features"
+              className="px-6 py-3 md:px-8 md:py-4 text-base md:text-lg font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-xl transition inline-flex items-center justify-center"
+            >
               See how it works
             </a>
           </div>
 
           {/* APK Download Link */}
           <div className="mt-6 flex flex-col items-center justify-center">
-            <a 
-              href="/ai-cfo-app.apk" 
+            <a
+              href="/ai-cfo-app.apk"
               download
               className="inline-flex items-center justify-center gap-2 px-6 py-3 text-sm md:text-base font-medium text-gray-900 dark:text-white bg-white dark:bg-slate-800 border-2 border-gray-200 dark:border-slate-600 rounded-xl hover:bg-gray-50 dark:hover:bg-slate-700 transition shadow-sm hover:shadow-md"
             >
               <Smartphone className="w-5 h-5 text-green-500" />
               Download the Android App
             </a>
+
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
               Available as a direct download for Android devices (.apk)
             </p>
           </div>
-          
+
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-6">
             No card required · Full Pro access for 14 days
           </p>
@@ -177,24 +307,62 @@ const Landing = () => {
       <AboutSection />
 
       {/* Features */}
-      <section id="features" className="py-20 px-4 bg-white dark:bg-slate-800 transition-colors duration-300">
+      <section
+        id="features"
+        className="py-20 px-4 bg-white dark:bg-slate-800 transition-colors duration-300"
+      >
         <div className="max-w-6xl mx-auto">
           <h2 className="text-2xl md:text-3xl font-bold text-center text-gray-900 dark:text-white mb-12 fade-in">
             Everything you need to run your business
           </h2>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {[
-              { icon: TrendingUp, title: 'Sales & Income', desc: 'Record sales, track income, and monitor revenue in real-time.' },
-              { icon: Package, title: 'Inventory Management', desc: 'Track stock levels, get low stock alerts, and manage suppliers.' },
-              { icon: Users, title: 'Debtors & Creditors', desc: 'Manage who owes you and who you owe — never miss a payment.' },
-              { icon: FileText, title: 'Reports & Analytics', desc: 'Daily, weekly, monthly, and yearly reports with profit margins.' },
-              { icon: BarChart3, title: 'Forecasting & AI', desc: 'Predict future revenue and get AI-powered business recommendations.' },
-              { icon: Zap, title: '9 Industries, 5 Live Today', desc: 'Retail, Consultancy / Services, Construction, Education, NGOs — with more on the way.' },
+              {
+                icon: TrendingUp,
+                title: 'Sales & Income',
+                desc: 'Record sales, track payments and monitor business revenue as transactions happen.'
+              },
+              {
+                icon: Package,
+                title: 'Inventory Management',
+                desc: 'Monitor stock levels, track purchase costs, manage suppliers and receive low-stock alerts.'
+              },
+              {
+                icon: Users,
+                title: 'Debtors & Creditors',
+                desc: 'Track customer balances and supplier obligations, monitor outstanding payments and know what is owed.'
+              },
+              {
+                icon: FileText,
+                title: 'Reports & Analytics',
+                desc: 'Review daily, weekly, monthly and yearly reports to understand revenue, expenses, cash flow and profitability.'
+              },
+              {
+                icon: BarChart3,
+                title: 'Forecasting & AI',
+                desc: 'Use business trends and financial forecasts to anticipate performance and receive AI-powered insights for better decisions.'
+              },
+              {
+                icon: Zap,
+                title: '9 Industries, 5 Live Today',
+                desc: 'Business management and financial analytics for Retail, Consultancy / Services, Construction, Education and NGOs, with four more industries coming soon.'
+              },
             ].map((feature, index) => (
-              <div key={index} className="card group fade-in" style={{ transitionDelay: `${index * 100}ms` }}>
+              <div
+                key={index}
+                className="card group fade-in"
+                style={{ transitionDelay: `${index * 100}ms` }}
+              >
                 <feature.icon className="w-10 h-10 text-primary-600 dark:text-gold-400 mb-4 group-hover:scale-110 transition-transform duration-300" />
-                <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">{feature.title}</h3>
-                <p className="text-gray-600 dark:text-gray-400">{feature.desc}</p>
+
+                <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+                  {feature.title}
+                </h3>
+
+                <p className="text-gray-600 dark:text-gray-400">
+                  {feature.desc}
+                </p>
               </div>
             ))}
           </div>
@@ -202,9 +370,15 @@ const Landing = () => {
       </section>
 
       {/* Industries */}
-      <section id="industries" className="py-20 px-4 bg-gray-50 dark:bg-slate-900 transition-colors duration-300">
+      <section
+        id="industries"
+        className="py-20 px-4 bg-gray-50 dark:bg-slate-900 transition-colors duration-300"
+      >
         <div className="max-w-6xl mx-auto text-center">
-          <h2 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mb-4 fade-in">Built for 9 Industries</h2>
+          <h2 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mb-4 fade-in">
+            Built for 9 Industries
+          </h2>
+
           <p className="text-gray-600 dark:text-gray-400 mb-12 fade-in">
             5 live today, more coming soon.
           </p>
@@ -213,10 +387,17 @@ const Landing = () => {
             <p className="text-xs font-semibold uppercase tracking-wider text-green-600 dark:text-green-400 mb-3 fade-in">
               ✓ Available now
             </p>
+
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
               {READY_INDUSTRIES.map((industry, index) => (
-                <div key={industry} className="card bg-white dark:bg-slate-800 p-4 text-center fade-in" style={{ transitionDelay: `${index * 60}ms` }}>
-                  <span className="text-gray-700 dark:text-gray-300 font-medium">{industry}</span>
+                <div
+                  key={industry}
+                  className="card bg-white dark:bg-slate-800 p-4 text-center fade-in"
+                  style={{ transitionDelay: `${index * 60}ms` }}
+                >
+                  <span className="text-gray-700 dark:text-gray-300 font-medium">
+                    {industry}
+                  </span>
                 </div>
               ))}
             </div>
@@ -226,10 +407,17 @@ const Landing = () => {
             <p className="text-xs font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400 mb-3 fade-in">
               ⏳ Coming soon
             </p>
+
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {COMING_SOON_INDUSTRIES.map((industry, index) => (
-                <div key={industry} className="card bg-white/60 dark:bg-slate-800/60 p-4 text-center opacity-70 fade-in border-dashed" style={{ transitionDelay: `${index * 60}ms` }}>
-                  <span className="text-gray-500 dark:text-gray-500 font-medium">{industry}</span>
+                <div
+                  key={industry}
+                  className="card bg-white/60 dark:bg-slate-800/60 p-4 text-center opacity-70 fade-in border-dashed"
+                  style={{ transitionDelay: `${index * 60}ms` }}
+                >
+                  <span className="text-gray-500 dark:text-gray-500 font-medium">
+                    {industry}
+                  </span>
                 </div>
               ))}
             </div>
@@ -238,123 +426,7 @@ const Landing = () => {
       </section>
 
       {/* Pricing */}
-      <section id="pricing" className="py-20 px-4 bg-white dark:bg-slate-800 transition-colors duration-300">
-        <div className="max-w-6xl mx-auto">
-          <h2 className="text-2xl md:text-3xl font-bold text-center text-gray-900 dark:text-white mb-4 fade-in">
-            Simple, transparent pricing
-          </h2>
-          <p className="text-center text-gray-600 dark:text-gray-400 mb-8 fade-in">
-            Start with a 14-day Pro trial. No card required.
-          </p>
-
-          <div className="flex justify-center mb-12 fade-in">
-            <div className="inline-flex items-center bg-gray-100 dark:bg-slate-900 rounded-full p-1">
-              <button
-                onClick={() => setBillingCycle('monthly')}
-                className={`px-4 py-2 md:px-5 md:py-2 text-xs md:text-sm font-medium rounded-full transition ${
-                  billingCycle === 'monthly'
-                    ? 'bg-white dark:bg-slate-700 text-gray-900 dark:text-white shadow'
-                    : 'text-gray-600 dark:text-gray-400'
-                }`}
-              >
-                Monthly
-              </button>
-              <button
-                onClick={() => setBillingCycle('yearly')}
-                className={`px-4 py-2 md:px-5 md:py-2 text-xs md:text-sm font-medium rounded-full transition flex items-center gap-2 ${
-                  billingCycle === 'yearly'
-                    ? 'bg-white dark:bg-slate-700 text-gray-900 dark:text-white shadow'
-                    : 'text-gray-600 dark:text-gray-400'
-                }`}
-              >
-                Annual
-                <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">
-                  Save 17%
-                </span>
-              </button>
-            </div>
-          </div>
-
-          {plansLoading ? (
-            <div className="flex items-center justify-center py-16">
-              <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
-            </div>
-          ) : plansError ? (
-            <div className="text-center text-red-600 dark:text-red-400 py-8">{plansError}</div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              {plans.map((plan, index) => {
-                const isYearly = billingCycle === 'yearly';
-                const amount = isYearly ? plan.pricing?.yearly : plan.pricing?.monthly;
-                const isPopular = plan.id === 'pro';
-                const featureList = PLAN_FEATURES.filter((f) => plan.features?.[f.key]).map((f) => f.label);
-
-                return (
-                  <div
-                    key={plan.id}
-                    className={`card relative text-center fade-in ${
-                      isPopular ? 'border-2 border-primary-500 dark:border-gold-400 shadow-lg' : ''
-                    }`}
-                    style={{ transitionDelay: `${index * 150}ms` }}
-                  >
-                    {isPopular && (
-                      <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 text-xs font-semibold text-white bg-primary-500 dark:bg-gold-500 dark:text-slate-900 rounded-full whitespace-nowrap">
-                        Most Popular
-                      </span>
-                    )}
-
-                    <h3 className="text-2xl font-bold text-gray-900 dark:text-white">{plan.name}</h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 min-h-[40px]">{plan.description}</p>
-
-                    <div className="my-4">
-                      <span className="text-3xl md:text-4xl font-bold text-primary-600 dark:text-gold-400">
-                        ₦{Number(amount || 0).toLocaleString()}
-                      </span>
-                      <span className="text-base font-normal text-gray-500 dark:text-gray-400">
-                        /{isYearly ? 'year' : 'month'}
-                      </span>
-                      {isYearly && plan.pricing?.yearlySavings > 0 && (
-                        <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-                          Save ₦{plan.pricing.yearlySavings.toLocaleString()} vs monthly
-                        </p>
-                      )}
-                    </div>
-
-                    <ul className="text-left text-gray-600 dark:text-gray-400 space-y-2 mb-6 min-h-[200px]">
-                      {featureList.slice(0, 6).map((label, i) => (
-                        <li key={i} className="flex items-start">
-                          <Check className="w-5 h-5 text-green-500 mr-2 flex-shrink-0 mt-0.5" />
-                          <span>{label}</span>
-                        </li>
-                      ))}
-                      {featureList.length > 6 && (
-                        <li className="text-xs text-gray-500 dark:text-gray-400 italic">
-                          + {featureList.length - 6} more features
-                        </li>
-                      )}
-                    </ul>
-
-                    <Link
-                      to={`/register?plan=${plan.id}`}
-                      className={`block w-full py-3 rounded-lg font-medium transition text-center ${
-                        isPopular
-                          ? 'bg-primary-600 hover:bg-primary-700 text-white shadow-md hover:shadow-lg'
-                          : 'bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600'
-                      }`}
-                    >
-                      Start 14-day free trial
-                    </Link>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          <p className="text-center text-sm text-gray-500 dark:text-gray-400 mt-8 fade-in">
-            All paid plans include a 14-day free trial. Cancel anytime.
-          </p>
-        </div>
-      </section>
+      <PricingSection />
 
       {/* Loyalty Banner */}
       <LoyaltyBanner />
